@@ -166,10 +166,11 @@ Branch:
 - `build/m0` (M0 work); `main` (spec pack only)
 
 Commit:
-- M0 commit hash — recorded in `docs/REVIEW_HANDOFF.md` after commit
+- M0: `6c8a193` — "M0: scaffold repository and local Docker stack" (tag `v0.1-m0`)
+- CI: green on GitHub Actions (ruff, mypy, pytest, compose validation)
 
 Working tree:
-- clean before M0 commit
+- clean
 
 ---
 

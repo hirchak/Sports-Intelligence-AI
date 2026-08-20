@@ -158,7 +158,8 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 
 **Git**
 - branch: `build/m0`
-- commit: recorded after commit (see REVIEW_HANDOFF)
+- commit: `6c8a193` (tag `v0.1-m0`)
+- CI: green (both jobs)
 
 **Next action**
 - Independent M0 review; merge `build/m0` → `main` after acceptance;

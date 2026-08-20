@@ -11,7 +11,8 @@ Update it before every milestone review.
 **Ready for review:** YES  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
 **Milestone:** M0 — implemented, awaiting review  
-**Review target commit:** (M0 commit hash on `build/m0` — see Git section)  
+**Review target commit:** `6c8a193` (`M0: scaffold repository and local Docker stack`, branch `build/m0`, tag `v0.1-m0`)  
+**CI status:** green (ruff, mypy, pytest, compose validation — both jobs passed on GitHub Actions)  
 **Previous accepted commit:** `8723a91` (spec pack on `main`)
 
 ---
