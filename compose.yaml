@@ -1,0 +1,67 @@
+name: sports-intel
+
+services:
+  sports-postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sports}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sports_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-sports_intel}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - sports_intel_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  sports-redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - sports_intel_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  sports-api:
+    build:
+      context: .
+      target: production
+    environment:
+      APP_ENV: ${APP_ENV:-mock}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Warsaw}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sports}:${POSTGRES_PASSWORD:-sports_dev_password}@sports-postgres:5432/${POSTGRES_DB:-sports_intel}
+      REDIS_URL: redis://sports-redis:6379/0
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      sports-postgres:
+        condition: service_healthy
+      sports-redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  sports_intel_pgdata:
+  sports_intel_redisdata:
