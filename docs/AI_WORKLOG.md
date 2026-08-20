@@ -356,3 +356,80 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - Final independent M1.1 review; merge to `main` after acceptance;
   M2 only with explicit user approval.
+
+---
+
+### 2026-08-20 — DeepSeek V4 Pro (M1 finalize + M2 sports provider/discovery)
+
+**Milestone:** M1 (finalize) + M2  
+**Task:** Finalize M1 in main; implement API-Football + fixture discovery
+
+**Completed**
+- M1 finalized: PR #3 merged (`25dda83`), CI green on main, tag `v0.2-m1`.
+- Typed provider DTOs (`providers/dto.py`) replacing `dict[str, Any]` on
+  the discovery path; UTC normalization; explicit None for missing fields.
+- `ApiFootballProvider`: async httpx, env-only key, bounded retry
+  (tenacity; auth non-retryable), normalized `ProviderError` hierarchy,
+  rate-limit metadata, raw payload for evidence, injected transport.
+- `MockSportsDataProvider` (recorded sanitized responses, keyless).
+- Migration 0002: leagues/seasons/teams/fixtures/provider_entity_ids/
+  raw_provider_payloads (ADR-0008, PostgreSQL upserts, UTC, indexes).
+- `FixtureDiscoveryService`: batch-first, idempotent, raw payload
+  hash-dedup, provider identity on mappings.
+- League YAML config (`config/leagues.yaml` all disabled; mock demo
+  config; `make seed`).
+- API: `/v1/fixtures` (+date/league), `/v1/fixtures/{id}`,
+  `POST /v1/jobs/discover` (jobs row + idempotency key + Celery enqueue).
+- Celery `sports.discover_fixtures` (sports_io), job status updates;
+  fixed worker task registration (include list). No schedule.
+- ADR-0007 (provider choice), ADR-0008 (schema scope).
+
+**Files changed**
+- Created: `providers/{dto,errors}.py`, `providers/sports/{api_football,
+  mock,factory}.py` + mock_data, `core/{league_config,job_status}.py`,
+  `db/models/discovery.py`, `db/repositories/discovery.py`,
+  `pipelines/discover_fixtures.py`, `api/routes/{fixtures,jobs}.py`,
+  `workers/tasks/sports.py`, `schemas/fixtures.py`,
+  `scripts/seed_leagues.py`, `config/leagues.yaml`,
+  `config/leagues.mock.yaml`, migration `0002`, tests (unit×4 files,
+  integration×1, recorded fixture JSON), ADRs 0007/0008
+- Modified: `providers/base.py`, `core/config.py`, `api/app.py`,
+  `db/models/__init__.py`, `workers/celery_app.py`, `compose.yaml`,
+  `Dockerfile`, `Makefile`, `.env.example`, `pyproject.toml`, `uv.lock`,
+  integration conftest, docs
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (63)
+- `make test-integration` → PASS (10) on isolated sports_intel_test
+- ruff / format / strict mypy (50 files) → PASS
+- compose validation → PASS; docker smoke: 5 services, /health/ready 200
+- Mock discovery via full stack → fixtures persisted (earlier smoke)
+- Live API-Football smoke (bounded, 2 calls): 2026-08-21 → 383 fixtures
+  in ONE request → 1 eligible (Premier League, Arsenal vs Coventry)
+  persisted; raw payload 401 KB hash-deduplicated; repeat run idempotent
+  (0 created / 1 updated / no payload dup); job SUCCEEDED; key absent
+  from logs; key stored only in local `.env` (gitignored)
+- CI on push → confirmed below
+
+**Live integrations verified**
+- API-Football fixture discovery: bounded live smoke PASS (single date,
+  single league). Not verified: multi-day production usage, quota edges.
+
+**Mocked only**
+- MockSportsDataProvider for offline/CI/test runs.
+
+**Known issues**
+- Docker Desktop bake bug (per-service build workaround).
+- job_attempts rows not written yet (M4 debt); QuotaManager M4.
+- starlette <1.0 pin; celery untyped decorators.
+
+**Spec / ADR deviations**
+- ADR-0007, ADR-0008.
+
+**Git**
+- branch: `build/m2`
+- commits: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent M2 review; merge to `main` after acceptance;
+  M3 only with explicit user approval.

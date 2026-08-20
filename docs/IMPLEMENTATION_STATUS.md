@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M1 (+ fix-milestone M1.1) — implemented, awaiting final review  
+**Current milestone:** M2 — implemented, awaiting review  
 **Last updated:** 2026-08-20 (DeepSeek V4 Pro via OpenCode)  
 **Last known good commit:** see section 11
 
@@ -75,6 +75,56 @@ Review fixes implemented:
   one cleanup does not block the other. Tests: exceptional-exit simulation
   proves both resources are closed; unit tests prove failure isolation.
 
+## M2 — Sports Provider + Fixture Discovery (branch `build/m2`)
+
+- **Provider choice**: API-Football as first real `SportsDataProvider`
+  (ADR-0007: reason, boundaries, alternatives, Sportmonks migration path).
+- **Typed DTOs** (M1 tech debt closed for the discovery path):
+  `ProviderLeague`, `ProviderSeason`, `ProviderTeam`, `ProviderFixture`,
+  `FixtureDiscoveryResult`, `ProviderResponseMetadata` — no
+  `dict[str, Any]` in the discovery flow; missing fields stay explicit
+  `None`; kickoff normalized to UTC.
+- **API-Football adapter**: async httpx, configurable base URL, env-only
+  API key, timeout, bounded retry (3 attempts, jitter; auth non-retryable),
+  normalized `ProviderError` hierarchy, rate-limit metadata, safe logging
+  (key never logged — covered by test), injected transport for tests,
+  one shared client per provider instance.
+- **Batch-first discovery**: one date-level request fetches all fixtures
+  of the day; enabled leagues filtered locally; `ProviderCapabilities`;
+  N+1 guard test proves a single provider call for N fixtures.
+- **Raw evidence**: `raw_provider_payloads` persisted with provider,
+  endpoint family, request fingerprint, payload hash (dedup), JSONB
+  payload, retrieved_at. No secrets stored.
+- **Migration 0002** (ADR-0008): `leagues`, `seasons`, `teams`,
+  `fixtures`, `provider_entity_ids`, `raw_provider_payloads` — UUID PKs,
+  UTC, unique constraints + indexes; PostgreSQL upserts
+  (`ON CONFLICT DO UPDATE/NOTHING`); provider IDs never primary keys.
+  No odds/prediction/research tables.
+- **Discovery service**: deterministic; re-runs duplicate nothing
+  (integration-verified); stores provider identity on mappings.
+- **League configuration**: YAML (`config/leagues.yaml`, all leagues
+  disabled by default; `config/leagues.mock.yaml` demo with one enabled
+  league), documented seed path (`make seed`).
+- **API**: `GET /v1/fixtures` (date/league filters), `GET /v1/fixtures/{id}`
+  (404 on missing), `POST /v1/jobs/discover` — creates a `jobs` row with
+  idempotency key and enqueues the Celery task; no long-running provider
+  call inside the handler; duplicate POSTs reuse the job.
+- **Celery**: `sports.discover_fixtures` on `sports_io`, updates job
+  status RUNNING→SUCCEEDED/FAILED; no other tasks; no automatic schedule
+  (zero quota spend unless explicitly triggered).
+- **Mock mode**: `MockSportsDataProvider` from recorded, sanitized
+  API-Football-shaped responses; keyless; used by CI and tests.
+- **Contract tests**: recorded response → normalized DTO; null handling;
+  UTC conversion; home/away identity; malformed payload; timeout/429/500/
+  auth; API key leak test; external-ID mapping; idempotency; league
+  filtering; N+1 guard.
+- **Live smoke (bounded, 2 API calls)**: real API-Football key present in
+  local `.env` → discovery of 2026-08-21 fetched 383 fixtures in ONE
+  request, filtered to 1 enabled league fixture (Arsenal vs Coventry),
+  persisted raw payload (401 KB, hash), teams/season/fixture created;
+  repeat run: 0 created / 1 updated / payload dedup — idempotent.
+  Rate limiting respected; key absent from all logs.
+
 ---
 
 # 3. In progress
@@ -85,18 +135,18 @@ None. M1 waits for review.
 
 # 4. Acceptance tests passed (actually run)
 
-- `uv run pytest -q -m "not integration"` → **41 passed**
-- `make test-integration` (isolated `sports_intel_test` DB, local compose
-  services) → **3 passed**; dev DB verified unchanged (table snapshot diff)
-- Guard check: integration run against dev DB URL → fails loudly with
-  `RuntimeError` (as designed)
-- `uv run ruff check .` → **All checks passed**
-- `uv run ruff format --check .` → **48 files already formatted**
-- `uv run mypy src` → **Success: no issues found in 34 source files**
-- `docker compose config -q` (+ dev override) → OK
-- Docker smoke: all five services up; `/health` 200; `/ready` 200
-  (shared resources); worker "ready" with all 6 queues; beat started;
-  `control.ping` executed through the broker and succeeded.
+- `uv run pytest -q -m "not integration"` → **63 passed**
+- `make test-integration` (isolated `sports_intel_test` DB) → **10 passed**
+  (discovery persistence, idempotency, league filtering, API filters,
+  job idempotency, N+1 guard, migration cycle, readiness)
+- `uv run ruff check .` / `ruff format --check .` → clean
+- `uv run mypy src` → **no issues in 50 source files** (strict)
+- `docker compose config -q` (+dev) → OK
+- Docker smoke: 5 services up; `/health`/`/ready` 200; mock AND live
+  discovery through the real stack (see section 5); `GET /v1/fixtures`
+  returns normalized rows; job SUCCEEDED; dev/test DB isolation intact
+- Secret scan: API key present only in local `.env` (gitignored); absent
+  from logs, tests and Git
 
 ---
 
@@ -104,11 +154,13 @@ None. M1 waits for review.
 
 ## Verified live
 
-None. M1 makes no external API calls.
+- **API-Football fixture discovery** — bounded live smoke (2 requests):
+  real response, normalization, persistence, repeat idempotency, raw
+  payload dedup, rate-limit headers observed. Full production use not yet
+  exercised (single date, single league).
 
 ## Mocked / not yet verified
 
-- Sports data provider (interface only, M2)
 - Odds provider (interface only, M4)
 - Search provider (interface only, M5)
 - Runtime LLM providers (interface only, M7)
@@ -118,22 +170,22 @@ None. M1 makes no external API calls.
 
 # 6. Known issues / blockers
 
-- Docker Desktop (macOS) combined multi-service bake build fails with a
-  `x-docker-expose-session-sharedkey` gRPC error; workaround documented in
-  `docs/LOCAL_DEVELOPMENT.md` (build services one at a time). Not a repo
-  issue — CI on Ubuntu builds fine via direct `docker build`.
-- Starlette pinned `<1.0` to keep `httpx`-based TestClient (starlette 1.x
-  deprecates httpx in favor of `httpx2`). Revisit on next dependency bump.
-- Uvicorn access logs are plain text; application logs are JSON.
-- Celery `ping` task has `type: ignore[untyped-decorator]` (celery ships
-  without py.typed; mypy overrides treat celery/kombu as untyped).
+- Docker Desktop (macOS) multi-service bake build bug — per-service build
+  workaround documented in `docs/LOCAL_DEVELOPMENT.md`.
+- Starlette pinned `<1.0` (httpx TestClient deprecation in 1.x).
+- Celery untyped upstream → `type: ignore[untyped-decorator]` on tasks.
+- Live API-Football runs happen only via explicit job POSTs (no schedule),
+  so quota spend is fully manual in M2 — intentional.
 
-## Scheduled technical debt (from M0.1)
+## Scheduled technical debt
 
-- ~~M1: `/ready` shared engine/client via lifespan~~ → done in M1.
-- **M2:** provider interfaces must not stay on `dict[str, Any]` — introduce
-  normalized internal DTO/Pydantic schemas before the first real sports
-  adapter.
+- ~~M2: normalized provider DTOs instead of `dict[str, Any]`~~ → done for
+  the discovery path (odds/search/LLM protocols get typed at their
+  milestones).
+- **M4:** QuotaManager + request ledger (adapter already captures
+  rate-limit headers).
+- **M4:** job_attempts rows for worker attempts (M2 updates only
+  `jobs.status`).
 
 ---
 
@@ -146,16 +198,22 @@ None. M1 makes no external API calls.
 - Validation policy (`extra="ignore"`, `env_ignore_empty`, `NoDecode`) →
   ADR-0004.
 - M1 migration scope limited to `jobs`/`job_attempts` → ADR-0006.
+- API-Football chosen as first provider → ADR-0007.
+- M2 schema scope (six tables, upsert strategy) → ADR-0008.
+- Enabled-league filter matches provider league IDs regardless of the
+  provider key in `provider_ids` (mock emulates api_football IDs) —
+  documented assumption, no ADR needed.
 
 ---
 
 # 8. Database/migrations
 
 Status:
-- migration `0001` applied locally and in CI (fresh DB cycle tested).
+- migrations `0001` (jobs) + `0002` (discovery) applied locally and
+  verified in CI on a fresh DB (apply → repeat → downgrade → reapply).
 
 Latest migration:
-- `0001_create_jobs_and_job_attempts` (jobs, job_attempts)
+- `0002_create_discovery_tables`
 
 Local DB preservation required:
 - no, until meaningful live test data exists
@@ -191,21 +249,21 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m1` (M1 + M1.1 work); `main` = `7000c32` (M0 accepted)
+- `build/m2` (M2 work); `main` = `25dda83` (M1 accepted, tag `v0.2-m1`)
 
 Commit:
-- M1.1 commit recorded in `docs/REVIEW_HANDOFF.md` after commit
+- M2 commits recorded in `docs/REVIEW_HANDOFF.md` after commit
 
 Working tree:
-- clean before M1.1 commit
+- clean before M2 commits
 
 ---
 
 # 12. Next action
 
-1. Final independent review of M1.1 (see `docs/REVIEW_HANDOFF.md`).
-2. After acceptance: merge `build/m1` into `main`.
-3. Only then start M2 with explicit user approval.
+1. Independent review of M2 (see `docs/REVIEW_HANDOFF.md`).
+2. After acceptance: merge `build/m2` into `main`.
+3. Only then start M3 with explicit user approval.
 
 ---
 
