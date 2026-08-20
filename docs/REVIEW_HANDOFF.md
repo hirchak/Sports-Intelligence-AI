@@ -8,42 +8,70 @@ Update it before every milestone review.
 
 # Review status
 
-**Ready for review:** NO  
+**Ready for review:** YES  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M0 — not started  
-**Review target commit:** —  
-**Previous accepted commit:** —
+**Milestone:** M0 — implemented, awaiting review  
+**Review target commit:** `6c8a193` (`M0: scaffold repository and local Docker stack`, branch `build/m0`, tag `v0.1-m0`)  
+**CI status:** green (ruff, mypy, pytest, compose validation — both jobs passed on GitHub Actions)  
+**Previous accepted commit:** `8723a91` (spec pack on `main`)
 
 ---
 
 # What changed
 
-Nothing implemented yet.
+Full M0 implementation on branch `build/m0` (diff against `main`):
+
+- Python 3.12 scaffold (`pyproject.toml`, `uv.lock`, src layout);
+- FastAPI skeleton: `GET /health`, `GET /ready` (DB + Redis checks);
+- config validation via pydantic-settings (`mock|sandbox|live_local` modes);
+- structured JSON logging with context fields;
+- provider Protocol interfaces (no implementations — honest, not fake);
+- Docker: multi-stage Dockerfile (non-root prod target), compose.yaml
+  (postgres 16, redis 7, api; loopback ports), compose.dev.yaml;
+- Alembic async scaffold, zero revisions;
+- CI (GitHub Actions): ruff, mypy, pytest, compose validation;
+- docs: README + 7 docs files + ADRs 0001–0005;
+- tests: 17 unit/integration tests.
 
 ---
 
 # What should the reviewer verify?
 
-For M0, eventually verify:
-
 - repository structure;
-- Docker Compose local isolation;
-- Python dependency setup;
-- config validation;
-- Postgres/Redis definitions;
-- FastAPI skeleton;
-- logging;
-- tests;
-- CI;
-- mock-mode architecture;
+- Docker Compose local isolation (project name, volumes, loopback ports);
+- Python dependency setup (`uv sync --frozen` reproducibility);
+- config validation (mock mode keyless; non-mock key enforcement);
+- Postgres/Redis definitions + health checks;
+- FastAPI skeleton (`/health`, `/ready`);
+- logging (JSON, context fields);
+- test quality (do tests assert behavior?);
+- CI workflow;
+- mock-mode architecture (no real integrations claimed);
 - no server/Hermes dependency;
-- no secrets.
+- no secrets;
+- spec/ADR consistency (M0 scope deviation is documented in ADR-0005).
 
 ---
 
 # Commands claimed as passing
 
-None yet.
+Run these on branch `build/m0`:
+
+```bash
+uv sync --frozen --dev
+uv run pytest -q
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src
+docker compose config -q
+docker compose up -d --build
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/ready
+docker compose run --rm sports-api alembic upgrade head
+```
+
+Expected: 17 tests passed; ruff/mypy clean; services healthy; 200s;
+alembic exit 0.
 
 Reviewer must not assume tests passed based on status text alone.
 
@@ -51,7 +79,12 @@ Reviewer must not assume tests passed based on status text alone.
 
 # Known limitations
 
-- Implementation not started.
+- No database models/migrations yet (M1).
+- No Celery/aiogram (M1/M3).
+- Provider/LLM adapters are interfaces only; nothing claims live integration.
+- starlette pinned `<1.0` (testclient httpx deprecation) — revisit at next
+  dependency bump.
+- CI first run status confirmed only after push.
 
 ---
 
@@ -61,8 +94,11 @@ Reviewer must not assume tests passed based on status text alone.
 - `00_MASTER_TECHNICAL_SPEC.md`
 - `docs/IMPLEMENTATION_STATUS.md`
 - `docs/CURRENT_TASK.md`
-- relevant detailed specification
-- Git diff for target commit
+- `docs/adr/0005-m0-scope-includes-api-infra-skeleton.md`
+- `pyproject.toml`, `compose.yaml`, `Dockerfile`
+- `src/sports_intelligence/core/config.py`
+- `src/sports_intelligence/api/` (app, health route)
+- Git diff `main..build/m0`
 
 ---
 

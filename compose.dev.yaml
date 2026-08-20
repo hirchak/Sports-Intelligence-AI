@@ -1,0 +1,11 @@
+# Local development overrides: editable install + source bind-mount + reload.
+# Usage: docker compose -f compose.yaml -f compose.dev.yaml up --build
+
+services:
+  sports-api:
+    build:
+      target: development
+    environment:
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ./src:/app/src
