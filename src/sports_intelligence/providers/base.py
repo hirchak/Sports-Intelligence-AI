@@ -6,41 +6,35 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel
 
+from sports_intelligence.providers.dto import FixtureDiscoveryResult
+
+
+@dataclass(frozen=True)
+class ProviderCapabilities:
+    provider: str
+    supports_fixtures_by_date: bool = True
+    supports_fixture_ids_batch: bool = False
+
 
 class SportsDataProvider(Protocol):
-    """Minimum interface per master spec section 8.1. Not implemented in M0."""
+    """Typed provider surface. Extended by later milestones with typed DTOs."""
 
-    async def get_fixtures(self, date: date, league_ids: list[str]) -> list[dict[str, Any]]: ...
+    @property
+    def capabilities(self) -> ProviderCapabilities: ...
 
-    async def get_fixture(self, external_fixture_id: str) -> dict[str, Any]: ...
+    async def get_fixtures_by_date(self, fixture_date: date) -> FixtureDiscoveryResult: ...
 
-    async def get_standings(self, league_id: str, season: str) -> dict[str, Any]: ...
-
-    async def get_team_recent_matches(self, team_id: str, limit: int) -> list[dict[str, Any]]: ...
-
-    async def get_head_to_head(
-        self, home_team_id: str, away_team_id: str, limit: int
-    ) -> list[dict[str, Any]]: ...
-
-    async def get_injuries(self, fixture_id: str) -> list[dict[str, Any]]: ...
-
-    async def get_lineups(self, fixture_id: str) -> list[dict[str, Any]]: ...
-
-    async def get_team_statistics(
-        self, team_id: str, league_id: str, season: str
-    ) -> dict[str, Any]: ...
-
-    async def get_result(self, fixture_id: str) -> dict[str, Any]: ...
+    async def aclose(self) -> None: ...
 
 
 class OddsProvider(Protocol):
-    """Minimum interface per master spec section 8.2. Not implemented in M0."""
+    """Minimum interface per master spec section 8.2. Not implemented (M4)."""
 
     async def get_odds(self, fixture_id: str, markets: list[str]) -> dict[str, Any]: ...
 
 
 class SearchProvider(Protocol):
-    """Minimum interface per master spec section 8.3. Not implemented in M0."""
+    """Minimum interface per master spec section 8.3. Not implemented (M5)."""
 
     async def search(self, query: str, max_results: int) -> list[dict[str, Any]]: ...
 
@@ -58,7 +52,7 @@ class LLMResult:
 
 
 class LLMProvider(Protocol):
-    """Minimum interface per LLM router spec section 3. Not implemented in M0."""
+    """Minimum interface per LLM router spec section 3. Not implemented (M7)."""
 
     async def generate_structured(
         self,
