@@ -10,61 +10,67 @@ Update it before every milestone review.
 
 **Ready for review:** YES  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M1 — Core Infrastructure, awaiting review  
+**Milestone:** M1 + M1.1 fixes — awaiting final review  
 **Review target branch:** `build/m1`  
 **Review target commits:** `18c0a25` (DB/Redis lifecycle + migration),
-`6b19704` (Celery), `93b3d3a` (CI/docs/state) — see Git section  
-**CI status:** green on `build/m1` (unit, integration with Postgres/Redis
-services, compose validation)  
+`6b19704` (Celery), `93b3d3a` (CI/docs/state), `d0038dc` (handoff),
+**`973c674` (M1.1 fixes)** — see Git section  
+**CI status:** green on `build/m1` (unit, integration with isolated
+Postgres/Redis services, compose validation)  
+**Previous review:** M1 → PASS WITH FIXES; fixes implemented in M1.1  
 **Previous accepted state:** `main` = `7000c32` (M0 accepted, tag `v0.1-m0`)
 
 ---
 
-# What changed
+# What changed since the last review
 
-M1 turned the M0 skeleton into core infrastructure:
+M1.1 fixes (all items from the PASS WITH FIXES verdict):
 
-1. **DB**: shared SQLAlchemy 2 `AsyncEngine` + `async_sessionmaker` created
-   in the FastAPI lifespan, stored on `app.state`; `get_session` dependency;
-   engine disposed on shutdown. `/ready` no longer creates a per-request
-   engine (M0.1 technical debt resolved).
-2. **Redis**: shared async client via lifespan; used by `/ready`; closed on
-   shutdown (verified by test).
-3. **Lifespan**: resource creation, startup connectivity validation
-   (log-only, API stays up), clean shutdown; no global mutable state —
-   `create_app(settings)` injects everything.
-4. **Celery**: app factory, Redis broker `/0` + result backend `/1`, JSON,
-   UTC; queues `control, sports_io, research_io, llm, evaluation,
-   notifications`; route patterns; `control.ping` task; empty beat schedule.
-5. **Compose**: api + postgres + redis + worker + beat (loopback ports,
-   named volumes, `sports-intel` project).
-6. **Migration 0001**: `jobs` + `job_attempts` only — scope proposal and
-   rationale in ADR-0006.
-7. **CI**: new integration job with Postgres/Redis service containers;
-   migration cycle tested on a fresh database.
-8. **Docs/state** updated; ADR-0006 added.
+1. **Isolated integration database.** Integration tests — including the
+   destructive migration cycle (`downgrade base` + reapply) — never touch
+   the dev database anymore:
+   - dedicated `sports_intel_test` database, auto-created by
+     `make test-integration` on the local Postgres;
+   - `TEST_DATABASE_URL` always points at it; Redis test traffic uses db 15;
+   - CI runs against its own ephemeral Postgres service container with
+     `sports_intel_test`;
+   - guard `tests/helpers.py::require_test_database` refuses any
+     `TEST_DATABASE_URL` whose database name does not end with `_test`
+     (loud `RuntimeError`, not a silent skip; unit-tested);
+   - verified: `sports_intel` table snapshot identical before and after
+     the integration suite.
+2. **Exception-safe lifespan cleanup.** Cleanup wrapped in `try/finally`
+   via `src/sports_intelligence/api/resources.py::close_resources`:
+   - Redis `aclose()` and engine `dispose()` are guaranteed to run on any
+     exit, including exceptions raised during the lifespan;
+   - a failure of one cleanup does not block the other (both are attempted,
+     each failure logged);
+   - tests: unit tests for failure isolation + a test that raises inside
+     the lifespan context and proves both resources were still closed.
+3. **Docs**: `docs/LOCAL_DEVELOPMENT.md` documents the test-database
+   isolation policy and the guard.
 
 ---
 
 # What should the reviewer verify?
 
-- lifespan resources are created once and cleaned up; `/ready` uses shared
-  resources;
-- migration 0001 applies/downgrades/reapplies on a fresh database;
+- integration tests (including the destructive migration cycle) can only
+  run against a `_test` database; the dev DB is untouched;
+- lifespan cleanup runs on exceptional exit and tolerates cleanup failures;
+- migration 0001 applies/downgrades/reapplies on a fresh test database;
 - Celery queues/routes match `09` §25; no football tasks leaked into M1;
-- integration tests exercise real services, unit tests stay service-free;
 - MOCK mode remains keyless;
 - no scope creep into M2+ (no sports/odds/search/LLM/Telegram code);
 - compose isolation (ports, volumes, project name).
 
 ---
 
-# Commands claimed as passing
+## Commands claimed as passing
 
 ```bash
 uv sync --frozen --dev
-uv run pytest -q -m "not integration"        # 34 passed
-uv run pytest -q -m integration              # 3 passed (needs TEST_DATABASE_URL/TEST_REDIS_URL)
+uv run pytest -q -m "not integration"        # 41 passed
+make test-integration                        # 3 passed, isolated sports_intel_test DB
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src
@@ -76,8 +82,11 @@ docker compose run --rm sports-api alembic upgrade head
 docker compose exec sports-worker celery -A sports_intelligence.workers.celery_app call control.ping --args='["smoke"]'
 ```
 
-CI runs unit + integration (service containers) + compose validation on
-every push; all three jobs green on `build/m1`.
+Negative check (guard): pointing `TEST_DATABASE_URL` at the dev database
+makes integration tests fail loudly with `RuntimeError` — verified.
+
+CI runs unit + integration (isolated service containers) + compose
+validation on every push; all three jobs green on `build/m1`.
 
 Reviewer must not assume tests passed based on status text alone.
 
@@ -101,7 +110,10 @@ Reviewer must not assume tests passed based on status text alone.
 # Files of highest relevance
 
 - `src/sports_intelligence/api/app.py` (lifespan)
+- `src/sports_intelligence/api/resources.py` (exception-safe cleanup)
 - `src/sports_intelligence/api/readiness.py`
+- `tests/helpers.py` (test-DB guard)
+- `tests/integration/conftest.py` + `test_db_resources.py` (isolated services)
 - `src/sports_intelligence/db/models/jobs.py`
 - `src/sports_intelligence/db/migrations/versions/0001_*.py`
 - `src/sports_intelligence/workers/celery_app.py`
