@@ -13,7 +13,10 @@ def create_celery_app(settings: Settings) -> Celery:
         "sports_intelligence",
         broker=settings.celery_broker_url,
         backend=settings.celery_result_backend,
-        include=["sports_intelligence.workers.tasks.control"],
+        include=[
+            "sports_intelligence.workers.tasks.control",
+            "sports_intelligence.workers.tasks.sports",
+        ],
     )
     application.conf.update(
         task_serializer="json",
