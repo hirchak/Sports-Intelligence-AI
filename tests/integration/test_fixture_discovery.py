@@ -298,7 +298,17 @@ def test_discovery_makes_single_provider_request_for_many_fixtures(
     assert state["calls"] == 1
 
 
-def test_job_row_created_with_pending_status(service_settings: Settings) -> None:
+def test_job_row_created_with_pending_status(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_intelligence.workers.tasks import sports as sports_tasks
+
+    monkeypatch.setattr(
+        sports_tasks.discover_fixtures_task,
+        "apply_async",
+        lambda args=None, queue=None, **kwargs: None,
+    )
+
     with TestClient(create_app(service_settings)) as client:
         client.post("/v1/jobs/discover", json={"date": "2026-08-26"})
 
