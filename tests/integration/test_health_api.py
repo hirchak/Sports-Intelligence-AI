@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from redis import exceptions as redis_exceptions
 
-from sports_intelligence.api.app import create_app
+from sports_intelligence.api import app as app_module
+from sports_intelligence.api.app import create_app, lifespan
 from sports_intelligence.core.config import Settings
 
 
@@ -38,3 +40,57 @@ async def test_redis_client_is_closed_after_shutdown(settings: Settings) -> None
         redis_client = application.state.redis_client
     with pytest.raises((redis_exceptions.ConnectionError, RuntimeError)):
         await redis_client.ping()
+
+
+class TrackingRedisClient:
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def ping(self) -> bool:
+        return True
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+class FakeConnection:
+    async def execute(self, statement: object) -> None:
+        return None
+
+    async def __aenter__(self) -> FakeConnection:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        return None
+
+
+class TrackingEngine:
+    def __init__(self) -> None:
+        self.disposed = False
+
+    def connect(self) -> FakeConnection:
+        return FakeConnection()
+
+    async def dispose(self) -> None:
+        self.disposed = True
+
+
+async def test_lifespan_cleanup_runs_on_exceptional_exit(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    tracking_redis = TrackingRedisClient()
+    tracking_engine = TrackingEngine()
+    monkeypatch.setattr(app_module, "create_engine", lambda url: tracking_engine)
+    monkeypatch.setattr(
+        app_module.aioredis.Redis, "from_url", lambda *args, **kwargs: tracking_redis
+    )
+
+    application = FastAPI(lifespan=lifespan)
+    application.state.settings = settings
+
+    with pytest.raises(RuntimeError, match="simulated failure"):
+        async with application.router.lifespan_context(application):
+            raise RuntimeError("simulated failure")
+
+    assert tracking_redis.closed is True
+    assert tracking_engine.disposed is True

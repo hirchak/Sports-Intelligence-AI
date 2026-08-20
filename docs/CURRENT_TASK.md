@@ -1,7 +1,7 @@
 # Current Task
 
-**Status:** COMPLETE — awaiting review  
-**Milestone:** M1 — Core Infrastructure  
+**Status:** COMPLETE — awaiting final review  
+**Milestone:** M1.1 (fix-milestone after M1 review: PASS WITH FIXES)  
 **Owner/agent:** DeepSeek V4 Pro (lead engineer, OpenCode)  
 **Started at:** 2026-08-20  
 **Last updated:** 2026-08-20
@@ -10,38 +10,33 @@
 
 # Task
 
-Turn the M0 skeleton into a real local core infrastructure for future
-pipelines. → **Done, commits on `build/m1`.**
+Apply M1 review fixes on `build/m1`. → **Done, commit on `build/m1`.**
 
 ---
 
 # Acceptance criteria — verified
 
-- `pytest -m "not integration"` → 34 passed (local + CI)
-- `pytest -m integration` → 3 passed against real Postgres/Redis
-  (local compose + CI service containers)
-- Ruff / format check / strict mypy → clean
-- `docker compose config -q` (+ dev override) → OK
-- Five services up locally; `/health` 200; `/ready` 200 via shared
-  lifespan resources; worker "ready" with 6 queues; beat started;
-  `control.ping` executed through the broker (smoke)
-- `alembic upgrade head` on fresh DB creates `jobs`/`job_attempts`;
-  apply→repeat→downgrade→reapply tested in CI
-- MOCK mode keyless → verified
+- Integration tests run only against `sports_intel_test`
+  (`make test-integration` auto-creates it; Redis db 15) → OK
+- Guard refuses non-`_test` databases (loud RuntimeError) → OK
+- Dev DB `sports_intel` unchanged after the integration suite
+  (table snapshot before/after) → OK
+- Migration downgrade/reapply runs on the isolated test DB → OK
+- Lifespan cleanup in try/finally; exceptional exit test proves both
+  resources closed; failure-isolation unit tests → OK
+- 41 unit tests + 3 integration tests green; ruff/format/mypy clean;
+  compose validation + docker smoke green → OK
 
 ---
 
 # Work notes
 
-- 2026-08-20: M0 finalized in main (PR #2). ADR-0006 written.
-- 2026-08-20: Implementation + verification complete (see worklog).
+- 2026-08-20: fixes implemented and verified (see worklog).
 
 ---
 
 # Completion
 
 - Status set to COMPLETE.
-- Commits: see `docs/REVIEW_HANDOFF.md`.
-- `docs/IMPLEMENTATION_STATUS.md`, `docs/AI_WORKLOG.md`,
-  `docs/REVIEW_HANDOFF.md` updated.
-- Stopped before M2, as required.
+- Commit: see `docs/REVIEW_HANDOFF.md`.
+- State files updated. Stopped before M2; no merge to main.

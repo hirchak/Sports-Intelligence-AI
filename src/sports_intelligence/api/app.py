@@ -7,6 +7,7 @@ import redis.asyncio as aioredis
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from sports_intelligence.api.resources import close_resources
 from sports_intelligence.api.routes import health
 from sports_intelligence.core.config import Settings, get_settings
 from sports_intelligence.core.logging import get_logger, setup_logging
@@ -39,11 +40,11 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
     except Exception:
         logger.warning("startup validation: redis unreachable", exc_info=True)
 
-    yield
-
-    await redis_client.aclose()
-    await engine.dispose()
-    logger.info("application shutdown complete")
+    try:
+        yield
+    finally:
+        await close_resources(redis_client, engine)
+        logger.info("application shutdown complete")
 
 
 def create_app(settings: Settings) -> FastAPI:

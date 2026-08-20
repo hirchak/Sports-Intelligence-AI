@@ -296,3 +296,63 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - Independent M1 review; merge to `main` after acceptance;
   M2 only with explicit user approval.
+
+---
+
+### 2026-08-20 — DeepSeek V4 Pro (fix milestone M1.1)
+
+**Milestone:** M1.1  
+**Task:** Apply M1 review fixes (verdict: PASS WITH FIXES)
+
+**Completed**
+- Isolated integration database: dedicated `sports_intel_test` (auto-created
+  by `make test-integration`); `TEST_DATABASE_URL` always test-DB; CI uses
+  ephemeral Postgres with `sports_intel_test`; Redis test traffic on db 15.
+- Guard `tests/helpers.py::require_test_database`: refuses any TEST_DATABASE_URL
+  whose DB name doesn't end with `_test` (loud RuntimeError). Unit-tested.
+- Dev DB protection verified: table snapshot of `sports_intel` identical
+  before/after the integration suite (twice).
+- Lifespan cleanup refactored to try/finally via
+  `api/resources.py::close_resources`; one failing cleanup never blocks the
+  other; exceptional-exit test proves redis aclose + engine dispose run.
+- Docs updated (LOCAL_DEVELOPMENT test isolation section).
+
+**Files changed**
+- Created: `src/sports_intelligence/api/resources.py`,
+  `tests/helpers.py`, `tests/unit/test_resources_cleanup.py`,
+  `tests/unit/test_testdb_guard.py`, `tests/integration/conftest.py`
+- Modified: `src/sports_intelligence/api/app.py`,
+  `tests/integration/test_health_api.py`,
+  `tests/integration/test_db_resources.py`, `Makefile`,
+  `.github/workflows/ci.yml`, `pyproject.toml` (pythonpath, helpers
+  first-party), `docs/LOCAL_DEVELOPMENT.md`, state files
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (41)
+- `make test-integration` → PASS (3) on sports_intel_test
+- guard negative check (dev DB URL) → fails loudly as designed
+- `uv run ruff check .` / `ruff format --check .` → PASS
+- `uv run mypy src` → PASS (strict)
+- `docker compose config -q` (+dev) → PASS
+- Docker smoke: 5 services up, /health 200, /ready 200
+- dev DB unchanged after suite (diff of table snapshots)
+
+**Live integrations verified**
+- none (by design).
+
+**Mocked only**
+- all external integrations remain interfaces only.
+
+**Known issues**
+- unchanged from M1 (Docker Desktop bake bug, starlette pin, celery untyped).
+
+**Spec / ADR deviations**
+- none new.
+
+**Git**
+- branch: `build/m1`
+- commit: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent M1.1 review; merge to `main` after acceptance;
+  M2 only with explicit user approval.

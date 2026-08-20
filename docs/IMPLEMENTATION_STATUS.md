@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M1 — implemented, awaiting review  
+**Current milestone:** M1 (+ fix-milestone M1.1) — implemented, awaiting final review  
 **Last updated:** 2026-08-20 (DeepSeek V4 Pro via OpenCode)  
 **Last known good commit:** see section 11
 
@@ -56,6 +56,25 @@ No Hermes access/dependency is authorized.
   containers) + compose validation; no external sports/LLM APIs.
 - MOCK mode remains fully keyless.
 
+## M1.1 — Fix milestone (independent review: PASS WITH FIXES)
+
+Review fixes implemented:
+
+- **Isolated integration database.** Integration tests (including the
+  destructive migration cycle) run only against a dedicated
+  `sports_intel_test` database: `make test-integration` auto-creates it,
+  `TEST_DATABASE_URL` always points at it, CI uses its own ephemeral
+  Postgres service database, Redis test traffic uses db `15`. A guard
+  (`tests/helpers.py::require_test_database`) refuses any URL whose
+  database name does not end with `_test` — loud failure, not a skip.
+  Verified: dev DB `sports_intel` table list identical before/after the
+  integration suite.
+- **Exception-safe lifespan cleanup.** Cleanup moved to `try/finally`
+  (`api/resources.py::close_resources`): on any exit (including exceptions)
+  both Redis `aclose()` and engine `dispose()` are attempted; a failure of
+  one cleanup does not block the other. Tests: exceptional-exit simulation
+  proves both resources are closed; unit tests prove failure isolation.
+
 ---
 
 # 3. In progress
@@ -66,17 +85,18 @@ None. M1 waits for review.
 
 # 4. Acceptance tests passed (actually run)
 
-- `uv run pytest -q -m "not integration"` → **34 passed**
-- `TEST_DATABASE_URL=… TEST_REDIS_URL=… uv run pytest -q -m integration`
-  (local compose services) → **3 passed**
+- `uv run pytest -q -m "not integration"` → **41 passed**
+- `make test-integration` (isolated `sports_intel_test` DB, local compose
+  services) → **3 passed**; dev DB verified unchanged (table snapshot diff)
+- Guard check: integration run against dev DB URL → fails loudly with
+  `RuntimeError` (as designed)
 - `uv run ruff check .` → **All checks passed**
-- `uv run ruff format --check .` → **43 files already formatted**
-- `uv run mypy src` → **Success: no issues found in 33 source files**
+- `uv run ruff format --check .` → **48 files already formatted**
+- `uv run mypy src` → **Success: no issues found in 34 source files**
 - `docker compose config -q` (+ dev override) → OK
 - Docker smoke: all five services up; `/health` 200; `/ready` 200
-  (shared resources); `alembic upgrade head` created `jobs`,
-  `job_attempts`, `alembic_version`; worker "ready" with all 6 queues;
-  beat started; `control.ping` executed through the broker and succeeded.
+  (shared resources); worker "ready" with all 6 queues; beat started;
+  `control.ping` executed through the broker and succeeded.
 
 ---
 
@@ -171,19 +191,19 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m1` (M1 work); `main` = `7000c32` (M0 accepted)
+- `build/m1` (M1 + M1.1 work); `main` = `7000c32` (M0 accepted)
 
 Commit:
-- M1 commits recorded in `docs/REVIEW_HANDOFF.md` after commit
+- M1.1 commit recorded in `docs/REVIEW_HANDOFF.md` after commit
 
 Working tree:
-- clean before M1 commits
+- clean before M1.1 commit
 
 ---
 
 # 12. Next action
 
-1. Independent review of M1 (see `docs/REVIEW_HANDOFF.md`).
+1. Final independent review of M1.1 (see `docs/REVIEW_HANDOFF.md`).
 2. After acceptance: merge `build/m1` into `main`.
 3. Only then start M2 with explicit user approval.
 

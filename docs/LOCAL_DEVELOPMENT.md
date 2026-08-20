@@ -89,11 +89,26 @@ to a fresh database, downgrade/upgrade is exercised in CI.
 ```bash
 make check           # lint + typecheck + unit tests
 make test            # pytest unit (no external services)
-make test-integration  # pytest integration (needs the local stack up)
+make test-integration  # pytest integration against the isolated test DB
 make lint            # ruff check + ruff format --check
 make format          # apply ruff formatting
 make typecheck       # mypy src
 ```
+
+## Test database isolation
+
+Integration tests are destructive by design (the migration test runs
+`alembic downgrade base` + reapply). They must never touch the development
+database:
+
+- `make test-integration` auto-creates and uses the dedicated
+  `sports_intel_test` database on the local Postgres (and Redis db `15`).
+- `TEST_DATABASE_URL` must always point at a database whose name ends with
+  `_test`; a guard in `tests/helpers.py` refuses to run integration tests
+  against any other database (loud `RuntimeError`, not a silent skip).
+- The dev database `sports_intel` is never downgraded or dropped by tests.
+- CI uses its own ephemeral Postgres service container with
+  `sports_intel_test`, so nothing shared is touched there either.
 
 ## Dependency management
 
