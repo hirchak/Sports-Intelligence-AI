@@ -1,6 +1,7 @@
 # Data Model
 
-Status: **planned** — no SQLAlchemy models and no migrations exist in M0.
+Status: **M1** — first migration implemented (`jobs`, `job_attempts`);
+football domain schema arrives in M2+.
 Authoritative design: `10_DATABASE_AND_DATA_LIFECYCLE.md`.
 
 ## Principles (from spec)
@@ -29,14 +30,29 @@ Key access paths must be indexed: `fixtures(kickoff_at)`,
 `fixtures(league_id, kickoff_at)`, `fixtures(status, kickoff_at)`,
 `odds_prices(snapshot_set_id, market)`, `jobs.idempotency_key` unique.
 
-## Migration workflow (from M1)
+## Implemented in M1 (migration 0001)
 
-1. edit/`add` SQLAlchemy models;
+### jobs
+
+`id` (UUID PK), `job_type`, `fixture_id` (nullable, no FK yet), `status`
+(indexed), `idempotency_key` (unique), `priority`, `scheduled_for`,
+`created_at`/`updated_at` (UTC), `correlation_id`.
+
+### job_attempts
+
+`id` (UUID PK), `job_id` (FK → jobs, CASCADE), `attempt_number`, `worker`,
+`started_at`/`finished_at`, `status`, `error_class`,
+`error_message_redacted`; unique `(job_id, attempt_number)`.
+
+Scope decision: ADR-0006.
+
+## Migration workflow
+
+1. edit/add SQLAlchemy models;
 2. `alembic revision --autogenerate -m "..."`;
 3. review the generated migration;
 4. `make migrate` against local compose Postgres;
 5. commit the migration file.
 
-M0 status: `alembic.ini` + async `env.py` configured and verified against the
-local Postgres (`alembic upgrade head` runs with zero revisions and creates
-the `alembic_version` table).
+Migrations are verified in CI on a fresh PostgreSQL: apply → repeat →
+downgrade → reapply (integration test `test_db_resources.py`).

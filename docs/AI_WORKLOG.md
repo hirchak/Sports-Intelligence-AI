@@ -226,3 +226,73 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - Final independent review of M0.1; merge to `main` after acceptance;
   M1 only with explicit user approval.
+
+---
+
+### 2026-08-20 — DeepSeek V4 Pro (M0 finalize + M1 core infrastructure)
+
+**Milestone:** M0 (finalize) + M1  
+**Task:** Finalize M0 in main; implement M1 core infrastructure
+
+**Completed**
+- M0 finalized: repository renamed to `hirchak/Sports-Intelligence-AI`;
+  remote updated; README/LOCAL_DEVELOPMENT clone URLs fixed; M0.1 merged to
+  main via PR #2 (merge commit `7000c32`, no force push); CI green on main;
+  tag `v0.1-m0` unchanged (`8d28138`).
+- M1 DB infra: shared `AsyncEngine` + `async_sessionmaker` + Redis client
+  in FastAPI lifespan; `get_session` dependency; `/ready` uses shared
+  resources; clean shutdown (engine disposed, redis aclosed — tested).
+- M1 Celery: app factory, Redis broker `/0` + backend `/1`, JSON/UTC,
+  6 queues per agent catalog, route patterns, `control.ping` task,
+  empty beat schedule; worker + beat compose services.
+- M1 migration `0001`: `jobs` + `job_attempts` (scope ADR-0006).
+- CI: new integration job with postgres/redis service containers;
+  unit job excludes integration.
+- Docs updated (README, ARCHITECTURE, LOCAL_DEVELOPMENT, DATA_MODEL,
+  PIPELINES, ADR-0006).
+
+**Files changed**
+- Created: `src/sports_intelligence/db/models/{base,jobs}.py`,
+  `db/migrations/versions/0001_*.py`, `api/readiness.py`,
+  `api/dependencies.py`, `workers/celery_app.py`, `workers/tasks/control.py`,
+  `tests/unit/test_celery_app.py`, `tests/unit/test_readiness.py`,
+  `tests/integration/test_db_resources.py`, `docs/adr/0006-*.md`
+- Modified: `core/config.py` (celery URLs), `api/app.py` (lifespan),
+  `api/routes/health.py`, `db/migrations/env.py` (metadata + preset URL),
+  `script.py.mako`, `alembic.ini` (path_separator), `pyproject.toml`
+  (celery dep, mypy overrides, markers), `compose.yaml` (worker/beat),
+  `Makefile`, `.env.example`, `.github/workflows/ci.yml`, README, docs/*
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (34)
+- `uv run pytest -q -m integration` (local services) → PASS (3)
+- `uv run ruff check .` / `ruff format --check .` → PASS
+- `uv run mypy src` → PASS (strict)
+- `docker compose config -q` (+ dev override) → PASS
+- Docker smoke: 5 services up; /health 200; /ready 200; alembic upgrade
+  created jobs/job_attempts/alembic_version; worker ready (6 queues);
+  beat started; `control.ping` via broker → succeeded (pong=True)
+- CI on push → confirmed below
+
+**Live integrations verified**
+- none (by design in M1).
+
+**Mocked only**
+- all external integrations remain interfaces only.
+
+**Known issues**
+- Docker Desktop multi-service bake gRPC bug on macOS; per-service build
+  workaround documented in LOCAL_DEVELOPMENT.md.
+- starlette `<1.0` pin; uvicorn plain access logs (minor).
+- celery untyped → `type: ignore[untyped-decorator]` on ping task.
+
+**Spec / ADR deviations**
+- ADR-0006 (M1 migration scope + celery queue layout).
+
+**Git**
+- branch: `build/m1`
+- commits: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent M1 review; merge to `main` after acceptance;
+  M2 only with explicit user approval.
