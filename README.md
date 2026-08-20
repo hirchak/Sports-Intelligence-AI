@@ -6,7 +6,7 @@ Current phase: **LOCAL DEVELOPMENT ONLY** (no server deployment, no Hermes depen
 
 ## Status
 
-- Milestone: **M0 — complete, pending review** (`build/m0` branch)
+- Milestone: **M0 accepted (PASS)**; **M1 implemented, pending review** (`build/m1` branch)
 - See `docs/IMPLEMENTATION_STATUS.md` for the canonical state.
 
 ## What this is
@@ -27,12 +27,13 @@ Authoritative specifications live in the repository root (`00_MASTER_TECHNICAL_S
 
 ```text
 src/sports_intelligence/   application code (src layout)
-  api/                     FastAPI control API (M0: /health, /ready)
+  api/                     FastAPI control API (/health, /ready, lifespan)
   core/                    config, structured logging, time, ids
-  db/                      async session factory, Alembic migrations
+  db/                      async engine/session factory, models, migrations
   providers/               provider interfaces (Protocols, no impl yet)
+  workers/                 Celery app, queues, tasks
   schemas/                 Pydantic response models
-  bot/ domain/ features/ pipelines/ ranking/ research/ workers/
+  bot/ domain/ features/ pipelines/ ranking/ research/
                            reserved packages for future milestones
 tests/                     unit / integration / contract / fixtures
 docs/                      architecture, ADRs, dev/deploy/security docs
@@ -55,13 +56,19 @@ curl http://127.0.0.1:8000/ready     # -> 200 when DB+Redis are up
 
 Alternatively: `make bootstrap && make up`.
 
+The stack: API, Postgres 16, Redis 7, Celery worker, Celery beat.
+
 Host-side ports (loopback only): Postgres 5433, Redis 6380, API 8000.
+
+Celery queues (per agent catalog): `control`, `sports_io`, `research_io`,
+`llm`, `evaluation`, `notifications`.
 
 ## Local development
 
 ```bash
 uv sync --dev                # install locked dependencies
-make check                   # ruff + mypy + pytest
+make check                   # ruff + mypy + pytest (unit)
+make test-integration        # pytest integration (needs running services)
 make migrate                 # alembic upgrade head (inside api container)
 make dev                     # stack up + follow api logs
 ```
@@ -88,10 +95,11 @@ provider has no API key.
 ## Testing / quality gates
 
 ```bash
-uv run pytest -q        # unit + integration tests
-uv run ruff check .     # lint
+uv run pytest -q -m "not integration"   # unit tests
+uv run pytest -q -m integration         # DB/Redis tests (services required)
+uv run ruff check .                     # lint
 uv run ruff format --check .
-uv run mypy src         # strict type checking
+uv run mypy src                         # strict type checking
 ```
 
 CI runs the same gates on every push/PR (`.github/workflows/ci.yml`).

@@ -31,8 +31,54 @@ jobs:
       - name: mypy
         run: uv run mypy src
 
-      - name: pytest
-        run: uv run pytest -q
+      - name: pytest (unit)
+        run: uv run pytest -q -m "not integration"
+
+  integration-tests:
+    name: integration tests (Postgres + Redis)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sports
+          POSTGRES_PASSWORD: sports_dev_password
+          POSTGRES_DB: sports_intel_test
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U sports -d sports_intel_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - "6379:6379"
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://sports:sports_dev_password@localhost:5432/sports_intel_test
+      TEST_REDIS_URL: redis://localhost:6379/15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install locked dependencies
+        run: uv sync --frozen --dev
+
+      - name: pytest (integration)
+        run: uv run pytest -q -m integration
 
   compose-validation:
     name: docker compose config validation

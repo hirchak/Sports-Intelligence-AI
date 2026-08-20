@@ -1,6 +1,8 @@
 # Pipelines
 
-Status: **planned** — no pipeline code exists in M0.
+Status: **M1** — queue/routing infrastructure present (`control`, `sports_io`,
+`research_io`, `llm`, `evaluation`, `notifications`); pipeline code arrives
+in M2+.
 Authoritative design: `08_FOOTBALL_ANALYTICS_PIPELINE.md` and
 `09_AGENT_CATALOG_AND_ORCHESTRATION.md`.
 
@@ -46,13 +48,13 @@ improvement hypotheses.
 
 ## Implementation plan
 
-| Piece                    | Milestone |
-|--------------------------|-----------|
-| Jobs, queues, retries    | M1        |
-| Fixture discovery        | M2        |
-| Match collectors + odds  | M4        |
-| Research                 | M5        |
-| Features + MatchContext  | M6        |
-| Prediction + ranking     | M7        |
-| Settlement + evaluation  | M8        |
-| Improvements + replay    | M9        |
+| Piece                    | Milestone | State |
+|--------------------------|-----------|-------|
+| Jobs, queues, retries    | M1        | queue infra + `jobs`/`job_attempts` schema done; orchestrator logic M2+ |
+| Fixture discovery        | M2        | planned |
+| Match collectors + odds  | M4        | planned |
+| Research                 | M5        | planned |
+| Features + MatchContext  | M6        | planned |
+| Prediction + ranking     | M7        | planned |
+| Settlement + evaluation  | M8        | planned |
+| Improvements + replay    | M9        | planned |
