@@ -26,6 +26,8 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel"
     )
     redis_url: str = "redis://localhost:6380/0"
+    celery_broker_url: str = "redis://localhost:6380/0"
+    celery_result_backend: str = "redis://localhost:6380/1"
 
     telegram_bot_token: str = ""
     telegram_allowed_user_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)

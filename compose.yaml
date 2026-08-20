@@ -1,5 +1,14 @@
 name: sports-intel
 
+x-app-environment: &app-environment
+  APP_ENV: ${APP_ENV:-mock}
+  APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Warsaw}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sports}:${POSTGRES_PASSWORD:-sports_dev_password}@sports-postgres:5432/${POSTGRES_DB:-sports_intel}
+  REDIS_URL: redis://sports-redis:6379/0
+  CELERY_BROKER_URL: redis://sports-redis:6379/0
+  CELERY_RESULT_BACKEND: redis://sports-redis:6379/1
+
 services:
   sports-postgres:
     image: postgres:16-alpine
@@ -35,12 +44,7 @@ services:
     build:
       context: .
       target: production
-    environment:
-      APP_ENV: ${APP_ENV:-mock}
-      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Warsaw}
-      LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-sports}:${POSTGRES_PASSWORD:-sports_dev_password}@sports-postgres:5432/${POSTGRES_DB:-sports_intel}
-      REDIS_URL: redis://sports-redis:6379/0
+    environment: *app-environment
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -60,6 +64,48 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
+
+  sports-worker:
+    build:
+      context: .
+      target: production
+    command:
+      [
+        "celery",
+        "-A",
+        "sports_intelligence.workers.celery_app",
+        "worker",
+        "--loglevel=INFO",
+        "--queues=control,sports_io,research_io,llm,evaluation,notifications",
+      ]
+    environment: *app-environment
+    depends_on:
+      sports-postgres:
+        condition: service_healthy
+      sports-redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  sports-beat:
+    build:
+      context: .
+      target: production
+    command:
+      [
+        "celery",
+        "-A",
+        "sports_intelligence.workers.celery_app",
+        "beat",
+        "--loglevel=INFO",
+        "--schedule=/tmp/celerybeat-schedule",
+      ]
+    environment: *app-environment
+    depends_on:
+      sports-postgres:
+        condition: service_healthy
+      sports-redis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
