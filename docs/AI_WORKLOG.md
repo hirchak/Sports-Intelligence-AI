@@ -164,3 +164,65 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - Independent M0 review; merge `build/m0` → `main` after acceptance;
   then M1 only with explicit user approval.
+
+---
+
+### 2026-08-20 — DeepSeek V4 Pro (fix milestone M0.1)
+
+**Milestone:** M0.1  
+**Task:** Apply review fixes (M0 review verdict: PASS WITH FIXES)
+
+**Completed**
+- `Settings` now loads the shared `.env` reliably: `env_ignore_empty=True`,
+  `extra="ignore"` (Compose-only `POSTGRES_*` tolerated),
+  `TELEGRAM_ALLOWED_USER_IDS` via `NoDecode` + comma-separated before-validator.
+  Declared-field type validation unchanged and tested.
+- ADR-0004 updated to document the new validation policy and alternatives.
+- `.env.example` comments clarify compose-only variables and comma format.
+- 7 dotenv regression tests added (read real dotenv files, not only kwargs):
+  `.env.example` load, empty/comma user IDs, mock keyless, non-mock failure,
+  compose-only tolerance, bad-type rejection.
+- README + docs/LOCAL_DEVELOPMENT.md clone instructions fixed
+  (`git clone git@github.com:hirchak/-.git sports-intelligence`).
+- Technical debt recorded in IMPLEMENTATION_STATUS: M1 shared engine/client
+  via lifespan for `/ready`; M2 normalized DTOs for provider interfaces.
+
+**Files changed**
+- `src/sports_intelligence/core/config.py`
+- `tests/unit/test_config_dotenv.py` (new)
+- `docs/adr/0004-runtime-modes-and-config-validation.md`
+- `.env.example`, `README.md`, `docs/LOCAL_DEVELOPMENT.md`
+- `docs/IMPLEMENTATION_STATUS.md`, `docs/CURRENT_TASK.md`,
+  `docs/AI_WORKLOG.md`, `docs/REVIEW_HANDOFF.md`
+
+**Verification**
+- `uv run pytest -q` → PASS (24 tests: 17 M0 + 7 dotenv regression)
+- `uv run ruff check .` / `ruff format --check .` → PASS
+- `uv run mypy src` → PASS (strict)
+- `docker compose up -d --build sports-api` → healthy after rebuild
+- `GET /health` → 200; `GET /ready` → 200
+- `docker compose exec sports-api alembic current` → exit 0
+- CI: green after push (confirmed below)
+
+**Live integrations verified**
+- none (by design).
+
+**Mocked only**
+- all external integrations remain interfaces only.
+
+**Known issues**
+- starlette `<1.0` pin and uvicorn plain-text access logs remain (see M0 entry).
+- `extra="ignore"` reduces unknown-var typo detection; mitigated by dotenv
+  regression tests covering every documented variable.
+
+**Spec / ADR deviations**
+- ADR-0004 updated (env_ignore_empty, extra="ignore", NoDecode).
+
+**Git**
+- branch: `build/m0`
+- commit: recorded in REVIEW_HANDOFF after commit
+- tag: `v0.1-m0` moved to the final M0.1 commit
+
+**Next action**
+- Final independent review of M0.1; merge to `main` after acceptance;
+  M1 only with explicit user approval.
