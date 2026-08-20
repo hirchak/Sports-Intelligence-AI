@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M2 — implemented, awaiting review  
+**Current milestone:** M2 (+ fix-milestone M2.1) — implemented, awaiting final review  
 **Last updated:** 2026-08-20 (DeepSeek V4 Pro via OpenCode)  
 **Last known good commit:** see section 11
 
@@ -125,6 +125,45 @@ Review fixes implemented:
   repeat run: 0 created / 1 updated / payload dedup — idempotent.
   Rate limiting respected; key absent from all logs.
 
+## M2.1 — Fix milestone (independent review: PASS WITH FIXES)
+
+All review items implemented:
+
+- **retrieved_at semantics**: captured AFTER the final successful response
+  (post-retry); regression test with retry/delay proves the timestamp is
+  not the pre-request time.
+- **Immutable evidence history** (ADR-0009): deduplicated content
+  (`raw_provider_payloads`) + append-only `provider_observations` (one row
+  per retrieval event with its own `retrieved_at`); replay can resolve the
+  snapshot available at `as_of`. Migration 0003 includes a data migration
+  for existing rows. Verified: repeat discovery appends an observation
+  while content stays deduplicated.
+- **Atomic provider identity**: PostgreSQL CTE arbiter for teams and
+  fixtures — concurrent discoveries produce exactly one Team row and one
+  mapping (concurrency test with `asyncio.gather`). Fixture refresh
+  updates mutable metadata in place (same UUID; kickoff-change test).
+- **League `enabled` sync**: `upsert_league_id` updates `enabled` on
+  conflict (false→true→false test).
+- **Per-provider enabled leagues**: discovery resolves enabled IDs for the
+  CURRENT provider; zero enabled → empty summary with 0 external calls
+  (test); `config/leagues.mock.yaml` carries explicit `mock:` +
+  `api_football:` IDs.
+- **Timezone**: "today" via `APP_TIMEZONE`; `?date=` converted to
+  timezone-aware UTC boundaries for DB queries; API-Football request
+  includes `timezone=APP_TIMEZONE`; canonical DB timestamps remain UTC;
+  unit tests incl. DST transition (25h day) and local/UTC midnight.
+- **Provider safety**: `mock` only when explicitly configured; unknown
+  values fail fast with `ProviderConfigError` (typo test).
+- **Job enqueue failure**: failed enqueue marks the job FAILED (502
+  response); repeated POST re-enqueues the SAME job row (no duplicates)
+  and resets it to PENDING (test covers both phases).
+- **Missing data**: no invented "Unknown"/"UNKNOWN" — team/league names
+  nullable in DTO/DB; missing fixture status (required identity) fails
+  validation.
+- **ADR-0008 reconciled**: composite indexes `(league_id, kickoff_at)` and
+  `(status, kickoff_at)` actually created in migration 0003; redundant
+  single-column indexes dropped.
+
 ---
 
 # 3. In progress
@@ -135,18 +174,20 @@ None. M1 waits for review.
 
 # 4. Acceptance tests passed (actually run)
 
-- `uv run pytest -q -m "not integration"` → **63 passed**
-- `make test-integration` (isolated `sports_intel_test` DB) → **10 passed**
-  (discovery persistence, idempotency, league filtering, API filters,
-  job idempotency, N+1 guard, migration cycle, readiness)
+- `uv run pytest -q -m "not integration"` → **74 passed**
+- `make test-integration` (isolated `sports_intel_test` DB) → **16 passed**
+  (incl. concurrency, refresh, enabled-sync, no-op no-call, timezone
+  boundaries, enqueue failure/requeue, local "today", evidence history)
 - `uv run ruff check .` / `ruff format --check .` → clean
-- `uv run mypy src` → **no issues in 50 source files** (strict)
+- `uv run mypy src` → **no issues in 51 source files** (strict)
 - `docker compose config -q` (+dev) → OK
-- Docker smoke: 5 services up; `/health`/`/ready` 200; mock AND live
-  discovery through the real stack (see section 5); `GET /v1/fixtures`
-  returns normalized rows; job SUCCEEDED; dev/test DB isolation intact
-- Secret scan: API key present only in local `.env` (gitignored); absent
-  from logs, tests and Git
+- Docker smoke: 5 services; `/health`/`/ready` 200; migration 0003
+  applied to dev DB (data migration moved the existing live payload row
+  into `provider_observations`); MOCK discovery via Celery: 4 received →
+  3 created, repeat run 0 created/3 updated, observation appended while
+  content deduplicated; bounded live API-Football smoke: 1 request, 383
+  fixtures → 1 eligible updated, observation appended, no key in logs
+- Secret scan: keys present only in local `.env` (gitignored)
 
 ---
 
@@ -154,10 +195,10 @@ None. M1 waits for review.
 
 ## Verified live
 
-- **API-Football fixture discovery** — bounded live smoke (2 requests):
-  real response, normalization, persistence, repeat idempotency, raw
-  payload dedup, rate-limit headers observed. Full production use not yet
-  exercised (single date, single league).
+- **API-Football fixture discovery** — bounded live smoke (M2: 2 requests,
+  M2.1: 1 request): real response, normalization, persistence, repeat
+  idempotency, evidence history, rate-limit headers, `timezone` parameter.
+  Full production use not yet exercised (single date, single league).
 
 ## Mocked / not yet verified
 
@@ -199,21 +240,21 @@ None. M1 waits for review.
   ADR-0004.
 - M1 migration scope limited to `jobs`/`job_attempts` → ADR-0006.
 - API-Football chosen as first provider → ADR-0007.
-- M2 schema scope (six tables, upsert strategy) → ADR-0008.
-- Enabled-league filter matches provider league IDs regardless of the
-  provider key in `provider_ids` (mock emulates api_football IDs) —
-  documented assumption, no ADR needed.
+- M2 schema scope (six tables, upsert strategy) → ADR-0008 (amended in
+  M2.1: atomic CTE arbiter, composite indexes, enabled sync).
+- Immutable provider observation history → ADR-0009.
 
 ---
 
 # 8. Database/migrations
 
 Status:
-- migrations `0001` (jobs) + `0002` (discovery) applied locally and
-  verified in CI on a fresh DB (apply → repeat → downgrade → reapply).
+- migrations `0001` (jobs), `0002` (discovery), `0003` (evidence history +
+  composite indexes + nullable team name) applied locally and verified in
+  CI on a fresh DB (apply → repeat → downgrade → reapply).
 
 Latest migration:
-- `0002_create_discovery_tables`
+- `0003_provider_evidence_history_and_indexes`
 
 Local DB preservation required:
 - no, until meaningful live test data exists

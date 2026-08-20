@@ -57,10 +57,22 @@ Scope decision: ADR-0006.
   kickoff/league/status lookups.
 - `provider_entity_ids` — provider + entity_type + external_id → internal
   UUID; unique identity; never a primary key.
-- `raw_provider_payloads` — provider, endpoint_family, request_fingerprint,
-  payload_hash, JSONB payload, retrieved_at; hash-deduplicated.
+- `raw_provider_payloads` — deduplicated content: provider, endpoint_family,
+  payload_hash, JSONB payload, first_seen_at.
+- `provider_observations` (M2.1, ADR-0009) — one immutable row per
+  retrieval event: payload_id FK, provider, endpoint_family,
+  request_fingerprint, retrieved_at (time the final response was
+  received), response_status. Replay resolves the snapshot available at
+  `as_of` via `retrieved_at <= as_of`.
 
-Upsert strategy and scope decision: ADR-0008. All timestamps UTC.
+M2.1 also: composite indexes `(league_id, kickoff_at)` and
+`(status, kickoff_at)` (ADR-0008 amendment); atomic provider-identity
+acquisition via a PostgreSQL CTE arbiter (single team row + single
+mapping under concurrency); `teams.name` nullable (no invented
+"Unknown"); league upsert syncs `enabled`.
+
+Upsert strategy and scope decisions: ADR-0008 (amended), ADR-0009.
+All timestamps UTC.
 
 ## Migration workflow
 

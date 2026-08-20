@@ -1,7 +1,7 @@
 # Current Task
 
-**Status:** COMPLETE — awaiting review  
-**Milestone:** M2 — Sports Provider + Fixture Discovery  
+**Status:** COMPLETE — awaiting final review  
+**Milestone:** M2.1 (fix-milestone after M2 review: PASS WITH FIXES)  
 **Owner/agent:** DeepSeek V4 Pro (lead engineer, OpenCode)  
 **Started at:** 2026-08-20  
 **Last updated:** 2026-08-20
@@ -10,36 +10,32 @@
 
 # Task
 
-First real sports provider (API-Football) + deterministic fixture
-discovery. → **Done, commits on `build/m2`.**
+Apply M2 review fixes on `build/m2`. → **Done, commits on `build/m2`.**
 
 ---
 
 # Acceptance criteria — verified
 
-- Typed DTOs (no `dict[str, Any]` on discovery path) → OK
-- API-Football adapter: env-only key, timeout, bounded retry, normalized
-  errors, safe logging, injected transport → OK (unit-tested)
-- Batch-first discovery, no N+1 (guard test) → OK
-- Raw evidence persistence with hash dedup → OK
-- Migration 0002 on fresh test DB (apply/repeat/downgrade/reapply) → OK
-- Discovery idempotency (repeat → no duplicates) → OK (integration + live)
-- League YAML config + seed path → OK
-- `GET /v1/fixtures` (+filters), `GET /v1/fixtures/{id}`,
-  `POST /v1/jobs/discover` (idempotent job) → OK
-- Celery `sports.discover_fixtures` on `sports_io`; no schedule → OK
-- Mock mode keyless; contract tests incl. malformed/errors/timeout/key-leak
-  → OK
-- Live smoke (bounded, 2 calls) with real key → OK; key only in `.env`
-- Unit 63 / integration 10 / ruff / format / strict mypy / compose /
-  docker smoke → OK
+- retrieved_at after final response (retry test) → OK
+- evidence content/observation split, ADR-0009, replay `as_of` queryable → OK
+- atomic identity (CTE arbiter): concurrency test — one Team, one mapping → OK
+- fixture refresh keeps UUID, updates kickoff/status/venue/round/refs → OK
+- league `enabled` sync false→true→false → OK
+- per-provider enabled IDs; no-op without enabled leagues (0 calls) → OK
+- timezone: local today, window boundaries, DST test, adapter `timezone`
+  param, API date filter in APP_TIMEZONE → OK
+- provider typo → ProviderConfigError → OK
+- enqueue failure → FAILED + 502; re-POST requeues same job → OK
+- no invented Unknown/UNKNOWN; nullable names; required status fails → OK
+- ADR-0008 ↔ migration 0003 reconciled (composite indexes created) → OK
+- 74 unit + 16 integration green; ruff/format/mypy/compose green;
+  MOCK + bounded live smoke green; secret scan clean → OK
 
 ---
 
 # Work notes
 
-- 2026-08-20: M1 finalized (PR #3, tag `v0.2-m1`); M2 implemented and
-  verified, including a bounded live API-Football smoke.
+- 2026-08-20: fixes implemented and verified (see worklog).
 
 ---
 
@@ -47,4 +43,4 @@ discovery. → **Done, commits on `build/m2`.**
 
 - Status set to COMPLETE.
 - Commits: see `docs/REVIEW_HANDOFF.md`.
-- State files and docs updated. Stopped before M3; no merge to main.
+- State files/docs updated. No merge to main; stopped before M3.

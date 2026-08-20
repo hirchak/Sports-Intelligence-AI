@@ -1,6 +1,7 @@
 # Architecture
 
-Status: M2 — sports provider + fixture discovery implemented; deeper pipelines arrive in M4+.
+Status: M2.1 — discovery hardened (immutable evidence history, atomic
+identity, timezone-aware dates); deeper pipelines arrive in M4+.
 
 ## Layered boundaries
 
@@ -77,7 +78,18 @@ probes DB and Redis and logs the result without crashing the API.
 - `MockSportsDataProvider`: recorded, sanitized responses; no key; used by
   MOCK mode, CI and deterministic tests.
 - Discovery is batch-first: one date-level request fetches all fixtures of
-  the day; enabled leagues are filtered locally. See ADR-0007.
+  the day; enabled leagues are filtered locally (resolved per current
+  provider — no cross-provider ID mixing; zero enabled leagues → no
+  provider call at all). See ADR-0007.
+- Raw evidence is immutable history: deduplicated content
+  (`raw_provider_payloads`) + append-only retrieval events
+  (`provider_observations`) — ADR-0009.
+- Provider identity acquisition is concurrency-safe via a PostgreSQL CTE
+  arbiter; fixture refreshes update mutable metadata in place (same UUID).
+- `retrieved_at` is captured after the final successful response
+  (post-retry); dates are timezone-aware: "today" and `?date=` boundaries
+  use `APP_TIMEZONE`; API-Football receives the `timezone` parameter while
+  DB timestamps stay UTC.
 
 ## Discovery flow (M2)
 

@@ -95,7 +95,10 @@ Two provider modes (`SPORTS_PROVIDER` in `.env`):
 
 Leagues are configured in YAML (`LEAGUES_CONFIG_PATH`, default
 `config/leagues.yaml` — all leagues disabled by default so no quota is
-spent accidentally). Seed league rows into the DB with `make seed`.
+spent accidentally). `provider_ids` are explicit per provider (`mock`
+and/or `api_football`); discovery resolves IDs only for the CURRENT
+provider and makes zero external calls when no enabled league exists.
+Seed league rows into the DB with `make seed`.
 
 Manual discovery (bounded: one API request per date):
 

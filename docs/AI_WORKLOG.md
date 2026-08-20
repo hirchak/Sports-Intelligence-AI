@@ -433,3 +433,85 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - Independent M2 review; merge to `main` after acceptance;
   M3 only with explicit user approval.
+
+---
+
+### 2026-08-20 — DeepSeek V4 Pro (fix milestone M2.1)
+
+**Milestone:** M2.1  
+**Task:** Apply M2 review fixes (verdict: PASS WITH FIXES)
+
+**Completed**
+- retrieved_at moved after final successful response (post-retry);
+  regression test with retry/delay.
+- Immutable evidence history: raw_provider_payloads (content, dedup) +
+  provider_observations (append-only retrieval events); ADR-0009;
+  migration 0003 with data migration for existing rows; replay resolves
+  as_of via observation.retrieved_at.
+- Atomic identity: PostgreSQL CTE arbiter for teams/fixtures (mapping
+  insert decides winner; entity row created in same statement with the
+  mapping's id); concurrency test (asyncio.gather) proves one Team + one
+  mapping. Fixture refresh updates mutable metadata in place (same UUID;
+  kickoff-change test).
+- upsert_league_id syncs `enabled` (test false→true→false).
+- Discovery resolves enabled league IDs per CURRENT provider; zero enabled
+  → empty summary + 0 provider calls (test); config/leagues.mock.yaml with
+  explicit mock:/api_football: IDs.
+- Timezone: local_today/utc_window_for_local_day (APP_TIMEZONE); POST
+  without date uses local date; GET ?date= uses local-day UTC boundaries;
+  adapter sends timezone param; DST-boundary + midnight tests.
+- Provider factory: unknown/empty provider → ProviderConfigError (no
+  silent mock fallback).
+- Enqueue failure → job FAILED + 502; re-POST requeues the same job row
+  (PENDING), no duplicates.
+- Missing data: nullable team/league names in DTO/DB; missing status
+  (required identity) fails validation; no Unknown/UNKNOWN invented.
+- ADR-0008 amended (composite indexes created in 0003, atomic pattern,
+  enabled sync); mock_data packaged into wheel (hatch force-include).
+
+**Files changed**
+- Created: `db/migrations/versions/0003_*.py`,
+  `docs/adr/0009-immutable-provider-observation-history.md`,
+  `tests/unit/test_factory_and_retry.py`, `tests/unit/test_time.py`
+- Modified: `providers/dto.py`, `providers/errors.py`,
+  `providers/base.py`, `providers/sports/{api_football,factory,mock}.py`,
+  `core/time.py`, `db/models/{discovery.py,__init__.py}`,
+  `db/repositories/discovery.py`, `pipelines/discover_fixtures.py`,
+  `api/routes/{fixtures,jobs}.py`, `schemas/fixtures.py`,
+  `workers/tasks/sports.py`, `pyproject.toml` (hatch force-include),
+  `config/leagues.mock.yaml`, `tests/integration/test_fixture_discovery.py`,
+  `docs/adr/0008-*.md` (amendment), docs/*, state files
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (74)
+- `make test-integration` → PASS (16) on isolated sports_intel_test
+- ruff / format / strict mypy (51 files) / compose validation → PASS
+- Docker smoke: 0003 applied (existing live row migrated to
+  observations); MOCK discovery via stack: 4→3 created, repeat 0/3 +
+  observation appended, content dedup; bounded live smoke: 1 request,
+  383 fixtures, 1 eligible updated, observation appended; no key in logs
+- secret scan clean; keys only in local .env
+
+**Live integrations verified**
+- API-Football discovery: bounded smoke (1 call in M2.1). Not verified:
+  multi-day production usage, quota edges.
+
+**Mocked only**
+- MockSportsDataProvider for offline/CI/test runs.
+
+**Known issues**
+- Docker Desktop bake bug (per-service build workaround).
+- job_attempts rows not written (M4); QuotaManager (M4).
+- Enqueue-failure recovery covers FAILED jobs via manual re-POST; PENDING
+  jobs lost from the broker are not auto-detected until M4 outbox.
+
+**Spec / ADR deviations**
+- ADR-0008 amended; ADR-0009 created.
+
+**Git**
+- branch: `build/m2`
+- commits: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent M2.1 review; merge to `main` after acceptance;
+  M3 only with explicit user approval.
