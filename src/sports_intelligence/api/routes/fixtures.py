@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import date
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sports_intelligence.api.dependencies import get_session
+from sports_intelligence.core.time import utc_window_for_local_day
 from sports_intelligence.db.models import Fixture, League, Team
 from sports_intelligence.schemas.fixtures import FixtureOut
 
@@ -17,7 +18,9 @@ router = APIRouter(prefix="/v1/fixtures", tags=["fixtures"])
 SessionDependency = Annotated[AsyncSession, Depends(get_session)]
 
 
-def _to_out(fixture: Fixture, league_slug: str, home_name: str, away_name: str) -> FixtureOut:
+def _to_out(
+    fixture: Fixture, league_slug: str, home_name: str | None, away_name: str | None
+) -> FixtureOut:
     return FixtureOut(
         id=fixture.id,
         league_slug=league_slug,
@@ -32,6 +35,7 @@ def _to_out(fixture: Fixture, league_slug: str, home_name: str, away_name: str) 
 
 @router.get("", response_model=list[FixtureOut])
 async def list_fixtures(
+    request: Request,
     session: SessionDependency,
     date: date | None = None,
     league: str | None = None,
@@ -46,8 +50,8 @@ async def list_fixtures(
         .order_by(Fixture.kickoff_at)
     )
     if date is not None:
-        day_start = datetime.combine(date, time.min, tzinfo=UTC)
-        day_end = day_start + timedelta(days=1)
+        settings = request.app.state.settings
+        day_start, day_end = utc_window_for_local_day(date, settings.app_timezone)
         statement = statement.where(Fixture.kickoff_at >= day_start, Fixture.kickoff_at < day_end)
     if league is not None:
         statement = statement.where(League.slug == league)

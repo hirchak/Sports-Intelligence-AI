@@ -17,7 +17,7 @@ class ProviderResponseMetadata(BaseModel):
 
 class ProviderLeague(BaseModel):
     provider_league_id: int
-    name: str
+    name: str | None = None
     country: str | None = None
 
 
@@ -28,7 +28,7 @@ class ProviderSeason(BaseModel):
 
 class ProviderTeam(BaseModel):
     provider_team_id: int
-    name: str
+    name: str | None = None
 
 
 class ProviderFixture(BaseModel):
@@ -37,8 +37,8 @@ class ProviderFixture(BaseModel):
     provider_season: int | None = None
     provider_home_team_id: int
     provider_away_team_id: int
-    home_team_name: str
-    away_team_name: str
+    home_team_name: str | None = None
+    away_team_name: str | None = None
     kickoff_utc: datetime
     venue: str | None = None
     round: str | None = None

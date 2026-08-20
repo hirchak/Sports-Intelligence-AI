@@ -51,14 +51,19 @@ class ApiFootballProvider:
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(provider="api_football", supports_fixtures_by_date=True)
 
-    async def get_fixtures_by_date(self, fixture_date: date) -> FixtureDiscoveryResult:
-        retrieved_at = utc_now()
+    async def get_fixtures_by_date(
+        self, fixture_date: date, timezone_name: str | None = None
+    ) -> FixtureDiscoveryResult:
+        params = {"date": fixture_date.isoformat()}
+        if timezone_name is not None:
+            params["timezone"] = timezone_name
         response = await self._request_with_retry(
             method="GET",
             path="/fixtures",
-            params={"date": fixture_date.isoformat()},
+            params=params,
             headers={"x-apisports-key": self._api_key},
         )
+        retrieved_at = utc_now()
         payload = self._decode_payload(response)
         result = parse_fixtures_response(
             payload, retrieved_at=retrieved_at, provider="api_football"
@@ -146,10 +151,9 @@ def parse_fixtures_response(
             raw_away = raw_teams.get("away") or {}
 
             league_id = int(raw_league["id"])
-            league_name = raw_league.get("name") or "Unknown"
             leagues[league_id] = ProviderLeague(
                 provider_league_id=league_id,
-                name=league_name,
+                name=raw_league.get("name"),
                 country=raw_league.get("country"),
             )
 
@@ -162,12 +166,8 @@ def parse_fixtures_response(
 
             home_id = int(raw_home["id"])
             away_id = int(raw_away["id"])
-            teams[home_id] = ProviderTeam(
-                provider_team_id=home_id, name=raw_home.get("name") or "Unknown"
-            )
-            teams[away_id] = ProviderTeam(
-                provider_team_id=away_id, name=raw_away.get("name") or "Unknown"
-            )
+            teams[home_id] = ProviderTeam(provider_team_id=home_id, name=raw_home.get("name"))
+            teams[away_id] = ProviderTeam(provider_team_id=away_id, name=raw_away.get("name"))
 
             kickoff_raw = raw_fixture.get("date")
             if not kickoff_raw:
@@ -176,6 +176,9 @@ def parse_fixtures_response(
 
             venue_raw = raw_fixture.get("venue") or {}
             status_raw = raw_fixture.get("status") or {}
+            status_short = status_raw.get("short")
+            if not status_short:
+                raise ProviderResponseError("fixture entry is missing status")
 
             fixtures.append(
                 ProviderFixture(
@@ -184,12 +187,12 @@ def parse_fixtures_response(
                     provider_season=season_value if season_value is None else int(season_value),
                     provider_home_team_id=home_id,
                     provider_away_team_id=away_id,
-                    home_team_name=raw_home.get("name") or "Unknown",
-                    away_team_name=raw_away.get("name") or "Unknown",
+                    home_team_name=raw_home.get("name"),
+                    away_team_name=raw_away.get("name"),
                     kickoff_utc=kickoff_utc,
                     venue=venue_raw.get("name"),
                     round=raw_league.get("round"),
-                    status_short=status_raw.get("short") or "UNKNOWN",
+                    status_short=status_short,
                     status_long=status_raw.get("long"),
                     retrieved_at=retrieved_at,
                     provider=provider,

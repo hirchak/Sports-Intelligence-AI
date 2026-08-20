@@ -5,6 +5,10 @@ class ProviderError(Exception):
     """Base class for normalized provider failures."""
 
 
+class ProviderConfigError(ProviderError):
+    """Invalid provider configuration (e.g. unknown provider name). Non-retryable."""
+
+
 class ProviderAuthError(ProviderError):
     """Authentication/authorization failure (401/403). Non-retryable."""
 

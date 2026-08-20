@@ -26,7 +26,9 @@ class MockSportsDataProvider:
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(provider=self._provider_name, supports_fixtures_by_date=True)
 
-    async def get_fixtures_by_date(self, fixture_date: date) -> FixtureDiscoveryResult:
+    async def get_fixtures_by_date(
+        self, fixture_date: date, timezone_name: str | None = None
+    ) -> FixtureDiscoveryResult:
         iso = fixture_date.isoformat()
         retrieved_at = utc_now()
         payload = self._load(iso)

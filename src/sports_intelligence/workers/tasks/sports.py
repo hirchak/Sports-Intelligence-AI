@@ -33,6 +33,7 @@ async def _run_discovery(job_id: str, fixture_date: str) -> dict[str, object]:
         provider=provider,
         session_factory=session_factory,
         league_config=league_config,
+        app_timezone=settings.app_timezone,
     )
     try:
         async with session_factory() as session:

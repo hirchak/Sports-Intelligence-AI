@@ -10,8 +10,8 @@ from pydantic import BaseModel
 class FixtureOut(BaseModel):
     id: uuid.UUID
     league_slug: str
-    home_team: str
-    away_team: str
+    home_team: str | None = None
+    away_team: str | None = None
     kickoff_at: datetime
     venue: str | None = None
     round: str | None = None
