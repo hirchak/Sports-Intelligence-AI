@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -14,12 +14,14 @@ from sqlalchemy import func, select
 
 from sports_intelligence.api.app import create_app
 from sports_intelligence.core.config import Settings
+from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.league_config import LeagueConfig, LeagueConfigEntry
 from sports_intelligence.db.models import (
     Fixture,
     Job,
     League,
     ProviderEntityId,
+    ProviderObservation,
     RawProviderPayload,
     Season,
     Team,
@@ -40,8 +42,12 @@ requires_services = pytest.mark.skipif(
 
 pytestmark = [pytest.mark.integration, requires_services]
 
+FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "provider" / "api_football"
+RECORDED = json.loads((FIXTURES_DIR / "fixtures_by_date.json").read_text())
+
 _DISCOVERY_TABLES = (
     "jobs",
+    "provider_observations",
     "raw_provider_payloads",
     "provider_entity_ids",
     "fixtures",
@@ -72,27 +78,25 @@ async def _truncate() -> None:
         await engine.dispose()
 
 
-FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "provider" / "api_football"
-RECORDED = json.loads((FIXTURES_DIR / "fixtures_by_date.json").read_text())
-
-CONFIG = LeagueConfig(
-    leagues=[
-        LeagueConfigEntry(
-            slug="premier-league",
-            name="Premier League",
-            country="England",
-            enabled=True,
-            provider_ids={"api_football": 39},
-        ),
-        LeagueConfigEntry(
-            slug="la-liga",
-            name="La Liga",
-            country="Spain",
-            enabled=False,
-            provider_ids={"api_football": 140},
-        ),
-    ]
-)
+def _config_for(provider_name: str) -> LeagueConfig:
+    return LeagueConfig(
+        leagues=[
+            LeagueConfigEntry(
+                slug="premier-league",
+                name="Premier League",
+                country="England",
+                enabled=True,
+                provider_ids={provider_name: 39},
+            ),
+            LeagueConfigEntry(
+                slug="la-liga",
+                name="La Liga",
+                country="Spain",
+                enabled=False,
+                provider_ids={provider_name: 140},
+            ),
+        ]
+    )
 
 
 def _build_service(
@@ -104,7 +108,10 @@ def _build_service(
     engine = create_engine(service_settings.database_url)
     session_factory = create_session_factory(engine)
     return FixtureDiscoveryService(
-        provider=provider, session_factory=session_factory, league_config=CONFIG
+        provider=provider,
+        session_factory=session_factory,
+        league_config=_config_for(provider.capabilities.provider),
+        app_timezone="Europe/Warsaw",
     )
 
 
@@ -135,8 +142,20 @@ def _mock_provider(provider_name: str, fixture_date: str) -> MockSportsDataProvi
 
 
 def _counts(service_settings: Settings) -> dict[type, int]:
-    models = (League, Season, Team, Fixture, ProviderEntityId, RawProviderPayload)
+    models = (
+        League,
+        Season,
+        Team,
+        Fixture,
+        ProviderEntityId,
+        RawProviderPayload,
+        ProviderObservation,
+    )
     return {model: asyncio.run(_row_count(service_settings, model)) for model in models}
+
+
+def _without_observations(counts: dict[type, int]) -> dict[type, int]:
+    return {model: value for model, value in counts.items() if model is not ProviderObservation}
 
 
 def test_discovery_persists_entities_and_mappings(service_settings: Settings) -> None:
@@ -154,6 +173,7 @@ def test_discovery_persists_entities_and_mappings(service_settings: Settings) ->
 
     after = _counts(service_settings)
     assert after[RawProviderPayload] - before[RawProviderPayload] == 1
+    assert after[ProviderObservation] - before[ProviderObservation] == 1
     assert after[Fixture] - before[Fixture] == 3
     assert after[Team] - before[Team] == 6
     assert after[Season] - before[Season] == 1
@@ -177,7 +197,160 @@ def test_discovery_is_idempotent_on_second_run(service_settings: Settings) -> No
     assert second.raw_payload_stored is False
 
     after_second = _counts(service_settings)
-    assert after_second == before_second
+    assert _without_observations(after_second) == _without_observations(before_second)
+    assert after_second[ProviderObservation] == before_second[ProviderObservation] + 1
+
+
+def test_concurrent_discovery_creates_single_team_and_mapping(
+    service_settings: Settings,
+) -> None:
+    provider = _mock_provider("mock-concurrent", "2026-08-21")
+    before = _counts(service_settings)
+
+    async def run_twice() -> None:
+        service = _build_service(service_settings, provider)
+        await asyncio.gather(
+            service.discover(date(2026, 8, 21)),
+            service.discover(date(2026, 8, 21)),
+        )
+
+    asyncio.run(run_twice())
+
+    after = _counts(service_settings)
+    assert after[Team] - before[Team] == 6
+    assert after[ProviderEntityId] - before[ProviderEntityId] == 10
+    assert after[Fixture] - before[Fixture] == 3
+
+
+def test_fixture_refresh_updates_kickoff_keeping_same_uuid(
+    service_settings: Settings,
+) -> None:
+    provider_name = "mock-refresh"
+    provider = _mock_provider(provider_name, "2026-08-21")
+    asyncio.run(_run_discovery(service_settings, provider, "2026-08-21"))
+
+    from sports_intelligence.db.session import create_engine, create_session_factory
+
+    async def fixture_by_provider_id(external_id: int) -> Fixture:
+        engine = create_engine(service_settings.database_url)
+        try:
+            async with create_session_factory(engine)() as session:
+                mapping_id = (
+                    await session.execute(
+                        select(ProviderEntityId.internal_entity_id).where(
+                            ProviderEntityId.provider == provider_name,
+                            ProviderEntityId.entity_type == "fixture",
+                            ProviderEntityId.external_id == str(external_id),
+                        )
+                    )
+                ).scalar_one()
+                fixture = await session.get(Fixture, mapping_id)
+                assert fixture is not None
+                return fixture
+        finally:
+            await engine.dispose()
+
+    original = asyncio.run(fixture_by_provider_id(100001))
+    original_kickoff = original.kickoff_at
+    original_uuid = original.id
+
+    moved_payload = json.loads(json.dumps(RECORDED))
+    for entry in moved_payload["response"]:
+        if entry["fixture"]["id"] == 100001:
+            entry["fixture"]["date"] = "2026-08-21T20:30:00+00:00"
+
+    moved_provider = MockSportsDataProvider(
+        responses={"2026-08-21": moved_payload}, provider_name=provider_name
+    )
+    asyncio.run(_run_discovery(service_settings, moved_provider, "2026-08-21"))
+
+    refreshed = asyncio.run(fixture_by_provider_id(100001))
+    assert refreshed.id == original_uuid
+    assert refreshed.kickoff_at != original_kickoff
+    assert refreshed.kickoff_at == datetime(2026, 8, 21, 20, 30, tzinfo=UTC)
+
+
+def test_league_upsert_syncs_enabled_flag(service_settings: Settings) -> None:
+    from sports_intelligence.db.repositories.discovery import upsert_league_id
+    from sports_intelligence.db.session import create_engine, create_session_factory
+
+    async def league_enabled() -> bool:
+        engine = create_engine(service_settings.database_url)
+        try:
+            async with create_session_factory(engine)() as session:
+                return bool(
+                    (
+                        await session.execute(
+                            select(League.enabled).where(League.slug == "premier-league")
+                        )
+                    ).scalar_one()
+                )
+        finally:
+            await engine.dispose()
+
+    async def upsert(enabled: bool) -> None:
+        engine = create_engine(service_settings.database_url)
+        try:
+            async with create_session_factory(engine)() as session:
+                await upsert_league_id(
+                    session, "premier-league", "Premier League", "England", enabled
+                )
+                await session.commit()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(upsert(False))
+    assert asyncio.run(league_enabled()) is False
+    asyncio.run(upsert(True))
+    assert asyncio.run(league_enabled()) is True
+    asyncio.run(upsert(False))
+    assert asyncio.run(league_enabled()) is False
+
+
+def test_discovery_without_enabled_leagues_makes_no_provider_calls(
+    service_settings: Settings,
+) -> None:
+    from sports_intelligence.db.session import create_engine, create_session_factory
+
+    state = {"calls": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["calls"] += 1
+        return httpx.Response(200, json=RECORDED, headers={"content-type": "application/json"})
+
+    provider = ApiFootballProvider(
+        api_key="test-key",
+        base_url="https://v3.football.api-sports.io",
+        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        max_attempts=1,
+        backoff_seconds=0.0,
+    )
+    engine = create_engine(service_settings.database_url)
+    session_factory = create_session_factory(engine)
+    no_enabled = LeagueConfig(
+        leagues=[
+            LeagueConfigEntry(
+                slug="premier-league",
+                name="Premier League",
+                enabled=False,
+                provider_ids={"api_football": 39},
+            )
+        ]
+    )
+    service = FixtureDiscoveryService(
+        provider=provider,
+        session_factory=session_factory,
+        league_config=no_enabled,
+        app_timezone="Europe/Warsaw",
+    )
+
+    async def run() -> None:
+        summary = await service.discover(date(2026, 8, 21))
+        assert summary.fixtures_received == 0
+        assert summary.fixtures_eligible == 0
+
+    asyncio.run(run())
+    assert state["calls"] == 0
 
 
 def test_disabled_leagues_are_filtered_out(service_settings: Settings) -> None:
@@ -200,17 +373,9 @@ def test_disabled_leagues_are_filtered_out(service_settings: Settings) -> None:
     assert asyncio.run(la_liga_count()) == 0
 
 
-def _shifted_payload(iso_date: str) -> dict:
-    payload = json.loads(json.dumps(RECORDED))
-    for entry in payload["response"]:
-        fixture = entry["fixture"]
-        fixture["date"] = iso_date + fixture["date"][10:]
-    return payload
-
-
 def test_fixtures_api_filters_by_date_and_league(service_settings: Settings) -> None:
     provider = MockSportsDataProvider(
-        responses={"2026-08-24": _shifted_payload("2026-08-24")},
+        responses={"2026-08-24": _shifted_payload("2026-08-24T19:00:00+00:00")},
         provider_name="mock-api-test",
     )
     asyncio.run(_run_discovery(service_settings, provider, "2026-08-24"))
@@ -244,6 +409,34 @@ def test_fixtures_api_filters_by_date_and_league(service_settings: Settings) -> 
         assert missing.status_code == 404
 
 
+def test_fixture_date_filter_uses_app_timezone_boundaries(service_settings: Settings) -> None:
+    unique_kickoff = "2026-08-20T23:30:00+00:00"
+    expected_serialized = "2026-08-20T23:30:00Z"
+    late_utc_payload = _shifted_payload(unique_kickoff)
+    provider = MockSportsDataProvider(
+        responses={"2026-08-20": late_utc_payload},
+        provider_name="mock-tz",
+    )
+    asyncio.run(_run_discovery(service_settings, provider, "2026-08-20"))
+
+    with TestClient(create_app(service_settings)) as client:
+        warsaw_day = client.get("/v1/fixtures", params={"date": "2026-08-21"})
+        kickoffs = {item["kickoff_at"] for item in warsaw_day.json()}
+        assert expected_serialized in kickoffs
+
+        utc_day = client.get("/v1/fixtures", params={"date": "2026-08-20"})
+        utc_kickoffs = {item["kickoff_at"] for item in utc_day.json()}
+        assert expected_serialized not in utc_kickoffs
+
+
+def _shifted_payload(iso_datetime: str) -> dict:
+    payload = json.loads(json.dumps(RECORDED))
+    for entry in payload["response"]:
+        fixture = entry["fixture"]
+        fixture["date"] = iso_datetime
+    return payload
+
+
 def test_discover_job_endpoint_is_idempotent(
     service_settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -272,30 +465,65 @@ def test_discover_job_endpoint_is_idempotent(
     assert len(enqueued) == 1
 
 
-def test_discovery_makes_single_provider_request_for_many_fixtures(
-    service_settings: Settings,
+def test_enqueue_failure_marks_job_failed_and_repost_requeues(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    state = {"calls": 0}
+    from sports_intelligence.workers.tasks import sports as sports_tasks
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        state["calls"] += 1
-        return httpx.Response(200, json=RECORDED, headers={"content-type": "application/json"})
+    calls: list[object] = []
 
-    provider = ApiFootballProvider(
-        api_key="test-key",
-        base_url="https://v3.football.api-sports.io",
-        client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
-        max_attempts=1,
-        backoff_seconds=0.0,
+    def failing_apply_async(*args: object, **kwargs: object) -> None:
+        calls.append(args)
+        raise RuntimeError("broker unavailable")
+
+    monkeypatch.setattr(sports_tasks.discover_fixtures_task, "apply_async", failing_apply_async)
+
+    with TestClient(create_app(service_settings)) as client:
+        first = client.post("/v1/jobs/discover", json={"date": "2026-08-27"})
+        assert first.status_code == 502
+        assert first.json()["detail"]["status"] == JobStatus.FAILED.value
+        failed_job_id = first.json()["detail"]["job_id"]
+
+    ok_calls: list[list[object]] = []
+    monkeypatch.setattr(
+        sports_tasks.discover_fixtures_task,
+        "apply_async",
+        lambda args=None, queue=None, **kwargs: ok_calls.append(args or []),
     )
-    service = _build_service(service_settings, provider)
 
-    async def run() -> None:
-        summary = await service.discover(date(2026, 8, 25))
-        assert summary.fixtures_eligible == 3
+    with TestClient(create_app(service_settings)) as client:
+        second = client.post("/v1/jobs/discover", json={"date": "2026-08-27"})
+        assert second.status_code == 200
+        assert second.json()["job_id"] == failed_job_id
+        assert second.json()["already_queued"] is False
+        assert second.json()["status"] == JobStatus.PENDING.value
 
-    asyncio.run(run())
-    assert state["calls"] == 1
+    assert len(calls) == 1
+    assert len(ok_calls) == 1
+
+
+def test_discover_without_date_uses_app_timezone_local_date(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_intelligence.core import time as time_module
+    from sports_intelligence.workers.tasks import sports as sports_tasks
+
+    enqueued: list[list[object]] = []
+    monkeypatch.setattr(
+        sports_tasks.discover_fixtures_task,
+        "apply_async",
+        lambda args=None, queue=None, **kwargs: enqueued.append(args or []),
+    )
+    fixed_now = datetime(2026, 8, 20, 23, 30, tzinfo=UTC)
+    monkeypatch.setattr(time_module, "utc_now", lambda: fixed_now)
+
+    with TestClient(create_app(service_settings)) as client:
+        response = client.post("/v1/jobs/discover", json={})
+        assert response.status_code == 200
+        assert response.json()["idempotency_key"] == "discover:mock:2026-08-21"
+
+    assert len(enqueued) == 1
+    assert enqueued[0][1] == "2026-08-21"
 
 
 def test_job_row_created_with_pending_status(

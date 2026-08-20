@@ -16,7 +16,7 @@ from sports_intelligence.core.league_config import LeagueConfig, LeagueConfigEnt
 from sports_intelligence.db.models import Job
 from sports_intelligence.db.repositories.discovery import (
     get_or_create_team_id,
-    store_raw_payload,
+    store_raw_evidence,
     upsert_fixture_id,
     upsert_league_with_mapping,
     upsert_season_id,
@@ -43,14 +43,33 @@ class FixtureDiscoveryService:
         provider: SportsDataProvider,
         session_factory: async_sessionmaker[AsyncSession],
         league_config: LeagueConfig,
+        app_timezone: str = "Europe/Warsaw",
     ) -> None:
         self._provider = provider
         self._session_factory = session_factory
         self._league_config = league_config
+        self._app_timezone = app_timezone
 
     async def discover(self, fixture_date: date) -> DiscoverySummary:
-        result = await self._provider.get_fixtures_by_date(fixture_date)
-        enabled_by_id = self._enabled_config_by_provider_league_id()
+        provider_name = self._provider.capabilities.provider
+        enabled_by_id = self._enabled_config_by_provider_league_id(provider_name)
+        if not enabled_by_id:
+            return DiscoverySummary(
+                date=fixture_date,
+                provider=provider_name,
+                fixtures_received=0,
+                fixtures_eligible=0,
+                fixtures_created=0,
+                fixtures_updated=0,
+                leagues_processed=0,
+                seasons_created=0,
+                teams_created=0,
+                raw_payload_stored=False,
+            )
+
+        result = await self._provider.get_fixtures_by_date(
+            fixture_date, timezone_name=self._app_timezone
+        )
         eligible = [
             fixture for fixture in result.fixtures if fixture.provider_league_id in enabled_by_id
         ]
@@ -64,7 +83,7 @@ class FixtureDiscoveryService:
 
         async with self._session_factory() as session:
             if result.raw_payload is not None:
-                raw_payload_stored = await store_raw_payload(
+                raw_payload_stored = await store_raw_evidence(
                     session,
                     provider=result.metadata.provider,
                     endpoint_family=result.metadata.endpoint_family,
@@ -145,12 +164,15 @@ class FixtureDiscoveryService:
             raw_payload_stored=raw_payload_stored,
         )
 
-    def _enabled_config_by_provider_league_id(self) -> dict[int, LeagueConfigEntry]:
+    def _enabled_config_by_provider_league_id(
+        self, provider_name: str
+    ) -> dict[int, LeagueConfigEntry]:
         mapping: dict[int, LeagueConfigEntry] = {}
         for entry in self._league_config.leagues:
             if not entry.enabled:
                 continue
-            for provider_league_id in entry.provider_ids.values():
+            provider_league_id = entry.provider_ids.get(provider_name)
+            if provider_league_id is not None:
                 mapping[provider_league_id] = entry
         return mapping
 

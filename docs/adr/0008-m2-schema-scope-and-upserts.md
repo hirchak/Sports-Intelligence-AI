@@ -58,3 +58,28 @@ through SQLAlchemy `dialect.postgresql.insert`:
 ## Rollback/Migration
 
 `alembic downgrade 0001` drops the six tables (no production data yet).
+
+---
+
+# Amendment (M2.1)
+
+1. **Indexes reconciled.** The original ADR text listed composite indexes
+   `(league_id, kickoff_at)` and `(status, kickoff_at)`, but migration 0002
+   created single-column indexes only. Migration 0003 creates the real
+   composite indexes `ix_fixtures_league_kickoff` and
+   `ix_fixtures_status_kickoff` and drops the redundant single-column
+   `ix_fixtures_league_id` / `ix_fixtures_status` (covered by the
+   composites' leading columns). `ix_fixtures_kickoff_at` stays for
+   date-only queries.
+2. **Atomic identity acquisition.** The find → create entity → mapping
+   `DO NOTHING` path was race-prone for entities without a natural key
+   (teams, fixtures). Both now use a single-statement PostgreSQL CTE
+   arbiter: the unique mapping insert decides the winner, and the entity
+   row is created with the mapping's internal id inside the same statement.
+   Concurrent discoveries therefore produce exactly one entity row and one
+   mapping. Leagues stay slug-based (slug is the deterministic natural
+   identity) with mapping insert `DO NOTHING` + re-select.
+3. **League `enabled` sync.** `upsert_league_id` now updates `enabled` on
+   conflict, so seed/config changes propagate false → true → false.
+4. **Evidence model.** Raw evidence restructured per ADR-0009
+   (content/observation split).
