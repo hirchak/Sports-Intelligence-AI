@@ -8,7 +8,7 @@
 ## One-time bootstrap
 
 ```bash
-git clone git@github.com:hirchak/-.git sports-intelligence
+git clone git@github.com:hirchak/Sports-Intelligence-AI.git sports-intelligence
 cd sports-intelligence
 make bootstrap        # cp .env.example .env; start postgres + redis
 ```
