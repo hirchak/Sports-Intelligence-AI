@@ -1,0 +1,31 @@
+# League configuration for fixture discovery.
+# Copy this file to your own config if you want a custom set; this file is
+# the default (committed, all leagues disabled — no API quota is spent
+# without explicitly enabling leagues).
+#
+# Each entry:
+#   slug         internal league identifier (used in the API as ?league=)
+#   enabled      whether discovery processes this league
+#   provider_ids mapping of provider name -> provider league id
+#                (api_football ids: 39 Premier League, 140 La Liga,
+#                 2 Champions League — verify against current API docs)
+version: 1
+leagues:
+  - slug: premier-league
+    name: Premier League
+    country: England
+    enabled: false
+    provider_ids:
+      api_football: 39
+  - slug: la-liga
+    name: La Liga
+    country: Spain
+    enabled: false
+    provider_ids:
+      api_football: 140
+  - slug: champions-league
+    name: Champions League
+    country: Europe
+    enabled: false
+    provider_ids:
+      api_football: 2
