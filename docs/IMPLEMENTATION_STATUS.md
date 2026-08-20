@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M0 — implemented, awaiting review  
+**Current milestone:** M0 (+ fix-milestone M0.1) — implemented, awaiting final review  
 **Last updated:** 2026-08-20 (DeepSeek V4 Pro via OpenCode)  
 **Last known good commit:** see section 11
 
@@ -61,6 +61,30 @@ No Hermes access/dependency is authorized.
 - Git hygiene: `.gitignore`, `.env.example` (placeholders only),
   `Makefile`, `opencode.json.example`.
 
+## M0.1 — Fix milestone (independent review: PASS WITH FIXES)
+
+Review fixes implemented:
+
+- Shared `.env` now loads cleanly: `env_ignore_empty=True`,
+  `extra="ignore"` (Compose-only `POSTGRES_*` variables tolerated),
+  `TELEGRAM_ALLOWED_USER_IDS` annotated with `NoDecode` + explicit
+  comma-separated parsing. Declared-field type validation still enforced.
+- ADR-0004 updated to reflect the new validation policy.
+- Dotenv regression tests added (7 cases) that read a real dotenv file:
+  `.env.example` loads without errors; empty user IDs → `[]`;
+  `123,456` → `[123,456]`; mock mode keyless; non-mock without key fails;
+  Compose-only variables tolerated; bad type (`DEFAULT_MIN_ODDS=abc`) fails.
+- README / LOCAL_DEVELOPMENT clone instructions fixed
+  (`git clone … sports-intelligence && cd sports-intelligence`).
+
+## Technical debt (scheduled, not blocking)
+
+- **M1:** `/ready` must use a shared DB engine and Redis client created in
+  the FastAPI lifespan instead of opening a new engine/client per request.
+- **M2:** provider interfaces must not stay on `dict[str, Any]` — introduce
+  normalized internal DTO/Pydantic schemas before implementing the first real
+  sports adapter.
+
 ---
 
 # 3. In progress
@@ -71,12 +95,12 @@ None. M0 waits for review.
 
 # 4. Acceptance tests passed (actually run)
 
-- `uv run pytest -q` → **17 passed** (Python 3.12.14)
+- `uv run pytest -q` → **24 passed** (17 M0 + 7 dotenv regression, Python 3.12.14)
 - `uv run ruff check .` → **All checks passed**
-- `uv run ruff format --check .` → **31 files already formatted**
+- `uv run ruff format --check .` → **32 files already formatted**
 - `uv run mypy src` → **Success: no issues found in 25 source files**
 - `docker compose config -q` → OK; dev override OK
-- `docker compose up -d --build` → postgres/redis/api all **healthy**
+- `docker compose up -d --build` → postgres/redis/api all **healthy** (rebuilt after M0.1 config change)
 - `GET /health` → 200 `{"status":"ok","service":"sports-intelligence"}`
 - `GET /ready` → 200 `{"status":"ready","checks":{"database":"ok","redis":"ok"}}`
 - `alembic upgrade head` / `current` / `heads` inside api container → exit 0
@@ -105,8 +129,9 @@ None. M0 makes no external API calls.
   deprecates httpx in favor of `httpx2`). Revisit on next dependency bump.
 - Uvicorn access logs are plain text; application logs are JSON. Unification
   is a minor M1 task.
-- CI workflow exists but its first GitHub run happens only after push;
-  status to be confirmed in the worklog.
+- With `extra="ignore"`, typos in unknown-but-documented env variable names
+  are no longer rejected at startup; mitigated by dotenv regression tests
+  covering every documented variable.
 
 ---
 
@@ -118,6 +143,8 @@ None. M0 makes no external API calls.
 - Non-standard local host ports 5433/6380 → ADR-0003.
 - `Settings` does not require `TELEGRAM_BOT_TOKEN` outside mock mode in M0;
   the bot process will validate its own config in M3 → ADR-0004.
+- Validation policy changed in M0.1: `extra="ignore"` + `env_ignore_empty=True`
+  + `NoDecode` for user IDs → ADR-0004 (updated).
 
 ---
 
@@ -163,10 +190,12 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m0` (M0 work); `main` (spec pack only)
+- `build/m0` (M0 + M0.1 work); `main` (spec pack only)
 
 Commit:
-- M0: `6c8a193` — "M0: scaffold repository and local Docker stack" (tag `v0.1-m0`)
+- M0.1: recorded in `docs/REVIEW_HANDOFF.md` after commit
+- M0: `6c8a193` — "M0: scaffold repository and local Docker stack"
+- tag `v0.1-m0` moved to the final M0.1 commit (single review target)
 - CI: green on GitHub Actions (ruff, mypy, pytest, compose validation)
 
 Working tree:
@@ -176,7 +205,7 @@ Working tree:
 
 # 12. Next action
 
-1. Independent review of M0 (see `docs/REVIEW_HANDOFF.md`).
+1. Final independent review of M0.1 (see `docs/REVIEW_HANDOFF.md`).
 2. After acceptance: merge `build/m0` into `main`.
 3. Only then start M1 with explicit user approval.
 

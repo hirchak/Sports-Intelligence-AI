@@ -45,8 +45,8 @@ prompts/                   versioned LLM prompts (future milestones)
 Prerequisites: Docker (with Compose), `uv`.
 
 ```bash
-git clone git@github.com:hirchak/-.git
-cd -
+git clone git@github.com:hirchak/Sports-Intelligence-AI.git sports-intelligence
+cd sports-intelligence
 cp .env.example .env                 # safe MOCK defaults, no real keys needed
 docker compose up -d --build         # postgres + redis + api
 curl http://127.0.0.1:8000/health    # -> {"status": "ok", ...}

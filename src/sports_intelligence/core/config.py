@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 AppEnv = Literal["mock", "sandbox", "live_local"]
 
@@ -13,8 +13,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="forbid",
+        extra="ignore",
         case_sensitive=False,
+        env_ignore_empty=True,
     )
 
     app_env: AppEnv = "mock"
@@ -27,7 +28,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6380/0"
 
     telegram_bot_token: str = ""
-    telegram_allowed_user_ids: list[int] = Field(default_factory=list)
+    telegram_allowed_user_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
 
     sports_provider: str = ""
     sports_api_key: str = ""
