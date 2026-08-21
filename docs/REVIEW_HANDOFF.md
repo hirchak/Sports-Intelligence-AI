@@ -1,6 +1,7 @@
 # Review Handoff
 
-Use this file when handing the repository to ChatGPT, Kimi, another engineer, or a fresh coding-agent session.
+Use this file when handing the repository to ChatGPT, Kimi, another
+engineer, or a fresh coding-agent session.
 
 Update it before every milestone review.
 
@@ -8,109 +9,105 @@ Update it before every milestone review.
 
 # Review status
 
-**Ready for review:** NO — review completed  
-**Final review verdict (2026-08-21):** **PASS. M2 ACCEPTED.** Safe to
-begin M3: YES.  
+**Ready for review:** YES  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M2 + M2.1 + M2.2 + M2.3 + M2.4 fixes — accepted  
-**Review target branch:** `build/m2`  
-**Review target commits:** `bdb5ef3`, `3f62348`, `6625d7c`, `7e71ed0`,
-`ac4188a` (M2); `ea9b4a8`, `1de60af`, `1dcd7cd` (M2.1);
-`118aaab`, `dc5d2e0`, `e236f96` (M2.2);
-`a157158` (M2.3: spec-compliant discovery idempotency identity);
-`e4c38b6` (M2.4: bind discovery job identity to worker execution config) —
-see Git section  
-**CI status:** green on `build/m2` (unit, integration with isolated
-Postgres/Redis, compose validation)  
-**Previous review:** M2.4 → **PASS**; M2 ACCEPTED (final M2 review)  
-**Previous accepted state:** `main` = `25dda83` (M1 accepted, tag `v0.2-m1`)
+**Milestone:** M3 — Telegram base UI / private control plane — Russian
+single-language UI, button-based navigation, «← Назад» on every
+screen; awaiting independent review  
+**Review target branch:** `build/m3`  
+**Review target commits:** `3ad5dc0` (M3: Russian Telegram bot UI with
+button-based menus and Back navigation) — see Git section  
+**CI status:** green on `build/m3` (unit, integration with isolated
+Postgres/Redis, compose validation incl. telegram profile)  
+**Previous review:** M2 → **PASS — M2 ACCEPTED** (tag `v0.3-m2` on `main`)  
+**Previous accepted state:** `main` = `c737f80` (M2 accepted)
 
 ---
 
 # What changed since the last review
 
-M2.4 (the one required safety fix from the final M2.3 review):
+M3 (final independent review requested):
 
-- **Discovery job identity now binds execution semantics.** The Celery
-  task receives `job_id`, `fixture_date`, `expected_league_config_version`,
-  `discovery_timezone` — the same values encoded in the idempotency
-  identity at enqueue time. The worker loads the LeagueConfig and refuses
-  to run when the loaded `version` differs from the expected one:
-  deterministic `LeagueConfigVersionMismatchError`, zero provider
-  requests, job marked FAILED. A full persisted job-input
-  snapshot/outbox remains deferred to the orchestration milestone, but
-  the worker can never execute a different semantic configuration than
-  the one encoded in the job identity.
-- **Timezone comes from the job**: `FixtureDiscoveryService` receives
-  `discovery_timezone` from the task payload; mutable
-  `settings.app_timezone` is no longer re-read at execution.
-- Regression tests: enqueued v1 + worker sees v1 → executes and
-  SUCCEEDS; config drifts to v2 before execution → 0 provider calls +
-  FAILED; a job with `Europe/Warsaw` uses Warsaw even when current
-  settings say `Europe/London`; existing MOCK discovery/idempotency
-  tests stay green. No migration; no live smoke (quota preserved).
-
-M2.3 (the one required fix from the final M2.2 review):
-
-- **Discovery idempotency identity now matches spec `09`**:
-  `discover:{provider}:{date}:v{league_config_version}:{timezone}`.
-  The LeagueConfig `version` loaded from the configured YAML is the
-  canonical identity mechanism (the enabled-league list never appears in
-  the key); timezone is included because the provider request depends on
-  it. Rule documented: semantic changes to `config/leagues.yaml` must
-  bump `version`.
-- Tests: duplicate POST with the same identity → no new job/enqueue;
-  config-version change → new job + enqueue; timezone change → distinct
-  identity (Warsaw vs London); FAILED-job retry keeps the same job UUID.
-- Stale IMPLEMENTATION_STATUS strings synced (in-progress block, provider
-  selected/verified, reviewer diff `main..build/m2`, raw-evidence
-  description post-ADR-0009).
-
-Earlier M2.2 fixes (PASS WITH FIXES verdict):
-
-1. **Canonical request fingerprint** — deterministic
-   `provider:endpoint_family:sorted(params)` including date AND timezone;
-   stored in `provider_observations`; tests cover stability (same
-   date+tz), tz-sensitivity (different tz → different fingerprint),
-   parameter-order independence and provider distinction.
-2. **FAILED-job requeue race** — CAS transition
-   `transition_job_status_if(FAILED → PENDING)`; the HTTP layer re-reads
-   the status after enqueue and can never downgrade RUNNING/SUCCEEDED;
-   regression test simulates a worker status transition between
-   `apply_async()` and the HTTP-side update (job remains RUNNING).
-   Full outbox still M4.
-3. **ORM metadata synchronized with migration 0003** — composite
-   `ix_fixtures_league_kickoff` / `ix_fixtures_status_kickoff` declared in
-   the ORM; stale single-column `index=True` removed (single kickoff
-   index kept deliberately for date-only queries); schema drift verified
-   with `alembic check` at head in integration tests/CI — no new upgrade
-   operations.
-4. **Hardened atomic identity race** — arbiter resolution no longer uses
-   `scalar_one()` without fallback: bounded safe resolution (winner row →
-   use; empty → fresh mapping SELECT; bounded retries); no orphan
-   Team/Fixture; targeted synchronized-start test (6 participants on one
-   team identity) proves exactly 1 mapping, exactly 1 Team, identical
-   UUID for all callers.
-5. **Worker initialization exception-safe** — engine/provider cleanup in
-   `finally` with independent try/excepts; provider/config init failure
-   marks the job FAILED when the DB is available and re-raises the
-   original exception (integration + unit tests).
+- **Telegram bot as a thin UI** over the existing FastAPI control plane.
+  The handler layer (`sports_intelligence.bot`) never touches provider
+  adapters, DB or LLM; all backend traffic goes through a typed
+  `BackendClient` (health/ready, fixtures list, fixture detail, discover
+  enqueue) whose errors are normalized into bot-safe text (no URLs,
+  bodies, stack traces or secrets ever reach Telegram).
+- **Central allowlist middleware** registered for both messages and
+  callback queries using `TELEGRAM_BOT_TOKEN` +
+  `TELEGRAM_ALLOWED_USER_IDS`. Unknown users receive "Доступ запрещён."
+  (or a silent callback answer). Empty allowlist denies everyone;
+  handlers never duplicate the check.
+- **Russian UI, single language** — all Telegram-facing text lives in
+  `bot/strings.py`; commands and callbacks render the same Russian
+  strings.
+- **Button-based navigation** — main menu (Сегодня / Найти / Здоровье
+  / Помощь); every screen has a «← Назад» button returning to the main
+  menu; find menu offers yesterday / today / tomorrow as quick picks
+  plus the `/fixtures ГГГГ-ММ-ДД` hint for arbitrary dates. Commands
+  remain as a power-user fallback (`/start /help /dashboard /today
+  /fixtures [date] /match <uuid> /health /discover [date]`) and reach
+  the same screens. `/predictions /stats /evaluate /improvements`
+  return a clear "недоступна в этой вехе (M3)" message — no fake
+  screens, no invented metrics.
+- **Inline callbacks** — short stable payloads (`fx:<uuid>`,
+  `pg:<date>:<page>`, `rf:<date>`, `disc`, `health`, `menu:*`); under
+  Telegram's 64-byte limit; no secrets, no JSON. Fixture view,
+  pagination, refresh, discover, health, main menu, find menu.
+  Malformed/tampered payloads are answered harmlessly; repeated taps
+  rely on backend idempotency (no second idempotency scheme inside
+  Telegram).
+- **Rendering** — /today grouped by league ordered by kickoff; kickoff
+  shown in `APP_TIMEZONE` (DB stays UTC); Russian month abbreviations
+  (янв., фев., …, авг., …); missing team names rendered as "—"
+  (stored data never mutated); pagination (8 per page, Prev/Next +
+  Refresh); HTML escaping for all backend-provided strings.
+- **Transport separated from handlers** — `TelegramTransport` protocol
+  (send_text / edit_text / answer_callback) with an aiogram
+  implementation and an in-memory fake; 72 deterministic bot unit
+  tests require no token and no network.
+- **Docker Compose `telegram` profile** — isolated `sports-telegram`
+  service (no exposed ports), internal networking to `sports-api`,
+  bot env via `BOT_BACKEND_BASE_URL`; the ordinary
+  api/postgres/redis/worker/beat stack starts without any Telegram
+  credentials.
+- **Live Telegram smoke** with a real token + allowlisted user:
+  English commands /start /today /health /discover + inline fixture
+  tap verified through bot/worker logs; Russian main-menu + button
+  navigation verified live by user screenshot. MOCK-mode discovery
+  round-trip verified idempotent (0 created / 3 updated; duplicate
+  POST → `already_queued: true`). Note: one accidental live
+  API-Football call was consumed before the smoke was pinned to MOCK
+  (documented in the worklog; quota-safe default restored afterwards).
 
 ---
 
 # What should the reviewer verify?
 
-- provider JSON never leaks into domain/API schemas (DTO boundary);
-- adapter retry classification and key handling (no key in logs/errors);
-- discovery is fully idempotent (rows, mappings, raw payload dedup);
-- N+1 guard test is meaningful (single request for N fixtures);
-- migration 0002 applies/downgrades/reapplies on a fresh DB;
-- no scope creep (no odds/research/MatchContext/prediction/Telegram);
-- test-DB isolation guard still intact (dev DB protected);
-- compose isolation unchanged (loopback ports, named volumes);
-- M2.4: worker refuses to run on LeagueConfig version drift (0 provider
-  calls, FAILED, deterministic exception) and uses the job's timezone,
-  not the current settings.
+- private access control: unknown users denied centrally (message +
+  callback) with no detail leakage; empty allowlist denies everyone;
+- Russian UI consistency across all screens (welcome, help, dashboard,
+  fixture list, fixture detail, health, discover, find, error and
+  access-denied paths);
+- button-based navigation: every screen has a «← Назад» button
+  returning to the main menu; the find menu offers yesterday / today
+  / tomorrow quick picks;
+- the bot never touches provider adapters, DB or LLM; all backend
+  traffic goes through the typed `BackendClient`; backend errors render
+  bot-safe text (no URLs, bodies, stack traces or secrets);
+- /today grouped by league ordered by kickoff; kickoff in `APP_TIMEZONE`;
+  Russian month abbreviations; missing team names rendered as "—"
+  (canonical DB data never mutated);
+- /discover preserves backend idempotency (duplicate taps keep the
+  same job UUID and display `already_queued`); no second idempotency
+  scheme inside Telegram; malformed/tampered callbacks are harmless;
+- long polling only (no webhook), clean shutdown, structured JSON
+  logging; secrets never logged;
+- compose `telegram` profile is isolated; ordinary dev stack starts
+  without a token;
+- unit tests do not require a real token (transport separated from
+  handlers).
 
 ---
 
@@ -118,30 +115,28 @@ Earlier M2.2 fixes (PASS WITH FIXES verdict):
 
 ```bash
 uv sync --frozen --dev
-uv run pytest -q -m "not integration"        # 79 passed
+uv run pytest -q -m "not integration"        # 151 passed
 make test-integration                        # 26 passed, isolated sports_intel_test
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy src                              # 51 source files, strict
+uv run mypy src                              # 62 source files, strict
 docker compose config -q
-docker compose up -d --build                 # api/postgres/redis/worker/beat
-curl http://127.0.0.1:8000/health            # 200
-curl http://127.0.0.1:8000/ready             # 200
-curl -X POST http://127.0.0.1:8000/v1/jobs/discover -d '{"date":"2026-08-21"}'
-curl "http://127.0.0.1:8000/v1/fixtures?date=2026-08-21"
+docker compose --profile telegram config -q
+docker compose build sports-telegram
+docker compose --profile telegram up -d sports-telegram
 ```
 
 CI runs unit + integration (isolated service containers) + compose
-validation on every push; all three jobs green on `build/m2`.
+validation on every push; all three jobs green on `build/m3`.
 
-Live evidence: bounded API-Football smokes passed in M2/M2.1 (383
-fixtures in ONE request, 1 eligible league, idempotent re-runs, no key
-in logs). M2.2 changed no HTTP contract, so the live smoke was NOT
-repeated (quota preserved); MOCK-mode discovery through the full stack
-was re-verified (idempotent, canonical fingerprint stored in
-observations). M2.3/M2.4 changed only the job identity/payload, not the
-provider HTTP contract — live smoke again NOT repeated (quota
-preserved).
+Live evidence: bounded Telegram smoke with real token + allowlisted
+user — Russian main menu + button navigation verified live; English
+commands path verified; MOCK-mode discovery round-trip verified
+idempotent end-to-end. One accidental live API-Football call was
+consumed before the smoke was pinned to MOCK; documented in the
+worklog and disposable. M3 changed the bot UI only (transport,
+payload, language) — no provider HTTP contract change, so the live
+sports data path was not re-exercised against an external service.
 
 Reviewer must not assume tests passed based on status text alone.
 
@@ -149,48 +144,61 @@ Reviewer must not assume tests passed based on status text alone.
 
 # Known limitations
 
-- Live verification is a single-date, single-league bounded smoke — not
-  multi-day production usage.
+- Live verification of the sports-provider HTTP path is a single-date,
+  single-league bounded smoke from M2/M2.1 — not multi-day production
+  usage. M3 did not re-exercise it.
+- One accidental live API-Football call was consumed during the M3
+  smoke (1301 fixtures received, 5 created, key never logged); the
+  smoke was then pinned to MOCK and the stack was restored to the
+  quota-safe default (`config/leagues.yaml`, all leagues disabled).
 - `job_attempts` rows are not written yet (M4 debt); only `jobs.status`
   is updated.
-- QuotaManager/request ledger deferred to M4 (adapter captures
+- QuotaManager / request ledger deferred to M4 (adapter captures
   rate-limit headers already).
-- Odds/search/LLM protocols still typed as `dict[str, Any]` placeholders
-  until their milestones.
-- Docker Desktop multi-service bake bug (per-service build workaround
-  documented).
+- Odds / search / LLM protocols still typed as `dict[str, Any]`
+  placeholders until their milestones.
+- Docker Desktop multi-service bake build bug (per-service build
+  workaround documented in `docs/LOCAL_DEVELOPMENT.md`).
+- Slack-style react-on-tap / threaded updates are not implemented;
+  status messages are static until the next user interaction or
+  /discover completion.
 
 ---
 
 # Files of highest relevance
 
-- `src/sports_intelligence/providers/dto.py`
-- `src/sports_intelligence/providers/sports/api_football.py`
-- `src/sports_intelligence/providers/sports/mock.py`
-- `src/sports_intelligence/pipelines/discover_fixtures.py`
-- `src/sports_intelligence/db/repositories/discovery.py`
-- `src/sports_intelligence/db/migrations/versions/0002_*.py`
-- `src/sports_intelligence/api/routes/{fixtures,jobs}.py`
-- `src/sports_intelligence/workers/tasks/sports.py`
-- `src/sports_intelligence/core/league_config.py`
-- `docs/adr/0007-api-football-first-provider.md`
-- `docs/adr/0008-m2-schema-scope-and-upserts.md`
-- `config/leagues.yaml`, `config/leagues.mock.yaml`
-- `tests/unit/test_api_football_adapter.py`
-- `tests/integration/test_fixture_discovery.py`
-- Git diff `main..build/m2`
+- `src/sports_intelligence/bot/app.py` — aiogram Bot/Dispatcher factory
+- `src/sports_intelligence/bot/access.py` — central allowlist middleware
+- `src/sports_intelligence/bot/backend_client.py` — typed backend client
+- `src/sports_intelligence/bot/transport.py` — transport protocol
+- `src/sports_intelligence/bot/context.py` — AppContext
+- `src/sports_intelligence/bot/strings.py` — Russian UI text constants
+- `src/sports_intelligence/bot/formatting.py` — renderers + keyboards
+- `src/sports_intelligence/bot/menu.py` — main menu / find / dashboard
+  keyboards
+- `src/sports_intelligence/bot/handlers.py` — commands + callbacks
+- `src/sports_intelligence/bot/callback_data.py` — payload schemas
+- `src/sports_intelligence/bot/__main__.py` — long-polling entrypoint
+- `tests/telegram_fakes.py` — FakeTransport
+- `tests/unit/test_bot_*.py` — 72 deterministic bot unit tests
+- `compose.yaml` — `telegram` profile
+- `docs/TELEGRAM.md`, `docs/IMPLEMENTATION_STATUS.md`,
+  `docs/REVIEW_HANDOFF.md`
+- Git diff `v0.3-m2..build/m3`
 
 ---
 
 # Questions for reviewer
 
-1. Are the DTO boundary and adapter design sufficient to swap providers
-   later (Sportmonks)?
-2. Is discovery idempotency watertight under concurrent jobs (upsert
-   races)?
-3. Does raw evidence persistence satisfy provenance requirements
-   (spec 14) for future MatchContext references?
-4. Are there quota pitfalls in the batch-first flow?
+1. Is the central allowlist middleware (message + callback) sufficient,
+   or are there paths where it could be bypassed (e.g., update types
+   outside its registration)?
+2. Is the typed `BackendClient`'s error normalization sufficient, or
+   should message-level errors also go through the same renderer?
+3. Is the Russian UI consistent and unambiguous, or are there screens
+   where the labels would confuse a primary Russian-speaking user?
+4. Is the button-based navigation sufficient, or should the fixture
+   detail screen also offer a "Back to date" jump?
 5. Is the next milestone safe to start?
 
 ---
