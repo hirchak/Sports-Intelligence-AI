@@ -1,41 +1,39 @@
 # Current Task
 
 **Status:** COMPLETE — awaiting final review  
-**Milestone:** M2.1 (fix-milestone after M2 review: PASS WITH FIXES)  
+**Milestone:** M2.2 (short fix-milestone after final M2.1 review: PASS WITH FIXES)  
 **Owner/agent:** DeepSeek V4 Pro (lead engineer, OpenCode)  
-**Started at:** 2026-08-20  
-**Last updated:** 2026-08-20
+**Started at:** 2026-08-21  
+**Last updated:** 2026-08-21
 
 ---
 
 # Task
 
-Apply M2 review fixes on `build/m2`. → **Done, commits on `build/m2`.**
+Apply final review fixes on `build/m2`. → **Done, commits on `build/m2`.**
 
 ---
 
 # Acceptance criteria — verified
 
-- retrieved_at after final response (retry test) → OK
-- evidence content/observation split, ADR-0009, replay `as_of` queryable → OK
-- atomic identity (CTE arbiter): concurrency test — one Team, one mapping → OK
-- fixture refresh keeps UUID, updates kickoff/status/venue/round/refs → OK
-- league `enabled` sync false→true→false → OK
-- per-provider enabled IDs; no-op without enabled leagues (0 calls) → OK
-- timezone: local today, window boundaries, DST test, adapter `timezone`
-  param, API date filter in APP_TIMEZONE → OK
-- provider typo → ProviderConfigError → OK
-- enqueue failure → FAILED + 502; re-POST requeues same job → OK
-- no invented Unknown/UNKNOWN; nullable names; required status fails → OK
-- ADR-0008 ↔ migration 0003 reconciled (composite indexes created) → OK
-- 74 unit + 16 integration green; ruff/format/mypy/compose green;
-  MOCK + bounded live smoke green; secret scan clean → OK
+- canonical fingerprint (provider/endpoint/date/timezone) stored in
+  observations; determinism tests → OK
+- requeue CAS transition never downgrades RUNNING/SUCCEEDED; race
+  regression test → OK
+- ORM ↔ migration 0003 synchronized; `alembic check` at head green in
+  integration/CI (no new upgrade operations) → OK
+- hardened arbiter: bounded resolution, no scalar_one without fallback;
+  synchronized 6-participant race → 1 mapping / 1 team / same UUID → OK
+- worker init exception-safe: cleanup + FAILED + original exception
+  (integration + unit tests) → OK
+- 79 unit + 20 integration green; ruff/format/mypy/compose green;
+  MOCK docker smoke green; live smoke not repeated (quota preserved) → OK
 
 ---
 
 # Work notes
 
-- 2026-08-20: fixes implemented and verified (see worklog).
+- 2026-08-21: fixes implemented and verified (see worklog).
 
 ---
 

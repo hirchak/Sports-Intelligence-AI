@@ -515,3 +515,75 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - Final independent M2.1 review; merge to `main` after acceptance;
   M3 only with explicit user approval.
+
+---
+
+### 2026-08-21 — DeepSeek V4 Pro (short fix milestone M2.2)
+
+**Milestone:** M2.2  
+**Task:** Apply final M2.1 review fixes (verdict: PASS WITH FIXES)
+
+**Completed**
+- Canonical request fingerprint: deterministic
+  `provider:endpoint_family:sorted(params)` incl. date+timezone; stored in
+  provider_observations; unit tests (stability, tz sensitivity,
+  order-independence, provider distinction) + adapter/mock wiring.
+- FAILED-job requeue race: CAS transition
+  `transition_job_status_if(FAILED->PENDING)`; handler re-reads status
+  after enqueue; regression test simulates worker RUNNING transition
+  between apply_async and HTTP update (job stays RUNNING, no downgrade).
+- ORM synchronized with migration 0003: composite indexes
+  ix_fixtures_league_kickoff / ix_fixtures_status_kickoff in ORM; stale
+  single-column index=True removed; `alembic check` at head added to
+  integration suite (green — no drift).
+- Hardened arbiter: bounded safe resolution (row → use; empty → fresh
+  SELECT; 3 bounded retries); no scalar_one() without fallback; targeted
+  synchronized 6-participant race test: 1 mapping, 1 team, same UUID for
+  all callers.
+- Worker init exception-safe: engine/provider cleanup in finally with
+  independent try/excepts; job marked FAILED when DB reachable; original
+  exception re-raised; integration + unit tests (dispose verified with
+  tracking engine).
+
+**Files changed**
+- Modified: `providers/dto.py` (fingerprint helper),
+  `providers/sports/{api_football,mock}.py`, `db/models/discovery.py`
+  (composite indexes), `db/repositories/discovery.py` (bounded arbiter),
+  `pipelines/discover_fixtures.py` (CAS transition),
+  `api/routes/jobs.py` (CAS requeue + refresh),
+  `workers/tasks/sports.py` (exception-safe init), tests (new
+  `test_fingerprint.py`, `test_worker_init_cleanup.py`, integration
+  additions), state files
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (79)
+- `make test-integration` → PASS (20) incl. alembic check + race tests
+- ruff / format / strict mypy (51 files) / compose validation → PASS
+- Docker MOCK smoke: idempotent discovery (0/3), observation fingerprint
+  canonical (mock:fixtures_by_date:date=2026-08-21&timezone=Europe/Warsaw),
+  health/ready 200
+- Live API-Football smoke intentionally NOT repeated (no HTTP contract
+  change; quota preserved)
+- CI on push → confirmed below
+
+**Live integrations verified**
+- unchanged from M2.1 (bounded live smokes in M2/M2.1 remain valid;
+  M2.2 changed no HTTP contract).
+
+**Mocked only**
+- MockSportsDataProvider for offline/CI/test runs.
+
+**Known issues**
+- Docker Desktop bake bug (per-service build workaround).
+- job_attempts rows (M4); QuotaManager (M4); full outbox (M4).
+
+**Spec / ADR deviations**
+- none new (fingerprint/CAS refinements extend ADR-0008/0009 behavior).
+
+**Git**
+- branch: `build/m2`
+- commits: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent M2.2 review; merge to `main` after acceptance;
+  M3 only with explicit user approval.

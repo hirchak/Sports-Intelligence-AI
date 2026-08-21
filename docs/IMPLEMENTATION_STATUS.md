@@ -2,8 +2,8 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M2 (+ fix-milestone M2.1) — implemented, awaiting final review  
-**Last updated:** 2026-08-20 (DeepSeek V4 Pro via OpenCode)  
+**Current milestone:** M2 (+ M2.1 + M2.2 fixes) — implemented, awaiting final review  
+**Last updated:** 2026-08-21 (DeepSeek V4 Pro via OpenCode)  
 **Last known good commit:** see section 11
 
 ---
@@ -164,6 +164,40 @@ All review items implemented:
   `(status, kickoff_at)` actually created in migration 0003; redundant
   single-column indexes dropped.
 
+## M2.2 — Short fix milestone (final M2.1 review: PASS WITH FIXES)
+
+All review items implemented:
+
+- **Canonical request fingerprint**: deterministic
+  `provider:endpoint_family:sorted(params)` — includes date AND timezone
+  (all response-affecting params); stored in `provider_observations`;
+  tests: same date+tz → same fingerprint, different tz → different,
+  order-independent, provider-distinct.
+- **FAILED-job requeue race fixed**: conditional (CAS) status transition
+  `transition_job_status_if(FAILED → PENDING)` — HTTP enqueue logic can
+  never downgrade RUNNING/SUCCEEDED; regression test simulates a worker
+  transition between `apply_async` and the HTTP-side update (job stays
+  RUNNING). Full outbox remains M4.
+- **ORM metadata synchronized with migration 0003**: composite
+  `Index("ix_fixtures_league_kickoff")` and
+  `Index("ix_fixtures_status_kickoff")` added to the ORM; stale
+  single-column `index=True` on league/status removed (kickoff single
+  index intentionally kept for date-only queries); schema drift verified
+  via `alembic check` at head in integration tests/CI (no new upgrade
+  operations).
+- **Hardened atomic identity race**: arbiter resolution no longer uses
+  `scalar_one()` without fallback — bounded safe resolution (winner row →
+  use; empty → fresh SELECT mapping; bounded retry) with no orphan
+  Team/Fixture possible; targeted synchronized-start concurrency test
+  (6 participants, barrier): exactly 1 mapping, exactly 1 Team, all
+  callers received the same UUID.
+- **Worker initialization exception-safe**: engine created before
+  provider/config init; any init failure now disposes the engine and
+  closes the provider (independent cleanups), marks the job FAILED when
+  the DB is available, and re-raises the original exception (tests:
+  integration marks FAILED; unit proves dispose + re-raise with
+  unreachable DB).
+
 ---
 
 # 3. In progress
@@ -174,20 +208,19 @@ None. M1 waits for review.
 
 # 4. Acceptance tests passed (actually run)
 
-- `uv run pytest -q -m "not integration"` → **74 passed**
-- `make test-integration` (isolated `sports_intel_test` DB) → **16 passed**
-  (incl. concurrency, refresh, enabled-sync, no-op no-call, timezone
-  boundaries, enqueue failure/requeue, local "today", evidence history)
+- `uv run pytest -q -m "not integration"` → **79 passed**
+- `make test-integration` (isolated `sports_intel_test` DB) → **20 passed**
+  (incl. targeted concurrency, enqueue-race regression, fingerprint,
+  schema-drift `alembic check`, worker init failure, migration cycle)
 - `uv run ruff check .` / `ruff format --check .` → clean
 - `uv run mypy src` → **no issues in 51 source files** (strict)
 - `docker compose config -q` (+dev) → OK
-- Docker smoke: 5 services; `/health`/`/ready` 200; migration 0003
-  applied to dev DB (data migration moved the existing live payload row
-  into `provider_observations`); MOCK discovery via Celery: 4 received →
-  3 created, repeat run 0 created/3 updated, observation appended while
-  content deduplicated; bounded live API-Football smoke: 1 request, 383
-  fixtures → 1 eligible updated, observation appended, no key in logs
-- Secret scan: keys present only in local `.env` (gitignored)
+- Docker smoke: 5 services; `/health`/`/ready` 200; MOCK discovery via
+  Celery idempotent (0 created / 3 updated); observation fingerprint
+  canonical (`mock:fixtures_by_date:date=2026-08-21&timezone=Europe/Warsaw`)
+- Live API-Football smoke NOT repeated in M2.2 (no HTTP contract change —
+  quota preserved); prior bounded live verification stands (M2/M2.1)
+- Secret scan: keys only in local `.env` (gitignored)
 
 ---
 
