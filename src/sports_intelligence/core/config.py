@@ -32,8 +32,10 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_allowed_user_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
 
-    sports_provider: str = ""
+    sports_provider: str = "mock"
     sports_api_key: str = ""
+    api_football_base_url: str = "https://v3.football.api-sports.io"
+    leagues_config_path: str = "config/leagues.yaml"
     odds_provider: str = ""
     odds_api_key: str = ""
     search_provider: str = ""
@@ -72,13 +74,13 @@ class Settings(BaseSettings):
         if self.app_env == "mock":
             return self
         missing: list[str] = []
-        if self.sports_provider and not self.sports_api_key:
+        if self.sports_provider and self.sports_provider != "mock" and not self.sports_api_key:
             missing.append("SPORTS_API_KEY")
-        if self.odds_provider and not self.odds_api_key:
+        if self.odds_provider and self.odds_provider != "mock" and not self.odds_api_key:
             missing.append("ODDS_API_KEY")
-        if self.search_provider and not self.search_api_key:
+        if self.search_provider and self.search_provider != "mock" and not self.search_api_key:
             missing.append("SEARCH_API_KEY")
-        if self.llm_provider and not self.llm_api_key:
+        if self.llm_provider and self.llm_provider != "mock" and not self.llm_api_key:
             missing.append("LLM_API_KEY")
         if missing:
             raise ValueError(f"APP_ENV={self.app_env} requires: {', '.join(missing)}")

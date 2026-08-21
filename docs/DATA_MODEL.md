@@ -1,7 +1,7 @@
 # Data Model
 
-Status: **M1** — first migration implemented (`jobs`, `job_attempts`);
-football domain schema arrives in M2+.
+Status: **M2** — discovery schema implemented (migration 0002); odds/research/
+prediction tables arrive in M4+.
 Authoritative design: `10_DATABASE_AND_DATA_LIFECYCLE.md`.
 
 ## Principles (from spec)
@@ -45,6 +45,34 @@ Key access paths must be indexed: `fixtures(kickoff_at)`,
 `error_message_redacted`; unique `(job_id, attempt_number)`.
 
 Scope decision: ADR-0006.
+
+## Implemented in M2 (migration 0002)
+
+- `leagues` — slug unique, name, country, enabled.
+- `seasons` — league FK, name, unique (league_id, name).
+- `teams` — name, country.
+- `fixtures` — league/season/team FKs, kickoff_at (UTC, indexed),
+  venue/round nullable, status; unique natural key
+  (league_id, home_team_id, away_team_id, kickoff_at); indexes for
+  kickoff/league/status lookups.
+- `provider_entity_ids` — provider + entity_type + external_id → internal
+  UUID; unique identity; never a primary key.
+- `raw_provider_payloads` — deduplicated content: provider, endpoint_family,
+  payload_hash, JSONB payload, first_seen_at.
+- `provider_observations` (M2.1, ADR-0009) — one immutable row per
+  retrieval event: payload_id FK, provider, endpoint_family,
+  request_fingerprint, retrieved_at (time the final response was
+  received), response_status. Replay resolves the snapshot available at
+  `as_of` via `retrieved_at <= as_of`.
+
+M2.1 also: composite indexes `(league_id, kickoff_at)` and
+`(status, kickoff_at)` (ADR-0008 amendment); atomic provider-identity
+acquisition via a PostgreSQL CTE arbiter (single team row + single
+mapping under concurrency); `teams.name` nullable (no invented
+"Unknown"); league upsert syncs `enabled`.
+
+Upsert strategy and scope decisions: ADR-0008 (amended), ADR-0009.
+All timestamps UTC.
 
 ## Migration workflow
 

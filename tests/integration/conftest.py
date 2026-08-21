@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from alembic import command
 from alembic.config import Config as AlembicConfig
 from fastapi.testclient import TestClient
 
@@ -20,6 +21,18 @@ requires_services = pytest.mark.skipif(
     not (TEST_DATABASE_URL and TEST_REDIS_URL),
     reason="TEST_DATABASE_URL and TEST_REDIS_URL are required",
 )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def migrated_test_database() -> Iterator[None]:
+    if not (TEST_DATABASE_URL and TEST_REDIS_URL):
+        yield
+        return
+    require_test_database(TEST_DATABASE_URL)
+    config = AlembicConfig(str(REPO_ROOT / "alembic.ini"))
+    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+    command.upgrade(config, "head")
+    yield
 
 
 @pytest.fixture

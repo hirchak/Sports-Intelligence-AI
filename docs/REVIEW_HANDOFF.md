@@ -8,85 +8,140 @@ Update it before every milestone review.
 
 # Review status
 
-**Ready for review:** YES  
+**Ready for review:** NO — review completed  
+**Final review verdict (2026-08-21):** **PASS. M2 ACCEPTED.** Safe to
+begin M3: YES.  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M1 + M1.1 fixes — awaiting final review  
-**Review target branch:** `build/m1`  
-**Review target commits:** `18c0a25` (DB/Redis lifecycle + migration),
-`6b19704` (Celery), `93b3d3a` (CI/docs/state), `d0038dc` (handoff),
-**`973c674` (M1.1 fixes)** — see Git section  
-**CI status:** green on `build/m1` (unit, integration with isolated
-Postgres/Redis services, compose validation)  
-**Previous review:** M1 → PASS WITH FIXES; fixes implemented in M1.1  
-**Previous accepted state:** `main` = `7000c32` (M0 accepted, tag `v0.1-m0`)
+**Milestone:** M2 + M2.1 + M2.2 + M2.3 + M2.4 fixes — accepted  
+**Review target branch:** `build/m2`  
+**Review target commits:** `bdb5ef3`, `3f62348`, `6625d7c`, `7e71ed0`,
+`ac4188a` (M2); `ea9b4a8`, `1de60af`, `1dcd7cd` (M2.1);
+`118aaab`, `dc5d2e0`, `e236f96` (M2.2);
+`a157158` (M2.3: spec-compliant discovery idempotency identity);
+`e4c38b6` (M2.4: bind discovery job identity to worker execution config) —
+see Git section  
+**CI status:** green on `build/m2` (unit, integration with isolated
+Postgres/Redis, compose validation)  
+**Previous review:** M2.4 → **PASS**; M2 ACCEPTED (final M2 review)  
+**Previous accepted state:** `main` = `25dda83` (M1 accepted, tag `v0.2-m1`)
 
 ---
 
 # What changed since the last review
 
-M1.1 fixes (all items from the PASS WITH FIXES verdict):
+M2.4 (the one required safety fix from the final M2.3 review):
 
-1. **Isolated integration database.** Integration tests — including the
-   destructive migration cycle (`downgrade base` + reapply) — never touch
-   the dev database anymore:
-   - dedicated `sports_intel_test` database, auto-created by
-     `make test-integration` on the local Postgres;
-   - `TEST_DATABASE_URL` always points at it; Redis test traffic uses db 15;
-   - CI runs against its own ephemeral Postgres service container with
-     `sports_intel_test`;
-   - guard `tests/helpers.py::require_test_database` refuses any
-     `TEST_DATABASE_URL` whose database name does not end with `_test`
-     (loud `RuntimeError`, not a silent skip; unit-tested);
-   - verified: `sports_intel` table snapshot identical before and after
-     the integration suite.
-2. **Exception-safe lifespan cleanup.** Cleanup wrapped in `try/finally`
-   via `src/sports_intelligence/api/resources.py::close_resources`:
-   - Redis `aclose()` and engine `dispose()` are guaranteed to run on any
-     exit, including exceptions raised during the lifespan;
-   - a failure of one cleanup does not block the other (both are attempted,
-     each failure logged);
-   - tests: unit tests for failure isolation + a test that raises inside
-     the lifespan context and proves both resources were still closed.
-3. **Docs**: `docs/LOCAL_DEVELOPMENT.md` documents the test-database
-   isolation policy and the guard.
+- **Discovery job identity now binds execution semantics.** The Celery
+  task receives `job_id`, `fixture_date`, `expected_league_config_version`,
+  `discovery_timezone` — the same values encoded in the idempotency
+  identity at enqueue time. The worker loads the LeagueConfig and refuses
+  to run when the loaded `version` differs from the expected one:
+  deterministic `LeagueConfigVersionMismatchError`, zero provider
+  requests, job marked FAILED. A full persisted job-input
+  snapshot/outbox remains deferred to the orchestration milestone, but
+  the worker can never execute a different semantic configuration than
+  the one encoded in the job identity.
+- **Timezone comes from the job**: `FixtureDiscoveryService` receives
+  `discovery_timezone` from the task payload; mutable
+  `settings.app_timezone` is no longer re-read at execution.
+- Regression tests: enqueued v1 + worker sees v1 → executes and
+  SUCCEEDS; config drifts to v2 before execution → 0 provider calls +
+  FAILED; a job with `Europe/Warsaw` uses Warsaw even when current
+  settings say `Europe/London`; existing MOCK discovery/idempotency
+  tests stay green. No migration; no live smoke (quota preserved).
+
+M2.3 (the one required fix from the final M2.2 review):
+
+- **Discovery idempotency identity now matches spec `09`**:
+  `discover:{provider}:{date}:v{league_config_version}:{timezone}`.
+  The LeagueConfig `version` loaded from the configured YAML is the
+  canonical identity mechanism (the enabled-league list never appears in
+  the key); timezone is included because the provider request depends on
+  it. Rule documented: semantic changes to `config/leagues.yaml` must
+  bump `version`.
+- Tests: duplicate POST with the same identity → no new job/enqueue;
+  config-version change → new job + enqueue; timezone change → distinct
+  identity (Warsaw vs London); FAILED-job retry keeps the same job UUID.
+- Stale IMPLEMENTATION_STATUS strings synced (in-progress block, provider
+  selected/verified, reviewer diff `main..build/m2`, raw-evidence
+  description post-ADR-0009).
+
+Earlier M2.2 fixes (PASS WITH FIXES verdict):
+
+1. **Canonical request fingerprint** — deterministic
+   `provider:endpoint_family:sorted(params)` including date AND timezone;
+   stored in `provider_observations`; tests cover stability (same
+   date+tz), tz-sensitivity (different tz → different fingerprint),
+   parameter-order independence and provider distinction.
+2. **FAILED-job requeue race** — CAS transition
+   `transition_job_status_if(FAILED → PENDING)`; the HTTP layer re-reads
+   the status after enqueue and can never downgrade RUNNING/SUCCEEDED;
+   regression test simulates a worker status transition between
+   `apply_async()` and the HTTP-side update (job remains RUNNING).
+   Full outbox still M4.
+3. **ORM metadata synchronized with migration 0003** — composite
+   `ix_fixtures_league_kickoff` / `ix_fixtures_status_kickoff` declared in
+   the ORM; stale single-column `index=True` removed (single kickoff
+   index kept deliberately for date-only queries); schema drift verified
+   with `alembic check` at head in integration tests/CI — no new upgrade
+   operations.
+4. **Hardened atomic identity race** — arbiter resolution no longer uses
+   `scalar_one()` without fallback: bounded safe resolution (winner row →
+   use; empty → fresh mapping SELECT; bounded retries); no orphan
+   Team/Fixture; targeted synchronized-start test (6 participants on one
+   team identity) proves exactly 1 mapping, exactly 1 Team, identical
+   UUID for all callers.
+5. **Worker initialization exception-safe** — engine/provider cleanup in
+   `finally` with independent try/excepts; provider/config init failure
+   marks the job FAILED when the DB is available and re-raises the
+   original exception (integration + unit tests).
 
 ---
 
 # What should the reviewer verify?
 
-- integration tests (including the destructive migration cycle) can only
-  run against a `_test` database; the dev DB is untouched;
-- lifespan cleanup runs on exceptional exit and tolerates cleanup failures;
-- migration 0001 applies/downgrades/reapplies on a fresh test database;
-- Celery queues/routes match `09` §25; no football tasks leaked into M1;
-- MOCK mode remains keyless;
-- no scope creep into M2+ (no sports/odds/search/LLM/Telegram code);
-- compose isolation (ports, volumes, project name).
+- provider JSON never leaks into domain/API schemas (DTO boundary);
+- adapter retry classification and key handling (no key in logs/errors);
+- discovery is fully idempotent (rows, mappings, raw payload dedup);
+- N+1 guard test is meaningful (single request for N fixtures);
+- migration 0002 applies/downgrades/reapplies on a fresh DB;
+- no scope creep (no odds/research/MatchContext/prediction/Telegram);
+- test-DB isolation guard still intact (dev DB protected);
+- compose isolation unchanged (loopback ports, named volumes);
+- M2.4: worker refuses to run on LeagueConfig version drift (0 provider
+  calls, FAILED, deterministic exception) and uses the job's timezone,
+  not the current settings.
 
 ---
 
-## Commands claimed as passing
+# Commands claimed as passing
 
 ```bash
 uv sync --frozen --dev
-uv run pytest -q -m "not integration"        # 41 passed
-make test-integration                        # 3 passed, isolated sports_intel_test DB
+uv run pytest -q -m "not integration"        # 79 passed
+make test-integration                        # 26 passed, isolated sports_intel_test
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy src
+uv run mypy src                              # 51 source files, strict
 docker compose config -q
 docker compose up -d --build                 # api/postgres/redis/worker/beat
 curl http://127.0.0.1:8000/health            # 200
 curl http://127.0.0.1:8000/ready             # 200
-docker compose run --rm sports-api alembic upgrade head
-docker compose exec sports-worker celery -A sports_intelligence.workers.celery_app call control.ping --args='["smoke"]'
+curl -X POST http://127.0.0.1:8000/v1/jobs/discover -d '{"date":"2026-08-21"}'
+curl "http://127.0.0.1:8000/v1/fixtures?date=2026-08-21"
 ```
 
-Negative check (guard): pointing `TEST_DATABASE_URL` at the dev database
-makes integration tests fail loudly with `RuntimeError` — verified.
-
 CI runs unit + integration (isolated service containers) + compose
-validation on every push; all three jobs green on `build/m1`.
+validation on every push; all three jobs green on `build/m2`.
+
+Live evidence: bounded API-Football smokes passed in M2/M2.1 (383
+fixtures in ONE request, 1 eligible league, idempotent re-runs, no key
+in logs). M2.2 changed no HTTP contract, so the live smoke was NOT
+repeated (quota preserved); MOCK-mode discovery through the full stack
+was re-verified (idempotent, canonical fingerprint stored in
+observations). M2.3/M2.4 changed only the job identity/payload, not the
+provider HTTP contract — live smoke again NOT repeated (quota
+preserved).
 
 Reviewer must not assume tests passed based on status text alone.
 
@@ -94,45 +149,48 @@ Reviewer must not assume tests passed based on status text alone.
 
 # Known limitations
 
-- No orchestrator/job scheduling logic yet — queues and jobs schema exist,
-  but pipelines arrive in M2+.
-- `control.ping` is the only task; `beat_schedule` is empty.
-- Celery is untyped upstream: mypy overrides treat celery/kombu as untyped;
-  the ping task carries `type: ignore[untyped-decorator]`.
-- starlette pinned `<1.0` (httpx TestClient deprecation in 1.x).
-- Docker Desktop (macOS) multi-service bake bug — per-service build
-  workaround documented in `docs/LOCAL_DEVELOPMENT.md`.
-- Scheduled debt: M2 must replace `dict[str, Any]` provider interfaces with
-  normalized DTO/Pydantic schemas (recorded in IMPLEMENTATION_STATUS).
+- Live verification is a single-date, single-league bounded smoke — not
+  multi-day production usage.
+- `job_attempts` rows are not written yet (M4 debt); only `jobs.status`
+  is updated.
+- QuotaManager/request ledger deferred to M4 (adapter captures
+  rate-limit headers already).
+- Odds/search/LLM protocols still typed as `dict[str, Any]` placeholders
+  until their milestones.
+- Docker Desktop multi-service bake bug (per-service build workaround
+  documented).
 
 ---
 
 # Files of highest relevance
 
-- `src/sports_intelligence/api/app.py` (lifespan)
-- `src/sports_intelligence/api/resources.py` (exception-safe cleanup)
-- `src/sports_intelligence/api/readiness.py`
-- `tests/helpers.py` (test-DB guard)
-- `tests/integration/conftest.py` + `test_db_resources.py` (isolated services)
-- `src/sports_intelligence/db/models/jobs.py`
-- `src/sports_intelligence/db/migrations/versions/0001_*.py`
-- `src/sports_intelligence/workers/celery_app.py`
-- `docs/adr/0006-m1-migration-scope-and-celery-queue-layout.md`
-- `compose.yaml`, `.github/workflows/ci.yml`
-- `docs/IMPLEMENTATION_STATUS.md`
-- Git diff `main..build/m1`
+- `src/sports_intelligence/providers/dto.py`
+- `src/sports_intelligence/providers/sports/api_football.py`
+- `src/sports_intelligence/providers/sports/mock.py`
+- `src/sports_intelligence/pipelines/discover_fixtures.py`
+- `src/sports_intelligence/db/repositories/discovery.py`
+- `src/sports_intelligence/db/migrations/versions/0002_*.py`
+- `src/sports_intelligence/api/routes/{fixtures,jobs}.py`
+- `src/sports_intelligence/workers/tasks/sports.py`
+- `src/sports_intelligence/core/league_config.py`
+- `docs/adr/0007-api-football-first-provider.md`
+- `docs/adr/0008-m2-schema-scope-and-upserts.md`
+- `config/leagues.yaml`, `config/leagues.mock.yaml`
+- `tests/unit/test_api_football_adapter.py`
+- `tests/integration/test_fixture_discovery.py`
+- Git diff `main..build/m2`
 
 ---
 
 # Questions for reviewer
 
-1. Is the lifespan/resource design safe under concurrent requests and
-   restarts?
-2. Is the migration scope (jobs/job_attempts only) correct, or did something
-   belong in M1 that is missing?
-3. Are the queue layout and task routing ready for M2 without rework?
-4. Do tests prove real behavior (including failure paths) rather than only
-   happy paths?
+1. Are the DTO boundary and adapter design sufficient to swap providers
+   later (Sportmonks)?
+2. Is discovery idempotency watertight under concurrent jobs (upsert
+   races)?
+3. Does raw evidence persistence satisfy provenance requirements
+   (spec 14) for future MatchContext references?
+4. Are there quota pitfalls in the batch-first flow?
 5. Is the next milestone safe to start?
 
 ---

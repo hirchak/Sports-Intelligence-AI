@@ -1,0 +1,26 @@
+# Mock-mode demo configuration: used for local MOCK smoke tests so the
+# default config can stay quota-safe (all leagues disabled).
+#
+# provider_ids are explicit per provider: `mock` for the offline mock
+# provider (recorded responses emulate the same league ids), and
+# `api_football` for bounded live smokes against the real API.
+# Discovery never mixes ids across providers.
+#
+# Run the mock smoke with:
+#   LEAGUES_CONFIG_PATH=config/leagues.mock.yaml docker compose up -d
+version: 1
+leagues:
+  - slug: premier-league
+    name: Premier League
+    country: England
+    enabled: true
+    provider_ids:
+      mock: 39
+      api_football: 39
+  - slug: la-liga
+    name: La Liga
+    country: Spain
+    enabled: false
+    provider_ids:
+      mock: 140
+      api_football: 140

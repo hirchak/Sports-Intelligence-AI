@@ -1,42 +1,47 @@
 # Current Task
 
 **Status:** COMPLETE — awaiting final review  
-**Milestone:** M1.1 (fix-milestone after M1 review: PASS WITH FIXES)  
+**Milestone:** M2.4 (minimal fix after final M2.3 review: PASS WITH ONE SMALL SAFETY FIX)  
 **Owner/agent:** DeepSeek V4 Pro (lead engineer, OpenCode)  
-**Started at:** 2026-08-20  
-**Last updated:** 2026-08-20
+**Started at:** 2026-08-21  
+**Last updated:** 2026-08-21
 
 ---
 
 # Task
 
-Apply M1 review fixes on `build/m1`. → **Done, commit on `build/m1`.**
+Apply the one required safety fix on `build/m2`. → **Done, commit on `build/m2`.**
 
 ---
 
 # Acceptance criteria — verified
 
-- Integration tests run only against `sports_intel_test`
-  (`make test-integration` auto-creates it; Redis db 15) → OK
-- Guard refuses non-`_test` databases (loud RuntimeError) → OK
-- Dev DB `sports_intel` unchanged after the integration suite
-  (table snapshot before/after) → OK
-- Migration downgrade/reapply runs on the isolated test DB → OK
-- Lifespan cleanup in try/finally; exceptional exit test proves both
-  resources closed; failure-isolation unit tests → OK
-- 41 unit tests + 3 integration tests green; ruff/format/mypy clean;
-  compose validation + docker smoke green → OK
+- discovery task receives `job_id`, `fixture_date`,
+  `expected_league_config_version`, `discovery_timezone` → OK
+- worker loads LeagueConfig and refuses to run when the loaded `version`
+  differs from the job's expected version: deterministic
+  `LeagueConfigVersionMismatchError`, no provider request, job FAILED → OK
+- `FixtureDiscoveryService` uses the job's `discovery_timezone`, never
+  mutable `settings.app_timezone` → OK
+- regression tests (version match executes / drift → 0 provider calls +
+  FAILED / job timezone wins over changed settings) → OK
+- existing MOCK discovery/idempotency tests remain green → OK
+- full unit + integration + ruff + format + strict mypy + alembic check
+  green → OK
+- no migration; no live API smoke (quota preserved) → OK
+- docs synced (IMPLEMENTATION_STATUS, REVIEW_HANDOFF) → OK
 
 ---
 
 # Work notes
 
-- 2026-08-20: fixes implemented and verified (see worklog).
+- 2026-08-21: fix implemented and verified (see worklog).
 
 ---
 
 # Completion
 
 - Status set to COMPLETE.
+- Final independent review verdict: **PASS — M2 ACCEPTED**.
 - Commit: see `docs/REVIEW_HANDOFF.md`.
-- State files updated. Stopped before M2; no merge to main.
+- State files/docs updated. No merge to main; stopped before M3.

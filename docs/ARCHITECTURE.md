@@ -1,6 +1,7 @@
 # Architecture
 
-Status: M1 — core infrastructure implemented; business logic arrives in later milestones.
+Status: M2.1 — discovery hardened (immutable evidence history, atomic
+identity, timezone-aware dates); deeper pipelines arrive in M4+.
 
 ## Layered boundaries
 
@@ -41,15 +42,16 @@ persistence/publishing
 
 ## Components (current state)
 
-| Component            | Milestone | State in M1                                        |
+| Component            | Milestone | State in M2                                        |
 |----------------------|-----------|----------------------------------------------------|
-| FastAPI control API  | M1        | `/health`, `/ready`; lifespan-managed resources    |
-| PostgreSQL 16        | M1        | Compose service; shared async engine; `jobs`/`job_attempts` |
-| Redis 7              | M1        | Compose service; shared client; Celery broker/backend |
-| Celery + Beat        | M1        | App + worker + beat; 6 queues; `control.ping` task |
-| Alembic              | M1        | First migration (0001) applied/downgraded in CI    |
-| Structured logging   | M1        | JSON formatter + context fields (correlation/job)  |
-| Sports provider      | M2        | `SportsDataProvider` Protocol only                 |
+| FastAPI control API  | M1        | `/health`, `/ready`, `/v1/fixtures`, `/v1/jobs/discover` |
+| PostgreSQL 16        | M1        | shared async engine; discovery tables (0002)       |
+| Redis 7              | M1        | shared client; Celery broker/backend               |
+| Celery + Beat        | M1        | worker + beat; `control.ping`, `sports.discover_fixtures` |
+| Alembic              | M1        | migrations 0001–0002, verified in CI               |
+| Structured logging   | M1        | JSON + context fields                              |
+| Sports provider      | M2        | API-Football adapter + mock provider (ADR-0007)    |
+| Fixture discovery    | M2        | batch-first, idempotent, raw evidence (ADR-0008)   |
 | Odds provider        | M4        | `OddsProvider` Protocol only                       |
 | Search provider      | M5        | `SearchProvider` Protocol only                     |
 | LLM provider         | M7        | `LLMProvider` Protocol + `LLMResult` only          |
@@ -63,6 +65,46 @@ The FastAPI lifespan creates exactly one shared `AsyncEngine`,
 `app.state`, and disposes/closes them on shutdown. `/ready` uses these
 shared resources — no per-request engine creation. Startup validation
 probes DB and Redis and logs the result without crashing the API.
+
+## Provider layer (M2)
+
+- Typed DTOs in `providers/dto.py` (`ProviderFixture`, `ProviderLeague`,
+  `ProviderSeason`, `ProviderTeam`, `FixtureDiscoveryResult`,
+  `ProviderResponseMetadata`) — domain code never sees provider JSON.
+- `ApiFootballProvider`: one shared httpx client per instance, env-only
+  API key, bounded retry (timeout/transport/429/5xx retryable; auth
+  non-retryable), normalized `ProviderError` hierarchy, rate-limit
+  metadata, raw payload returned for evidence.
+- `MockSportsDataProvider`: recorded, sanitized responses; no key; used by
+  MOCK mode, CI and deterministic tests.
+- Discovery is batch-first: one date-level request fetches all fixtures of
+  the day; enabled leagues are filtered locally (resolved per current
+  provider — no cross-provider ID mixing; zero enabled leagues → no
+  provider call at all). See ADR-0007.
+- Raw evidence is immutable history: deduplicated content
+  (`raw_provider_payloads`) + append-only retrieval events
+  (`provider_observations`) — ADR-0009.
+- Provider identity acquisition is concurrency-safe via a PostgreSQL CTE
+  arbiter; fixture refreshes update mutable metadata in place (same UUID).
+- `retrieved_at` is captured after the final successful response
+  (post-retry); dates are timezone-aware: "today" and `?date=` boundaries
+  use `APP_TIMEZONE`; API-Football receives the `timezone` parameter while
+  DB timestamps stay UTC.
+
+## Discovery flow (M2)
+
+```text
+POST /v1/jobs/discover (idempotency key:
+discover:{provider}:{date}:v{league_config_version}:{timezone})
+    → jobs row (PENDING)
+    → Celery sports.discover_fixtures on sports_io
+        → provider.get_fixtures_by_date (1 bounded request)
+        → raw payload persisted (hash-deduplicated)
+        → league/season/team upsert + provider mappings
+        → fixture idempotent upsert (natural key)
+        → job SUCCEEDED/FAILED
+GET /v1/fixtures?date=…&league=… — normalized internal schema
+```
 
 ## Celery layout (M1)
 
@@ -107,3 +149,5 @@ See `docs/adr/0003-local-docker-topology.md`.
 - `docs/adr/0004-runtime-modes-and-config-validation.md`
 - `docs/adr/0005-m0-scope-includes-api-infra-skeleton.md`
 - `docs/adr/0006-m1-migration-scope-and-celery-queue-layout.md`
+- `docs/adr/0007-api-football-first-provider.md`
+- `docs/adr/0008-m2-schema-scope-and-upserts.md`

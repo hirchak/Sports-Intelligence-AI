@@ -1,8 +1,7 @@
 # Pipelines
 
-Status: **M1** — queue/routing infrastructure present (`control`, `sports_io`,
-`research_io`, `llm`, `evaluation`, `notifications`); pipeline code arrives
-in M2+.
+Status: **M2** — fixture discovery pipeline implemented (batch-first,
+idempotent, raw evidence). Form/odds/research arrive M4+.
 Authoritative design: `08_FOOTBALL_ANALYTICS_PIPELINE.md` and
 `09_AGENT_CATALOG_AND_ORCHESTRATION.md`.
 
@@ -50,8 +49,8 @@ improvement hypotheses.
 
 | Piece                    | Milestone | State |
 |--------------------------|-----------|-------|
-| Jobs, queues, retries    | M1        | queue infra + `jobs`/`job_attempts` schema done; orchestrator logic M2+ |
-| Fixture discovery        | M2        | planned |
+| Jobs, queues, retries    | M1        | done (jobs schema + queues) |
+| Fixture discovery        | M2        | done (API-Football + mock, batch-first, idempotent) |
 | Match collectors + odds  | M4        | planned |
 | Research                 | M5        | planned |
 | Features + MatchContext  | M6        | planned |

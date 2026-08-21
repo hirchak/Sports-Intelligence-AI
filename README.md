@@ -6,7 +6,7 @@ Current phase: **LOCAL DEVELOPMENT ONLY** (no server deployment, no Hermes depen
 
 ## Status
 
-- Milestone: **M0 accepted (PASS)**; **M1 implemented, pending review** (`build/m1` branch)
+- Milestone: **M0, M1 accepted**; **M2 implemented, pending review** (`build/m2` branch)
 - See `docs/IMPLEMENTATION_STATUS.md` for the canonical state.
 
 ## What this is
@@ -27,17 +27,18 @@ Authoritative specifications live in the repository root (`00_MASTER_TECHNICAL_S
 
 ```text
 src/sports_intelligence/   application code (src layout)
-  api/                     FastAPI control API (/health, /ready, lifespan)
-  core/                    config, structured logging, time, ids
-  db/                      async engine/session factory, models, migrations
-  providers/               provider interfaces (Protocols, no impl yet)
-  workers/                 Celery app, queues, tasks
-  schemas/                 Pydantic response models
-  bot/ domain/ features/ pipelines/ ranking/ research/
+  api/                     FastAPI (/health, /ready, /v1/fixtures, /v1/jobs)
+  core/                    config, logging, time, ids, league config, job status
+  db/                      engine/session, models, repositories, migrations
+  providers/               typed DTOs, API-Football + mock adapters, errors
+  workers/                 Celery app, queues, tasks (control + sports)
+  pipelines/               fixture discovery service, job helpers
+  schemas/                 Pydantic request/response models
+  bot/ domain/ features/ research/ ranking/
                            reserved packages for future milestones
 tests/                     unit / integration / contract / fixtures
 docs/                      architecture, ADRs, dev/deploy/security docs
-config/                    sample league/market config (future milestones)
+config/                    league configuration (YAML)
 prompts/                   versioned LLM prompts (future milestones)
 ```
 
@@ -62,6 +63,10 @@ Host-side ports (loopback only): Postgres 5433, Redis 6380, API 8000.
 
 Celery queues (per agent catalog): `control`, `sports_io`, `research_io`,
 `llm`, `evaluation`, `notifications`.
+
+M2: fixture discovery via API-Football (`SPORTS_PROVIDER=api_football` +
+`SPORTS_API_KEY`) or offline mock provider (default). See
+`docs/LOCAL_DEVELOPMENT.md`.
 
 ## Local development
 

@@ -356,3 +356,385 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - Final independent M1.1 review; merge to `main` after acceptance;
   M2 only with explicit user approval.
+
+---
+
+### 2026-08-20 — DeepSeek V4 Pro (M1 finalize + M2 sports provider/discovery)
+
+**Milestone:** M1 (finalize) + M2  
+**Task:** Finalize M1 in main; implement API-Football + fixture discovery
+
+**Completed**
+- M1 finalized: PR #3 merged (`25dda83`), CI green on main, tag `v0.2-m1`.
+- Typed provider DTOs (`providers/dto.py`) replacing `dict[str, Any]` on
+  the discovery path; UTC normalization; explicit None for missing fields.
+- `ApiFootballProvider`: async httpx, env-only key, bounded retry
+  (tenacity; auth non-retryable), normalized `ProviderError` hierarchy,
+  rate-limit metadata, raw payload for evidence, injected transport.
+- `MockSportsDataProvider` (recorded sanitized responses, keyless).
+- Migration 0002: leagues/seasons/teams/fixtures/provider_entity_ids/
+  raw_provider_payloads (ADR-0008, PostgreSQL upserts, UTC, indexes).
+- `FixtureDiscoveryService`: batch-first, idempotent, raw payload
+  hash-dedup, provider identity on mappings.
+- League YAML config (`config/leagues.yaml` all disabled; mock demo
+  config; `make seed`).
+- API: `/v1/fixtures` (+date/league), `/v1/fixtures/{id}`,
+  `POST /v1/jobs/discover` (jobs row + idempotency key + Celery enqueue).
+- Celery `sports.discover_fixtures` (sports_io), job status updates;
+  fixed worker task registration (include list). No schedule.
+- ADR-0007 (provider choice), ADR-0008 (schema scope).
+
+**Files changed**
+- Created: `providers/{dto,errors}.py`, `providers/sports/{api_football,
+  mock,factory}.py` + mock_data, `core/{league_config,job_status}.py`,
+  `db/models/discovery.py`, `db/repositories/discovery.py`,
+  `pipelines/discover_fixtures.py`, `api/routes/{fixtures,jobs}.py`,
+  `workers/tasks/sports.py`, `schemas/fixtures.py`,
+  `scripts/seed_leagues.py`, `config/leagues.yaml`,
+  `config/leagues.mock.yaml`, migration `0002`, tests (unit×4 files,
+  integration×1, recorded fixture JSON), ADRs 0007/0008
+- Modified: `providers/base.py`, `core/config.py`, `api/app.py`,
+  `db/models/__init__.py`, `workers/celery_app.py`, `compose.yaml`,
+  `Dockerfile`, `Makefile`, `.env.example`, `pyproject.toml`, `uv.lock`,
+  integration conftest, docs
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (63)
+- `make test-integration` → PASS (10) on isolated sports_intel_test
+- ruff / format / strict mypy (50 files) → PASS
+- compose validation → PASS; docker smoke: 5 services, /health/ready 200
+- Mock discovery via full stack → fixtures persisted (earlier smoke)
+- Live API-Football smoke (bounded, 2 calls): 2026-08-21 → 383 fixtures
+  in ONE request → 1 eligible (Premier League, Arsenal vs Coventry)
+  persisted; raw payload 401 KB hash-deduplicated; repeat run idempotent
+  (0 created / 1 updated / no payload dup); job SUCCEEDED; key absent
+  from logs; key stored only in local `.env` (gitignored)
+- CI on push → confirmed below
+
+**Live integrations verified**
+- API-Football fixture discovery: bounded live smoke PASS (single date,
+  single league). Not verified: multi-day production usage, quota edges.
+
+**Mocked only**
+- MockSportsDataProvider for offline/CI/test runs.
+
+**Known issues**
+- Docker Desktop bake bug (per-service build workaround).
+- job_attempts rows not written yet (M4 debt); QuotaManager M4.
+- starlette <1.0 pin; celery untyped decorators.
+
+**Spec / ADR deviations**
+- ADR-0007, ADR-0008.
+
+**Git**
+- branch: `build/m2`
+- commits: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent M2 review; merge to `main` after acceptance;
+  M3 only with explicit user approval.
+
+---
+
+### 2026-08-20 — DeepSeek V4 Pro (fix milestone M2.1)
+
+**Milestone:** M2.1  
+**Task:** Apply M2 review fixes (verdict: PASS WITH FIXES)
+
+**Completed**
+- retrieved_at moved after final successful response (post-retry);
+  regression test with retry/delay.
+- Immutable evidence history: raw_provider_payloads (content, dedup) +
+  provider_observations (append-only retrieval events); ADR-0009;
+  migration 0003 with data migration for existing rows; replay resolves
+  as_of via observation.retrieved_at.
+- Atomic identity: PostgreSQL CTE arbiter for teams/fixtures (mapping
+  insert decides winner; entity row created in same statement with the
+  mapping's id); concurrency test (asyncio.gather) proves one Team + one
+  mapping. Fixture refresh updates mutable metadata in place (same UUID;
+  kickoff-change test).
+- upsert_league_id syncs `enabled` (test false→true→false).
+- Discovery resolves enabled league IDs per CURRENT provider; zero enabled
+  → empty summary + 0 provider calls (test); config/leagues.mock.yaml with
+  explicit mock:/api_football: IDs.
+- Timezone: local_today/utc_window_for_local_day (APP_TIMEZONE); POST
+  without date uses local date; GET ?date= uses local-day UTC boundaries;
+  adapter sends timezone param; DST-boundary + midnight tests.
+- Provider factory: unknown/empty provider → ProviderConfigError (no
+  silent mock fallback).
+- Enqueue failure → job FAILED + 502; re-POST requeues the same job row
+  (PENDING), no duplicates.
+- Missing data: nullable team/league names in DTO/DB; missing status
+  (required identity) fails validation; no Unknown/UNKNOWN invented.
+- ADR-0008 amended (composite indexes created in 0003, atomic pattern,
+  enabled sync); mock_data packaged into wheel (hatch force-include).
+
+**Files changed**
+- Created: `db/migrations/versions/0003_*.py`,
+  `docs/adr/0009-immutable-provider-observation-history.md`,
+  `tests/unit/test_factory_and_retry.py`, `tests/unit/test_time.py`
+- Modified: `providers/dto.py`, `providers/errors.py`,
+  `providers/base.py`, `providers/sports/{api_football,factory,mock}.py`,
+  `core/time.py`, `db/models/{discovery.py,__init__.py}`,
+  `db/repositories/discovery.py`, `pipelines/discover_fixtures.py`,
+  `api/routes/{fixtures,jobs}.py`, `schemas/fixtures.py`,
+  `workers/tasks/sports.py`, `pyproject.toml` (hatch force-include),
+  `config/leagues.mock.yaml`, `tests/integration/test_fixture_discovery.py`,
+  `docs/adr/0008-*.md` (amendment), docs/*, state files
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (74)
+- `make test-integration` → PASS (16) on isolated sports_intel_test
+- ruff / format / strict mypy (51 files) / compose validation → PASS
+- Docker smoke: 0003 applied (existing live row migrated to
+  observations); MOCK discovery via stack: 4→3 created, repeat 0/3 +
+  observation appended, content dedup; bounded live smoke: 1 request,
+  383 fixtures, 1 eligible updated, observation appended; no key in logs
+- secret scan clean; keys only in local .env
+
+**Live integrations verified**
+- API-Football discovery: bounded smoke (1 call in M2.1). Not verified:
+  multi-day production usage, quota edges.
+
+**Mocked only**
+- MockSportsDataProvider for offline/CI/test runs.
+
+**Known issues**
+- Docker Desktop bake bug (per-service build workaround).
+- job_attempts rows not written (M4); QuotaManager (M4).
+- Enqueue-failure recovery covers FAILED jobs via manual re-POST; PENDING
+  jobs lost from the broker are not auto-detected until M4 outbox.
+
+**Spec / ADR deviations**
+- ADR-0008 amended; ADR-0009 created.
+
+**Git**
+- branch: `build/m2`
+- commits: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent M2.1 review; merge to `main` after acceptance;
+  M3 only with explicit user approval.
+
+---
+
+### 2026-08-21 — DeepSeek V4 Pro (short fix milestone M2.2)
+
+**Milestone:** M2.2  
+**Task:** Apply final M2.1 review fixes (verdict: PASS WITH FIXES)
+
+**Completed**
+- Canonical request fingerprint: deterministic
+  `provider:endpoint_family:sorted(params)` incl. date+timezone; stored in
+  provider_observations; unit tests (stability, tz sensitivity,
+  order-independence, provider distinction) + adapter/mock wiring.
+- FAILED-job requeue race: CAS transition
+  `transition_job_status_if(FAILED->PENDING)`; handler re-reads status
+  after enqueue; regression test simulates worker RUNNING transition
+  between apply_async and HTTP update (job stays RUNNING, no downgrade).
+- ORM synchronized with migration 0003: composite indexes
+  ix_fixtures_league_kickoff / ix_fixtures_status_kickoff in ORM; stale
+  single-column index=True removed; `alembic check` at head added to
+  integration suite (green — no drift).
+- Hardened arbiter: bounded safe resolution (row → use; empty → fresh
+  SELECT; 3 bounded retries); no scalar_one() without fallback; targeted
+  synchronized 6-participant race test: 1 mapping, 1 team, same UUID for
+  all callers.
+- Worker init exception-safe: engine/provider cleanup in finally with
+  independent try/excepts; job marked FAILED when DB reachable; original
+  exception re-raised; integration + unit tests (dispose verified with
+  tracking engine).
+
+**Files changed**
+- Modified: `providers/dto.py` (fingerprint helper),
+  `providers/sports/{api_football,mock}.py`, `db/models/discovery.py`
+  (composite indexes), `db/repositories/discovery.py` (bounded arbiter),
+  `pipelines/discover_fixtures.py` (CAS transition),
+  `api/routes/jobs.py` (CAS requeue + refresh),
+  `workers/tasks/sports.py` (exception-safe init), tests (new
+  `test_fingerprint.py`, `test_worker_init_cleanup.py`, integration
+  additions), state files
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (79)
+- `make test-integration` → PASS (20) incl. alembic check + race tests
+- ruff / format / strict mypy (51 files) / compose validation → PASS
+- Docker MOCK smoke: idempotent discovery (0/3), observation fingerprint
+  canonical (mock:fixtures_by_date:date=2026-08-21&timezone=Europe/Warsaw),
+  health/ready 200
+- Live API-Football smoke intentionally NOT repeated (no HTTP contract
+  change; quota preserved)
+- CI on push → confirmed below
+
+**Live integrations verified**
+- unchanged from M2.1 (bounded live smokes in M2/M2.1 remain valid;
+  M2.2 changed no HTTP contract).
+
+**Mocked only**
+- MockSportsDataProvider for offline/CI/test runs.
+
+**Known issues**
+- Docker Desktop bake bug (per-service build workaround).
+- job_attempts rows (M4); QuotaManager (M4); full outbox (M4).
+
+**Spec / ADR deviations**
+- none new (fingerprint/CAS refinements extend ADR-0008/0009 behavior).
+
+**Git**
+- branch: `build/m2`
+- commits: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent M2.2 review; merge to `main` after acceptance;
+  M3 only with explicit user approval.
+
+---
+
+### 2026-08-21 — DeepSeek V4 Pro (minimal fix milestone M2.3)
+
+**Milestone:** M2.3  
+**Task:** Apply final M2.2 review fix (verdict: PASS WITH ONE REQUIRED FIX)
+
+**Completed**
+- Discovery job idempotency key now matches `09` spec:
+  `discover:{provider}:{date}:v{league_config_version}:{timezone}` —
+  LeagueConfig version loaded from the configured YAML is the canonical
+  identity mechanism; enabled-league list never appears in the key;
+  timezone included because the provider request depends on it.
+- Rule documented: semantic changes to config/leagues.yaml must bump
+  `version` (config file header + LOCAL_DEVELOPMENT + ARCHITECTURE).
+- Tests: duplicate POST same identity → no duplicate job/enqueue;
+  config-version change → new job + enqueue; timezone change → distinct
+  identity (Warsaw vs London); FAILED retry keeps the same job UUID.
+- Stale IMPLEMENTATION_STATUS strings synced (In-progress block, provider
+  selected/verified — API-Football, reviewer diff main..build/m2, raw
+  evidence description post-ADR-0009).
+
+**Files changed**
+- Modified: `src/sports_intelligence/api/routes/jobs.py` (key construction),
+  `tests/integration/test_fixture_discovery.py` (new/updated identity
+  tests), `config/leagues.yaml` (version-bump rule),
+  `docs/{ARCHITECTURE,LOCAL_DEVELOPMENT,IMPLEMENTATION_STATUS,CURRENT_TASK,
+  AI_WORKLOG,REVIEW_HANDOFF}.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (79)
+- `make test-integration` → PASS (23) incl. alembic check
+- ruff / format / strict mypy (51 files) / compose validation → PASS
+- live API smoke NOT repeated (no HTTP contract change — quota preserved)
+- CI on push → confirmed below
+
+**Live integrations verified**
+- unchanged (bounded live smokes from M2/M2.1 remain valid).
+
+**Mocked only**
+- MockSportsDataProvider for offline/CI/test runs.
+
+**Known issues**
+- Docker Desktop bake bug (per-service build workaround).
+- job_attempts rows (M4); QuotaManager (M4); full outbox (M4).
+
+**Spec / ADR deviations**
+- none new (key format now matches spec 09 exactly).
+
+**Git**
+- branch: `build/m2`
+- commits: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent review; merge to `main` after acceptance;
+  M3 only with explicit user approval.
+
+---
+
+### 2026-08-21 — DeepSeek V4 Pro (minimal fix milestone M2.4)
+
+**Milestone:** M2.4  
+**Task:** Apply final M2.3 review fix (verdict: PASS WITH ONE SMALL SAFETY FIX)
+
+**Completed**
+- Discovery Celery task now receives the full job identity payload:
+  `job_id`, `fixture_date`, `expected_league_config_version`,
+  `discovery_timezone` — enqueued by the HTTP layer from the same values
+  encoded in the idempotency key.
+- Worker loads the LeagueConfig and refuses to execute when the loaded
+  `version` differs from the expected one: deterministic
+  `LeagueConfigVersionMismatchError` (new, in `core/league_config.py`),
+  zero provider requests, job marked FAILED.
+- `FixtureDiscoveryService` receives `discovery_timezone` from the job;
+  `settings.app_timezone` is no longer re-read at execution time.
+- Regression tests (integration): enqueued v1 + worker sees v1 →
+  executes and SUCCEEDS; config drifts to v2 before execution → 0
+  provider calls + FAILED; job with `Europe/Warsaw` uses Warsaw even
+  when current settings say `Europe/London`. Existing MOCK
+  discovery/idempotency tests unchanged and green.
+
+**Files changed**
+- Modified: `src/sports_intelligence/core/league_config.py` (new
+  exception), `src/sports_intelligence/workers/tasks/sports.py` (task
+  signature, version guard, job timezone),
+  `src/sports_intelligence/api/routes/jobs.py` (enqueue args),
+  `tests/unit/test_worker_init_cleanup.py` (updated call),
+  `tests/integration/test_fixture_discovery.py` (updated call + 3 new
+  regression tests), `docs/{IMPLEMENTATION_STATUS,CURRENT_TASK,
+  AI_WORKLOG}.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (79)
+- `make test-integration` → PASS (26) incl. schema-drift `alembic check`
+  and the 3 new regressions
+- ruff check / ruff format --check / strict mypy (51 source files) →
+  PASS
+- `docker compose config -q` (+dev) → OK
+- live API smoke NOT repeated (quota preserved); no migration needed
+
+**Known problems**
+- none new (job_attempts rows, QuotaManager, full outbox remain M4 debt)
+
+**Spec / ADR deviations**
+- none; worker cannot execute a different semantic config than the job
+  identity encodes (per final M2.3 review)
+
+**Git**
+- branch: `build/m2`
+- commit hash: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent review; merge to `main` after acceptance;
+  M3 only with explicit user approval.
+
+---
+
+### 2026-08-21 — DeepSeek V4 Pro (M2 finalization)
+
+**Milestone:** M2 (incl. M2.1–M2.4)  
+**Task:** Record final independent review verdict; prepare accepted state
+
+**Completed**
+- Final independent review of M2.4 returned **PASS — M2 ACCEPTED**;
+  safe to begin M3: YES.
+- Documentation-state cleanup only (no production code changes):
+  IMPLEMENTATION_STATUS section 1 (current objective) no longer says M1
+  is awaiting review — now records the M2 PASS verdict and the
+  merge/tag/M3 sequence; section 12 (next action) and section 13
+  (reviewer notes — final verdict) synced; REVIEW_HANDOFF marked
+  "review completed" with the verdict; CURRENT_TASK completion notes
+  the verdict.
+
+**Files changed**
+- Modified: `docs/{IMPLEMENTATION_STATUS,REVIEW_HANDOFF,CURRENT_TASK,
+  AI_WORKLOG}.md`
+
+**Verification**
+- docs-only change; no tests required (no code touched)
+
+**Spec / ADR deviations**
+- none
+
+**Git**
+- branch: `build/m2`
+- commit: docs cleanup commit (see log)
+
+**Next action**
+- PR `build/m2` → `main`, merge normally, verify CI on main, tag
+  `v0.3-m2`, create `build/m3`, start M3.

@@ -84,6 +84,45 @@ make migrate         # alembic upgrade head inside the api container
 M1 ships migration `0001` (`jobs` + `job_attempts`, see ADR-0006). Applied
 to a fresh database, downgrade/upgrade is exercised in CI.
 
+## Fixture discovery (M2)
+
+Two provider modes (`SPORTS_PROVIDER` in `.env`):
+
+- `mock` (default): recorded, sanitized API-Football-shaped responses.
+  No API key. Demo config with a league enabled:
+  `config/leagues.mock.yaml`.
+- `api_football`: real API. Requires `SPORTS_API_KEY` in `.env`.
+
+Leagues are configured in YAML (`LEAGUES_CONFIG_PATH`, default
+`config/leagues.yaml` — all leagues disabled by default so no quota is
+spent accidentally). `provider_ids` are explicit per provider (`mock`
+and/or `api_football`); discovery resolves IDs only for the CURRENT
+provider and makes zero external calls when no enabled league exists.
+Seed league rows into the DB with `make seed`.
+
+Manual discovery (bounded: one API request per date):
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/jobs/discover \
+  -H "Content-Type: application/json" -d '{"date": "2026-08-21"}'
+curl "http://127.0.0.1:8000/v1/fixtures?date=2026-08-21"
+curl "http://127.0.0.1:8000/v1/fixtures?date=2026-08-21&league=premier-league"
+```
+
+The handler enqueues a Celery job (`sports.discover_fixtures` on
+`sports_io`); repeated POSTs for the same identity reuse the same job and
+do not enqueue again. Job identity per `09` spec:
+
+```text
+discover:{provider}:{date}:v{league_config_version}:{timezone}
+```
+
+Rule: any semantic change to `config/leagues.yaml` MUST bump `version`
+(the version is the canonical identity mechanism — never list enabled
+leagues in the key). Changing `APP_TIMEZONE` likewise creates a distinct
+discovery identity. There is no automatic schedule in M2 — quota is only
+spent when you explicitly POST a discovery job.
+
 ## Quality gates
 
 ```bash

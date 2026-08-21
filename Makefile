@@ -42,6 +42,9 @@ bootstrap:
 migrate:
 	docker compose run --rm sports-api alembic upgrade head
 
+seed:
+	docker compose run --rm sports-api python scripts/seed_leagues.py
+
 test:
 	uv run pytest -q -m "not integration"
 

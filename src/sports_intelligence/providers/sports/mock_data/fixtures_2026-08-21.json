@@ -1,0 +1,133 @@
+{
+  "get": "fixtures",
+  "parameters": { "date": "2026-08-21" },
+  "errors": [],
+  "results": 4,
+  "paging": { "current": 1, "total": 1 },
+  "response": [
+    {
+      "fixture": {
+        "id": 100001,
+        "referee": "J. Smith",
+        "timezone": "UTC",
+        "date": "2026-08-21T19:00:00+00:00",
+        "timestamp": 1784156400,
+        "venue": { "id": 701, "name": "Mock Arena", "city": "Mock City" },
+        "status": { "long": "Not Started", "short": "NS", "elapsed": null }
+      },
+      "league": {
+        "id": 39,
+        "name": "Premier League",
+        "country": "England",
+        "logo": "https://media.api-sports.io/football/leagues/39.png",
+        "flag": "https://media.api-sports.io/flags/gb.svg",
+        "season": 2026,
+        "round": "Regular Season - 2"
+      },
+      "teams": {
+        "home": { "id": 2001, "name": "FC Mockton", "logo": "https://example.com/home.png", "winner": null },
+        "away": { "id": 2002, "name": "Sporting Placeholder", "logo": "https://example.com/away.png", "winner": null }
+      },
+      "goals": { "home": null, "away": null },
+      "score": {
+        "halftime": { "home": null, "away": null },
+        "fulltime": { "home": null, "away": null },
+        "extratime": { "home": null, "away": null },
+        "penalty": { "home": null, "away": null }
+      }
+    },
+    {
+      "fixture": {
+        "id": 100002,
+        "referee": null,
+        "timezone": "UTC",
+        "date": "2026-08-21T21:30:00+00:00",
+        "timestamp": 1784165400,
+        "venue": null,
+        "status": { "long": "Not Started", "short": "NS", "elapsed": null }
+      },
+      "league": {
+        "id": 39,
+        "name": "Premier League",
+        "country": "England",
+        "logo": "https://media.api-sports.io/football/leagues/39.png",
+        "flag": "https://media.api-sports.io/flags/gb.svg",
+        "season": null,
+        "round": null
+      },
+      "teams": {
+        "home": { "id": 2003, "name": "Nullfield United", "logo": null, "winner": null },
+        "away": { "id": 2004, "name": "Missing FC", "logo": null, "winner": null }
+      },
+      "goals": { "home": null, "away": null },
+      "score": {
+        "halftime": { "home": null, "away": null },
+        "fulltime": { "home": null, "away": null },
+        "extratime": { "home": null, "away": null },
+        "penalty": { "home": null, "away": null }
+      }
+    },
+    {
+      "fixture": {
+        "id": 100003,
+        "referee": "A. Judge",
+        "timezone": "UTC",
+        "date": "2026-08-21T20:00:00+00:00",
+        "timestamp": 1784160000,
+        "venue": { "id": 702, "name": "Disabled Stadium", "city": "Nowhere" },
+        "status": { "long": "Not Started", "short": "NS", "elapsed": null }
+      },
+      "league": {
+        "id": 140,
+        "name": "La Liga",
+        "country": "Spain",
+        "logo": "https://media.api-sports.io/football/leagues/140.png",
+        "flag": "https://media.api-sports.io/flags/es.svg",
+        "season": 2026,
+        "round": "Regular Season - 2"
+      },
+      "teams": {
+        "home": { "id": 2005, "name": "Real Mockrid", "logo": null, "winner": null },
+        "away": { "id": 2006, "name": "FC Placebo", "logo": null, "winner": null }
+      },
+      "goals": { "home": null, "away": null },
+      "score": {
+        "halftime": { "home": null, "away": null },
+        "fulltime": { "home": null, "away": null },
+        "extratime": { "home": null, "away": null },
+        "penalty": { "home": null, "away": null }
+      }
+    },
+    {
+      "fixture": {
+        "id": 100004,
+        "referee": null,
+        "timezone": "UTC",
+        "date": "2026-08-21T19:00:00+02:00",
+        "timestamp": 1784149200,
+        "venue": { "id": 703, "name": "Offset Arena", "city": "Offset City" },
+        "status": { "long": "Not Started", "short": "NS", "elapsed": null }
+      },
+      "league": {
+        "id": 39,
+        "name": "Premier League",
+        "country": "England",
+        "logo": "https://media.api-sports.io/football/leagues/39.png",
+        "flag": "https://media.api-sports.io/flags/gb.svg",
+        "season": 2026,
+        "round": "Regular Season - 2"
+      },
+      "teams": {
+        "home": { "id": 2007, "name": "Offset Home", "logo": null, "winner": null },
+        "away": { "id": 2008, "name": "Offset Away", "logo": null, "winner": null }
+      },
+      "goals": { "home": null, "away": null },
+      "score": {
+        "halftime": { "home": null, "away": null },
+        "fulltime": { "home": null, "away": null },
+        "extratime": { "home": null, "away": null },
+        "penalty": { "home": null, "away": null }
+      }
+    }
+  ]
+}
