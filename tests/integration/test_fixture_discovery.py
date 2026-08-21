@@ -606,6 +606,8 @@ def test_discover_without_date_uses_app_timezone_local_date(
 
     assert len(enqueued) == 1
     assert enqueued[0][1] == "2026-09-03"
+    assert enqueued[0][2] == 1
+    assert enqueued[0][3] == "Europe/Warsaw"
 
 
 def test_job_row_created_with_pending_status(
@@ -809,6 +811,158 @@ def test_worker_init_failure_marks_job_failed(
     job_id = asyncio.run(create_job())
 
     with pytest.raises(ProviderConfigError):
-        asyncio.run(sports_tasks._run_discovery(job_id, "2026-08-29"))
+        asyncio.run(sports_tasks._run_discovery(job_id, "2026-08-29", 1, "Europe/Warsaw"))
 
     assert asyncio.run(_job_status(service_settings, job_id)) == JobStatus.FAILED.value
+
+
+def test_enqueued_job_executes_when_config_version_matches(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_intelligence.workers.tasks import sports as sports_tasks
+
+    enqueued: list[list[object]] = []
+    monkeypatch.setattr(
+        sports_tasks.discover_fixtures_task,
+        "apply_async",
+        lambda args=None, queue=None, **kwargs: enqueued.append(args or []),
+    )
+
+    with TestClient(create_app(service_settings)) as client:
+        response = client.post("/v1/jobs/discover", json={"date": "2026-08-30"})
+        assert response.status_code == 200
+        assert response.json()["already_queued"] is False
+
+    assert len(enqueued) == 1
+    job_id, fixture_date, expected_version, discovery_timezone = enqueued[0][:4]
+    assert expected_version == 1
+    assert discovery_timezone == "Europe/Warsaw"
+
+    monkeypatch.setattr(sports_tasks, "get_settings", lambda: service_settings)
+    monkeypatch.setattr(sports_tasks, "load_league_config", lambda path: _config_for("mock"))
+    monkeypatch.setattr(
+        sports_tasks,
+        "build_sports_provider",
+        lambda settings: _mock_provider("mock", str(fixture_date)),
+    )
+
+    result = asyncio.run(
+        sports_tasks._run_discovery(
+            str(job_id), str(fixture_date), int(expected_version), str(discovery_timezone)
+        )
+    )
+    assert result["fixtures_created"] == 3
+    assert asyncio.run(_job_status(service_settings, str(job_id))) == JobStatus.SUCCEEDED.value
+
+
+def test_worker_rejects_config_version_drift_without_provider_call(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_intelligence.core.league_config import LeagueConfigVersionMismatchError
+    from sports_intelligence.workers.tasks import sports as sports_tasks
+
+    enqueued: list[list[object]] = []
+    monkeypatch.setattr(
+        sports_tasks.discover_fixtures_task,
+        "apply_async",
+        lambda args=None, queue=None, **kwargs: enqueued.append(args or []),
+    )
+
+    with TestClient(create_app(service_settings)) as client:
+        response = client.post("/v1/jobs/discover", json={"date": "2026-08-31"})
+        assert response.status_code == 200
+        assert response.json()["already_queued"] is False
+
+    job_id, fixture_date, expected_version, discovery_timezone = enqueued[0][:4]
+
+    state = {"calls": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        state["calls"] += 1
+        return httpx.Response(200, json=RECORDED, headers={"content-type": "application/json"})
+
+    monkeypatch.setattr(sports_tasks, "get_settings", lambda: service_settings)
+    monkeypatch.setattr(
+        sports_tasks,
+        "load_league_config",
+        lambda path: LeagueConfig(version=2, leagues=[]),
+    )
+    monkeypatch.setattr(
+        sports_tasks,
+        "build_sports_provider",
+        lambda settings: ApiFootballProvider(
+            api_key="test-key",
+            base_url="https://v3.football.api-sports.io",
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+            max_attempts=1,
+            backoff_seconds=0.0,
+        ),
+    )
+
+    with pytest.raises(LeagueConfigVersionMismatchError):
+        asyncio.run(
+            sports_tasks._run_discovery(
+                str(job_id), str(fixture_date), int(expected_version), str(discovery_timezone)
+            )
+        )
+
+    assert state["calls"] == 0
+    assert asyncio.run(_job_status(service_settings, str(job_id))) == JobStatus.FAILED.value
+
+
+def test_worker_uses_job_timezone_even_when_settings_changed(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_intelligence.workers.tasks import sports as sports_tasks
+
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["timezone"] = request.url.params.get("timezone", "")
+        return httpx.Response(200, json=RECORDED, headers={"content-type": "application/json"})
+
+    london_settings = service_settings.model_copy(update={"app_timezone": "Europe/London"})
+
+    async def create_job() -> str:
+        from sports_intelligence.db.session import create_engine, create_session_factory
+        from sports_intelligence.pipelines.discover_fixtures import create_or_get_job
+
+        engine = create_engine(service_settings.database_url)
+        factory = create_session_factory(engine)
+        try:
+            async with factory() as session:
+                job, _ = await create_or_get_job(
+                    session,
+                    "discover_fixtures",
+                    "discover:mock:2026-09-10:v1:Europe/Warsaw",
+                    utc_now(),
+                )
+                await session.commit()
+                return str(job.id)
+        finally:
+            await engine.dispose()
+
+    job_id = asyncio.run(create_job())
+
+    monkeypatch.setattr(sports_tasks, "get_settings", lambda: london_settings)
+    monkeypatch.setattr(
+        sports_tasks,
+        "load_league_config",
+        lambda path: _config_for("api_football"),
+    )
+    monkeypatch.setattr(
+        sports_tasks,
+        "build_sports_provider",
+        lambda settings: ApiFootballProvider(
+            api_key="test-key",
+            base_url="https://v3.football.api-sports.io",
+            client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+            max_attempts=1,
+            backoff_seconds=0.0,
+        ),
+    )
+
+    result = asyncio.run(sports_tasks._run_discovery(job_id, "2026-09-10", 1, "Europe/Warsaw"))
+    assert captured["timezone"] == "Europe/Warsaw"
+    assert result["fixtures_created"] == 3
+    assert asyncio.run(_job_status(service_settings, job_id)) == JobStatus.SUCCEEDED.value

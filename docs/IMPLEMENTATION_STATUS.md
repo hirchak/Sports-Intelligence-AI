@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M2 (+ M2.1 + M2.2 fixes) — implemented, awaiting final review  
+**Current milestone:** M2 (+ M2.1 + M2.2 + M2.3 + M2.4 fixes) — implemented, awaiting final review  
 **Last updated:** 2026-08-21 (DeepSeek V4 Pro via OpenCode)  
 **Last known good commit:** see section 11
 
@@ -213,20 +213,42 @@ All review items implemented:
   selected/verified, reviewer diff `main..build/m2`, raw-evidence
   description post-ADR-0009).
 
+## M2.4 — Minimal safety fix (final M2.3 review: PASS WITH ONE SMALL SAFETY FIX)
+
+- **Job identity now binds execution semantics**: the Celery discovery
+  task receives `job_id`, `fixture_date`,
+  `expected_league_config_version`, `discovery_timezone` (the values
+  encoded in the idempotency identity at enqueue time). The worker loads
+  the LeagueConfig and refuses to run when the loaded `version` differs
+  from the expected one: deterministic
+  `LeagueConfigVersionMismatchError`, zero provider requests, job marked
+  FAILED. The worker may never execute a different semantic
+  configuration than the one encoded in the job identity.
+- **Timezone from the job, not mutable settings**:
+  `FixtureDiscoveryService` receives `discovery_timezone` from the task
+  payload; `settings.app_timezone` is no longer re-read at execution.
+- Regression tests: enqueued v1 + worker sees v1 → executes and
+  SUCCEEDS; config drifts to v2 before execution → 0 provider calls +
+  job FAILED; a job with `Europe/Warsaw` uses Warsaw even when current
+  settings say `Europe/London`; existing MOCK discovery/idempotency
+  tests stay green.
+- No migration; no live smoke (quota preserved).
+
 ---
 
 # 3. In progress
 
-None. M2.3 fixes are being applied; the branch awaits final review.
+None. M2.4 safety fix applied; the branch awaits final review.
 
 ---
 
 # 4. Acceptance tests passed (actually run)
 
 - `uv run pytest -q -m "not integration"` → **79 passed**
-- `make test-integration` (isolated `sports_intel_test` DB) → **23 passed**
-  (incl. targeted concurrency, enqueue-race regression, fingerprint,
-  schema-drift `alembic check`, worker init failure, migration cycle)
+- `make test-integration` (isolated `sports_intel_test` DB) → **26 passed**
+  (incl. M2.4 identity-binding regressions, targeted concurrency,
+  enqueue-race regression, fingerprint, schema-drift `alembic check`,
+  worker init failure, migration cycle)
 - `uv run ruff check .` / `ruff format --check .` → clean
 - `uv run mypy src` → **no issues in 51 source files** (strict)
 - `docker compose config -q` (+dev) → OK
@@ -345,7 +367,7 @@ Commit:
 - M2 commits recorded in `docs/REVIEW_HANDOFF.md` after commit
 
 Working tree:
-- clean before M2 commits
+- clean after the M2.4 commit
 
 ---
 

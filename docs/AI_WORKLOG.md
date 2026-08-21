@@ -644,3 +644,61 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - Final independent review; merge to `main` after acceptance;
   M3 only with explicit user approval.
+
+---
+
+### 2026-08-21 — DeepSeek V4 Pro (minimal fix milestone M2.4)
+
+**Milestone:** M2.4  
+**Task:** Apply final M2.3 review fix (verdict: PASS WITH ONE SMALL SAFETY FIX)
+
+**Completed**
+- Discovery Celery task now receives the full job identity payload:
+  `job_id`, `fixture_date`, `expected_league_config_version`,
+  `discovery_timezone` — enqueued by the HTTP layer from the same values
+  encoded in the idempotency key.
+- Worker loads the LeagueConfig and refuses to execute when the loaded
+  `version` differs from the expected one: deterministic
+  `LeagueConfigVersionMismatchError` (new, in `core/league_config.py`),
+  zero provider requests, job marked FAILED.
+- `FixtureDiscoveryService` receives `discovery_timezone` from the job;
+  `settings.app_timezone` is no longer re-read at execution time.
+- Regression tests (integration): enqueued v1 + worker sees v1 →
+  executes and SUCCEEDS; config drifts to v2 before execution → 0
+  provider calls + FAILED; job with `Europe/Warsaw` uses Warsaw even
+  when current settings say `Europe/London`. Existing MOCK
+  discovery/idempotency tests unchanged and green.
+
+**Files changed**
+- Modified: `src/sports_intelligence/core/league_config.py` (new
+  exception), `src/sports_intelligence/workers/tasks/sports.py` (task
+  signature, version guard, job timezone),
+  `src/sports_intelligence/api/routes/jobs.py` (enqueue args),
+  `tests/unit/test_worker_init_cleanup.py` (updated call),
+  `tests/integration/test_fixture_discovery.py` (updated call + 3 new
+  regression tests), `docs/{IMPLEMENTATION_STATUS,CURRENT_TASK,
+  AI_WORKLOG}.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (79)
+- `make test-integration` → PASS (26) incl. schema-drift `alembic check`
+  and the 3 new regressions
+- ruff check / ruff format --check / strict mypy (51 source files) →
+  PASS
+- `docker compose config -q` (+dev) → OK
+- live API smoke NOT repeated (quota preserved); no migration needed
+
+**Known problems**
+- none new (job_attempts rows, QuotaManager, full outbox remain M4 debt)
+
+**Spec / ADR deviations**
+- none; worker cannot execute a different semantic config than the job
+  identity encodes (per final M2.3 review)
+
+**Git**
+- branch: `build/m2`
+- commit hash: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent review; merge to `main` after acceptance;
+  M3 only with explicit user approval.

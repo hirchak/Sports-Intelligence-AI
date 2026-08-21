@@ -14,6 +14,19 @@ class LeagueConfigEntry(BaseModel):
     provider_ids: dict[str, int] = Field(default_factory=dict)
 
 
+class LeagueConfigVersionMismatchError(RuntimeError):
+    """LeagueConfig version at execution differs from the version encoded in the job identity."""
+
+    def __init__(self, expected: int, actual: int) -> None:
+        self.expected = expected
+        self.actual = actual
+        super().__init__(
+            f"league config version mismatch: job expects v{expected}, "
+            f"loaded config is v{actual}; refusing to execute discovery "
+            f"with a different semantic configuration"
+        )
+
+
 class LeagueConfig(BaseModel):
     version: int = 1
     leagues: list[LeagueConfigEntry] = Field(default_factory=list)

@@ -1,7 +1,7 @@
 # Current Task
 
 **Status:** COMPLETE — awaiting final review  
-**Milestone:** M2.3 (minimal fix after final M2.2 review: PASS WITH ONE REQUIRED FIX)  
+**Milestone:** M2.4 (minimal fix after final M2.3 review: PASS WITH ONE SMALL SAFETY FIX)  
 **Owner/agent:** DeepSeek V4 Pro (lead engineer, OpenCode)  
 **Started at:** 2026-08-21  
 **Last updated:** 2026-08-21
@@ -10,23 +10,26 @@
 
 # Task
 
-Apply the one required fix on `build/m2`. → **Done, commit on `build/m2`.**
+Apply the one required safety fix on `build/m2`. → **Done, commit on `build/m2`.**
 
 ---
 
 # Acceptance criteria — verified
 
-- idempotency key `discover:{provider}:{date}:v{version}:{timezone}`
-  (version = canonical mechanism, timezone included) → OK
-- duplicate POST same identity → no duplicate job/enqueue → OK
-- config version change → new job + enqueue → OK
-- timezone change → distinct identity → OK
-- FAILED retry same identity → same job UUID → OK
-- version-bump rule documented (config/leagues.yaml + LOCAL_DEVELOPMENT) → OK
-- stale IMPLEMENTATION_STATUS strings synced → OK
-- 79 unit + 23 integration green (incl. `alembic check`); ruff/format/
-  strict mypy green → OK
-- no live API smoke (HTTP contract unchanged — quota preserved) → OK
+- discovery task receives `job_id`, `fixture_date`,
+  `expected_league_config_version`, `discovery_timezone` → OK
+- worker loads LeagueConfig and refuses to run when the loaded `version`
+  differs from the job's expected version: deterministic
+  `LeagueConfigVersionMismatchError`, no provider request, job FAILED → OK
+- `FixtureDiscoveryService` uses the job's `discovery_timezone`, never
+  mutable `settings.app_timezone` → OK
+- regression tests (version match executes / drift → 0 provider calls +
+  FAILED / job timezone wins over changed settings) → OK
+- existing MOCK discovery/idempotency tests remain green → OK
+- full unit + integration + ruff + format + strict mypy + alembic check
+  green → OK
+- no migration; no live API smoke (quota preserved) → OK
+- docs synced (IMPLEMENTATION_STATUS, REVIEW_HANDOFF) → OK
 
 ---
 
