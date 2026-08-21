@@ -14,18 +14,35 @@ Update it before every milestone review.
 **Review target branch:** `build/m2`  
 **Review target commits:** `bdb5ef3`, `3f62348`, `6625d7c`, `7e71ed0`,
 `ac4188a` (M2); `ea9b4a8`, `1de60af`, `1dcd7cd` (M2.1);
-**`118aaab` (fingerprint/CAS/index sync), `dc5d2e0` (arbiter/worker init),
-`e236f96` (docs/state)** (M2.2) — see Git section  
+`118aaab`, `dc5d2e0`, `e236f96` (M2.2);
+**`a157158` (M2.3: spec-compliant discovery idempotency identity)** —
+see Git section  
 **CI status:** green on `build/m2` (unit, integration with isolated
 Postgres/Redis, compose validation)  
-**Previous review:** M2.1 → PASS WITH FIXES; fixes implemented in M2.2  
+**Previous review:** M2.2 → PASS WITH ONE REQUIRED FIX; fix implemented in M2.3  
 **Previous accepted state:** `main` = `25dda83` (M1 accepted, tag `v0.2-m1`)
 
 ---
 
 # What changed since the last review
 
-M2.2 fixes (all items from the PASS WITH FIXES verdict):
+M2.3 (the one required fix from the final M2.2 review):
+
+- **Discovery idempotency identity now matches spec `09`**:
+  `discover:{provider}:{date}:v{league_config_version}:{timezone}`.
+  The LeagueConfig `version` loaded from the configured YAML is the
+  canonical identity mechanism (the enabled-league list never appears in
+  the key); timezone is included because the provider request depends on
+  it. Rule documented: semantic changes to `config/leagues.yaml` must
+  bump `version`.
+- Tests: duplicate POST with the same identity → no new job/enqueue;
+  config-version change → new job + enqueue; timezone change → distinct
+  identity (Warsaw vs London); FAILED-job retry keeps the same job UUID.
+- Stale IMPLEMENTATION_STATUS strings synced (in-progress block, provider
+  selected/verified, reviewer diff `main..build/m2`, raw-evidence
+  description post-ADR-0009).
+
+Earlier M2.2 fixes (PASS WITH FIXES verdict):
 
 1. **Canonical request fingerprint** — deterministic
    `provider:endpoint_family:sorted(params)` including date AND timezone;
@@ -75,7 +92,7 @@ M2.2 fixes (all items from the PASS WITH FIXES verdict):
 ```bash
 uv sync --frozen --dev
 uv run pytest -q -m "not integration"        # 79 passed
-make test-integration                        # 20 passed, isolated sports_intel_test
+make test-integration                        # 23 passed, isolated sports_intel_test
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src                              # 51 source files, strict
