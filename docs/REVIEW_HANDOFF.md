@@ -10,21 +10,45 @@ Update it before every milestone review.
 
 **Ready for review:** YES  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M2 + M2.1 + M2.2 fixes — awaiting final review  
+**Milestone:** M2 + M2.1 + M2.2 + M2.3 + M2.4 fixes — final M2.3 review
+(PASS WITH ONE SMALL SAFETY FIX) addressed in M2.4; final state awaiting
+review  
 **Review target branch:** `build/m2`  
 **Review target commits:** `bdb5ef3`, `3f62348`, `6625d7c`, `7e71ed0`,
 `ac4188a` (M2); `ea9b4a8`, `1de60af`, `1dcd7cd` (M2.1);
 `118aaab`, `dc5d2e0`, `e236f96` (M2.2);
-**`a157158` (M2.3: spec-compliant discovery idempotency identity)** —
+`a157158` (M2.3: spec-compliant discovery idempotency identity);
+`e4c38b6` (M2.4: bind discovery job identity to worker execution config) —
 see Git section  
 **CI status:** green on `build/m2` (unit, integration with isolated
 Postgres/Redis, compose validation)  
-**Previous review:** M2.2 → PASS WITH ONE REQUIRED FIX; fix implemented in M2.3  
+**Previous review:** M2.3 → PASS WITH ONE SMALL SAFETY FIX; fix implemented in M2.4  
 **Previous accepted state:** `main` = `25dda83` (M1 accepted, tag `v0.2-m1`)
 
 ---
 
 # What changed since the last review
+
+M2.4 (the one required safety fix from the final M2.3 review):
+
+- **Discovery job identity now binds execution semantics.** The Celery
+  task receives `job_id`, `fixture_date`, `expected_league_config_version`,
+  `discovery_timezone` — the same values encoded in the idempotency
+  identity at enqueue time. The worker loads the LeagueConfig and refuses
+  to run when the loaded `version` differs from the expected one:
+  deterministic `LeagueConfigVersionMismatchError`, zero provider
+  requests, job marked FAILED. A full persisted job-input
+  snapshot/outbox remains deferred to the orchestration milestone, but
+  the worker can never execute a different semantic configuration than
+  the one encoded in the job identity.
+- **Timezone comes from the job**: `FixtureDiscoveryService` receives
+  `discovery_timezone` from the task payload; mutable
+  `settings.app_timezone` is no longer re-read at execution.
+- Regression tests: enqueued v1 + worker sees v1 → executes and
+  SUCCEEDS; config drifts to v2 before execution → 0 provider calls +
+  FAILED; a job with `Europe/Warsaw` uses Warsaw even when current
+  settings say `Europe/London`; existing MOCK discovery/idempotency
+  tests stay green. No migration; no live smoke (quota preserved).
 
 M2.3 (the one required fix from the final M2.2 review):
 
@@ -83,7 +107,10 @@ Earlier M2.2 fixes (PASS WITH FIXES verdict):
 - migration 0002 applies/downgrades/reapplies on a fresh DB;
 - no scope creep (no odds/research/MatchContext/prediction/Telegram);
 - test-DB isolation guard still intact (dev DB protected);
-- compose isolation unchanged (loopback ports, named volumes).
+- compose isolation unchanged (loopback ports, named volumes);
+- M2.4: worker refuses to run on LeagueConfig version drift (0 provider
+  calls, FAILED, deterministic exception) and uses the job's timezone,
+  not the current settings.
 
 ---
 
@@ -92,7 +119,7 @@ Earlier M2.2 fixes (PASS WITH FIXES verdict):
 ```bash
 uv sync --frozen --dev
 uv run pytest -q -m "not integration"        # 79 passed
-make test-integration                        # 23 passed, isolated sports_intel_test
+make test-integration                        # 26 passed, isolated sports_intel_test
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src                              # 51 source files, strict
@@ -112,7 +139,9 @@ fixtures in ONE request, 1 eligible league, idempotent re-runs, no key
 in logs). M2.2 changed no HTTP contract, so the live smoke was NOT
 repeated (quota preserved); MOCK-mode discovery through the full stack
 was re-verified (idempotent, canonical fingerprint stored in
-observations).
+observations). M2.3/M2.4 changed only the job identity/payload, not the
+provider HTTP contract — live smoke again NOT repeated (quota
+preserved).
 
 Reviewer must not assume tests passed based on status text alone.
 
@@ -143,6 +172,7 @@ Reviewer must not assume tests passed based on status text alone.
 - `src/sports_intelligence/db/migrations/versions/0002_*.py`
 - `src/sports_intelligence/api/routes/{fixtures,jobs}.py`
 - `src/sports_intelligence/workers/tasks/sports.py`
+- `src/sports_intelligence/core/league_config.py`
 - `docs/adr/0007-api-football-first-provider.md`
 - `docs/adr/0008-m2-schema-scope-and-upserts.md`
 - `config/leagues.yaml`, `config/leagues.mock.yaml`
