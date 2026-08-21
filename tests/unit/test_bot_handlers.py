@@ -555,3 +555,63 @@ def test_back_to_main_keyboard_is_singleton() -> None:
     assert len(row) == 1
     assert row[0].callback_data == MENU_MAIN
     assert row[0].text == "← Назад"
+
+
+# ---- M3.1 regression tests: malformed callback payloads ------------------
+
+
+async def test_malformed_fixture_callback_acknowledges_without_backend_call(
+    context: AppContext, backend: FakeBackend, transport: FakeTransport
+) -> None:
+    callback = make_callback("fx:not-a-uuid")
+    await handlers.fixture_callback_handler(callback, context)
+    # Callback must be acknowledged exactly once.
+    assert transport.answered == [{"callback_query_id": "cb-test-1"}]
+    # User receives a safe UI response.
+    assert transport.edited[0]["text"] == "Неизвестное действие."
+    assert _back_present(transport.edited[0]["reply_markup"])
+    # Malformed payload must not reach the backend.
+    assert backend.fixture_lookups == []
+
+
+async def test_malformed_page_callback_acknowledges_without_backend_call(
+    context: AppContext, backend: FakeBackend, transport: FakeTransport
+) -> None:
+    callback = make_callback("pg:not-a-date:99")
+    await handlers.page_callback_handler(callback, context)
+    assert transport.answered == [{"callback_query_id": "cb-test-1"}]
+    assert transport.edited[0]["text"] == "Неизвестное действие."
+    assert _back_present(transport.edited[0]["reply_markup"])
+    # No backend call expected for an unparseable page token.
+    assert backend.fixtures == []
+
+
+async def test_malformed_refresh_callback_acknowledges_without_backend_call(
+    context: AppContext, backend: FakeBackend, transport: FakeTransport
+) -> None:
+    callback = make_callback("rf:not-a-date")
+    await handlers.refresh_callback_handler(callback, context)
+    assert transport.answered == [{"callback_query_id": "cb-test-1"}]
+    assert transport.edited[0]["text"] == "Неизвестное действие."
+    assert _back_present(transport.edited[0]["reply_markup"])
+    # No backend call expected for an unparseable refresh token.
+    assert backend.fixtures == []
+
+
+async def test_valid_callbacks_are_acknowledged_exactly_once(
+    context: AppContext, backend: FakeBackend, transport: FakeTransport
+) -> None:
+    backend.fixtures = [FIXTURE_A]
+    callback = make_callback("pg:2026-08-21:0")
+    await handlers.page_callback_handler(callback, context)
+    assert transport.answered == [{"callback_query_id": "cb-test-1"}]
+
+
+async def test_catch_all_unknown_callback_acknowledges_silently(
+    context: AppContext, transport: FakeTransport
+) -> None:
+    callback = make_callback("totally-unknown")
+    await handlers.unknown_callback(callback, context)
+    assert transport.answered == [{"callback_query_id": "cb-test-1"}]
+    assert transport.edited == []
+    assert transport.sent == []

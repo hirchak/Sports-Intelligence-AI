@@ -840,3 +840,70 @@ button-based menus and a Back button on every screen.
 **Next action**
 - Final independent review of M3; merge to `main` after acceptance;
   M4 only with explicit user approval.
+
+---
+
+### 2026-08-21 — DeepSeek V4 Pro (minimal fix milestone M3.4)
+
+**Milestone:** M3.1  
+**Task:** Apply final M3 review fix (verdict: PASS WITH TWO SMALL FIXES)
+
+**Completed**
+- Telegram callback acknowledgement is now guaranteed exactly once:
+  the shared `_answer_from_callback` helper always calls
+  `answer_callback` before editing/sending; the explicit duplicate
+  `answer_callback` calls that previously preceded the helper were
+  removed. As a result, malformed `fx:` / `pg:` / `rf:` payloads
+  still get a safe Russian UI response (`Неизвестное действие.` +
+  Back button) AND the Telegram client stops its "loading" indicator.
+- `bot.__main__.main()` now suppresses `KeyboardInterrupt` only; a
+  `SystemExit` raised by `run()` (e.g. when `TELEGRAM_BOT_TOKEN` is
+  empty) propagates so the process exits with the failure code. Normal
+  Ctrl+C remains a clean shutdown.
+- The startup refusal message is a static string — no token
+  interpolation, no secret-like fragments. Token never logged.
+- Future roadmap (documented only, NOT implemented) added to
+  `docs/IMPLEMENTATION_STATUS.md` §14: scheduled pipeline populates
+  PostgreSQL automatically, Telegram screens read ready DB data,
+  future availability/lineup collector boundary, PREMATCH_FINAL
+  vs MORNING snapshot semantics, future live analytics is a separate
+  post-v1 extension.
+- Scope guard verified: scheduler, automatic discovery, sports
+  collectors, odds, lineups / injuries, quota manager, research,
+  MatchContext, LLM prediction, live football analysis — still NOT
+  implemented.
+
+**Files changed**
+- Modified: `src/sports_intelligence/bot/handlers.py` (central
+  acknowledgement in `_answer_from_callback`; remove duplicate
+  pre-calls), `src/sports_intelligence/bot/__main__.py` (only
+  suppress `KeyboardInterrupt`), `tests/unit/test_bot_handlers.py`
+  (5 new tests: malformed fx/pg/rf + valid ack-once + catch-all
+  silent), `tests/unit/test_bot_main.py` (new file: 3 startup
+  tests), `docs/{CURRENT_TASK,IMPLEMENTATION_STATUS,
+  REVIEW_HANDOFF,AI_WORKLOG}.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (159)
+- `make test-integration` → PASS (26) incl. alembic check
+- ruff check / ruff format --check / strict mypy (62 source files) →
+  PASS
+- docker compose config -q (+ telegram profile) → OK
+- live Telegram smoke NOT repeated (covered by unit tests)
+- live API-Football smoke NOT done (quota preserved)
+
+**Known issues**
+- none new (job_attempts rows, QuotaManager, full outbox remain M4
+  debt)
+
+**Spec / ADR deviations**
+- none new (M3 → M3.1 keeps architecture and ADR-0007/API-Football
+  boundary intact)
+
+**Git**
+- branch: `build/m3`
+- commit hash: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent review of M3.1; merge to `main` after
+  acceptance; M4 only with explicit user approval.

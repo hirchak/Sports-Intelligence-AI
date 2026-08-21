@@ -11,20 +11,54 @@ Update it before every milestone review.
 
 **Ready for review:** YES  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M3 — Telegram base UI / private control plane — Russian
-single-language UI, button-based navigation, «← Назад» on every
-screen; awaiting independent review  
+**Milestone:** M3.1 — Telegram base UI / private control plane — minimal
+fix (final M3 review: PASS WITH TWO SMALL FIXES); awaiting independent
+review  
 **Review target branch:** `build/m3`  
 **Review target commits:** `3ad5dc0` (M3: Russian Telegram bot UI with
 button-based menus and Back navigation) — see Git section  
 **CI status:** green on `build/m3` (unit, integration with isolated
 Postgres/Redis, compose validation incl. telegram profile)  
-**Previous review:** M2 → **PASS — M2 ACCEPTED** (tag `v0.3-m2` on `main`)  
-**Previous accepted state:** `main` = `c737f80` (M2 accepted)
+**Previous review:** M3 → **PASS WITH TWO SMALL FIXES**; fixes implemented
+in M3.1  
+**Previous accepted state:** `main` = `c737f80` (M2 accepted, tag
+`v0.3-m2`)
 
 ---
 
 # What changed since the last review
+
+M3.1 (the two required small fixes from the final M3 review):
+
+- **Telegram callback acknowledgement is guaranteed exactly once.** The
+  shared `_answer_from_callback` helper calls `answer_callback`
+  before editing/sending; every callback handler delegates through it
+  on its response path; the explicit `answer_callback` calls that
+  previously preceded it were removed. As a result, malformed `fx:` /
+  `pg:` / `rf:` payloads still get a safe UI response (`Неизвестное
+  действие.` + Back button) AND the Telegram client stops its
+  loading indicator. Regression tests for `fx:not-a-uuid`,
+  `pg:not-a-date:99`, `rf:not-a-date` assert `answer_callback` was
+  called, the user received a safe response, and no backend call was
+  made.
+- **Startup failure is non-zero.** `bot.__main__.main()` now suppresses
+  `KeyboardInterrupt` only; `SystemExit` (e.g. raised when
+  `TELEGRAM_BOT_TOKEN` is empty) propagates so the process exits with
+  the failure code. Normal Ctrl+C remains a clean shutdown. The
+  startup refusal message is a static string — token is never logged.
+- **Scope guard** — explicitly out of M3 / M3.1 and not touched:
+  scheduler, automatic discovery, sports collectors, odds, lineups /
+  injuries, quota manager, research, MatchContext, LLM prediction,
+  live football analysis. The Telegram bot remains a thin UI over the
+  FastAPI backend.
+- **Future roadmap** (documented only, NOT implemented): the scheduled
+  pipeline (M4+) must populate PostgreSQL automatically, independent of
+  Telegram usage; Telegram fixture screens must read essentially-ready
+  data from the DB; a future availability / lineup collector may do
+  bounded pre-kickoff refresh; a future confirmed / new lineup snapshot
+  may create a new `PREMATCH_FINAL` prediction rather than overwriting
+  `MORNING`; future live analytics is a separate post-v1 extension, not
+  part of M3 / M4.
 
 M3 (final independent review requested):
 
@@ -85,29 +119,24 @@ M3 (final independent review requested):
 
 # What should the reviewer verify?
 
-- private access control: unknown users denied centrally (message +
-  callback) with no detail leakage; empty allowlist denies everyone;
-- Russian UI consistency across all screens (welcome, help, dashboard,
-  fixture list, fixture detail, health, discover, find, error and
-  access-denied paths);
-- button-based navigation: every screen has a «← Назад» button
-  returning to the main menu; the find menu offers yesterday / today
-  / tomorrow quick picks;
-- the bot never touches provider adapters, DB or LLM; all backend
-  traffic goes through the typed `BackendClient`; backend errors render
-  bot-safe text (no URLs, bodies, stack traces or secrets);
-- /today grouped by league ordered by kickoff; kickoff in `APP_TIMEZONE`;
-  Russian month abbreviations; missing team names rendered as "—"
-  (canonical DB data never mutated);
-- /discover preserves backend idempotency (duplicate taps keep the
-  same job UUID and display `already_queued`); no second idempotency
-  scheme inside Telegram; malformed/tampered callbacks are harmless;
-- long polling only (no webhook), clean shutdown, structured JSON
-  logging; secrets never logged;
-- compose `telegram` profile is isolated; ordinary dev stack starts
-  without a token;
-- unit tests do not require a real token (transport separated from
-  handlers).
+- every callback query (valid and malformed `fx:` / `pg:` / `rf:` /
+  `menu:*` payloads, catch-all) is acknowledged exactly once so the
+  Telegram client stops its loading indicator;
+- malformed callbacks (`fx:not-a-uuid`, `pg:not-a-date:99`,
+  `rf:not-a-date`) get a safe UI response, never call the backend,
+  and never crash;
+- missing `TELEGRAM_BOT_TOKEN` at startup raises `SystemExit(1)` and
+  the process exits with a non-zero status;
+- normal Ctrl+C (`KeyboardInterrupt`) is still handled cleanly;
+- token is never logged;
+- scope guard: scheduler, automatic discovery, sports collectors,
+  odds, lineups / injuries, quota manager, research, MatchContext,
+  LLM prediction, live football analysis — still NOT implemented;
+- M3 review items remain true (Russian UI, button-based navigation,
+  Back button, central allowlist, typed backend client, no provider
+  calls inside the bot, idempotent /discover, mute UI on backend
+  errors, long polling only, secrets never logged, compose
+  `telegram` profile isolated, unit tests do not require a token).
 
 ---
 
@@ -115,7 +144,7 @@ M3 (final independent review requested):
 
 ```bash
 uv sync --frozen --dev
-uv run pytest -q -m "not integration"        # 151 passed
+uv run pytest -q -m "not integration"        # 159 passed
 make test-integration                        # 26 passed, isolated sports_intel_test
 uv run ruff check .
 uv run ruff format --check .

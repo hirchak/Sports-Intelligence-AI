@@ -29,7 +29,10 @@ async def run() -> None:
 
 
 def main() -> None:
-    with suppress(KeyboardInterrupt, SystemExit):
+    # Suppress KeyboardInterrupt only — SystemExit raised by run()
+    # (e.g. missing TELEGRAM_BOT_TOKEN) must propagate so the process
+    # exits with a non-zero status reflecting the startup failure.
+    with suppress(KeyboardInterrupt):
         asyncio.run(run())
 
 

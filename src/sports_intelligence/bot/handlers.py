@@ -168,7 +168,6 @@ for _name in NOT_AVAILABLE_COMMANDS:
 
 @router.callback_query(F.data == MENU_MAIN)
 async def main_menu_callback(callback: CallbackQuery, context: AppContext) -> None:
-    await context.transport.answer_callback(callback.id)
     await _answer_from_callback(
         callback, context, MAIN_MENU_HINT, reply_markup=main_menu_keyboard()
     )
@@ -176,14 +175,12 @@ async def main_menu_callback(callback: CallbackQuery, context: AppContext) -> No
 
 @router.callback_query(F.data == MENU_TODAY)
 async def today_menu_callback(callback: CallbackQuery, context: AppContext) -> None:
-    await context.transport.answer_callback(callback.id)
     today = local_today(utc_now(), context.settings.app_timezone)
     await _render_page_from_callback(callback, context, today, 0)
 
 
 @router.callback_query(F.data == MENU_FIND)
 async def find_menu_callback(callback: CallbackQuery, context: AppContext) -> None:
-    await context.transport.answer_callback(callback.id)
     today = local_today(utc_now(), context.settings.app_timezone)
     await _answer_from_callback(
         callback,
@@ -197,7 +194,6 @@ async def find_menu_callback(callback: CallbackQuery, context: AppContext) -> No
 
 @router.callback_query(F.data == MENU_HEALTH)
 async def health_menu_callback(callback: CallbackQuery, context: AppContext) -> None:
-    await context.transport.answer_callback(callback.id)
     status = await context.backend.health()
     await _answer_from_callback(
         callback, context, render_health(status), reply_markup=back_to_main_keyboard()
@@ -206,13 +202,11 @@ async def health_menu_callback(callback: CallbackQuery, context: AppContext) -> 
 
 @router.callback_query(F.data == MENU_HELP)
 async def help_menu_callback(callback: CallbackQuery, context: AppContext) -> None:
-    await context.transport.answer_callback(callback.id)
     await _answer_from_callback(callback, context, HELP_TEXT, reply_markup=back_to_main_keyboard())
 
 
 @router.callback_query(F.data == HEALTH_CALLBACK)
 async def health_callback(callback: CallbackQuery, context: AppContext) -> None:
-    await context.transport.answer_callback(callback.id)
     status = await context.backend.health()
     await _answer_from_callback(
         callback, context, render_health(status), reply_markup=back_to_main_keyboard()
@@ -221,7 +215,6 @@ async def health_callback(callback: CallbackQuery, context: AppContext) -> None:
 
 @router.callback_query(F.data == DISCOVER_CALLBACK)
 async def discover_callback(callback: CallbackQuery, context: AppContext) -> None:
-    await context.transport.answer_callback(callback.id)
     fixture_date = local_today(utc_now(), context.settings.app_timezone)
     await _answer_from_callback(
         callback,
@@ -239,7 +232,6 @@ async def fixture_callback_handler(callback: CallbackQuery, context: AppContext)
             callback, context, UNKNOWN_ACTION, reply_markup=back_to_main_keyboard()
         )
         return
-    await context.transport.answer_callback(callback.id)
     try:
         fixture = await context.backend.get_fixture(str(fixture_id))
     except BackendClientError:
@@ -317,7 +309,6 @@ async def _send_fixture_page(
 async def _render_page_from_callback(
     callback: CallbackQuery, context: AppContext, fixture_date: date, page: int
 ) -> None:
-    await context.transport.answer_callback(callback.id)
     fixtures = await _fetch_fixtures(context, fixture_date)
     if fixtures is None:
         await _answer_from_callback(
@@ -371,6 +362,13 @@ async def _answer_from_callback(
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
 ) -> None:
+    # Always acknowledge the callback exactly once so the Telegram client
+    # stops its "loading" indicator — even when the payload is malformed
+    # or when message editing fails.
+    try:
+        await context.transport.answer_callback(callback.id)
+    except Exception:
+        logger.warning("failed to acknowledge telegram callback", exc_info=True)
     if callback.message is None:
         return
     try:

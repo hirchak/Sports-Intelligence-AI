@@ -2,8 +2,9 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M3 — Telegram base UI / private control plane —
-implemented, awaiting final review (M2 accepted via `v0.3-m2`)  
+**Current milestone:** M3.1 — Telegram base UI / private control plane —
+minimal fix (final M3 review: PASS WITH TWO SMALL FIXES); awaiting final
+review (M2 accepted via `v0.3-m2`)  
 **Last updated:** 2026-08-21 (DeepSeek V4 Pro via OpenCode)  
 **Last known good commit:** see section 11
 
@@ -15,9 +16,10 @@ M2 (including M2.1–M2.4 fixes) passed independent final review
 (verdict: **PASS — M2 ACCEPTED**), merged to `main` via PR #4, tagged
 `v0.3-m2`.
 
-M3 (Telegram base UI / private control plane) is implemented on
-`build/m3` and awaiting independent review. Do not start M4 before
-acceptance.
+M3 (Telegram base UI / private control plane) passed independent final
+review (verdict: **PASS WITH TWO SMALL FIXES**); M3.1 implements both
+fixes on `build/m3` and awaits independent review. Do not start M4
+before acceptance.
 
 No Hetzner deployment is authorized.
 
@@ -294,20 +296,48 @@ All review items implemented:
   MOCK (documented in the worklog; quota-safe default restored
   afterwards).
 
----
+## M3.1 — Minimal fix (final M3 review: PASS WITH TWO SMALL FIXES)
 
-# 3. In progress
+- **Telegram callback acknowledgement is guaranteed exactly once.** The
+  shared `_answer_from_callback` helper now calls `answer_callback`
+  before editing/sending; every callback handler delegates through it
+  on its response path; the explicit `answer_callback` calls that
+  previously preceded the helper were removed (no double-acknowledge).
+  Result: malformed `fx:` / `pg:` / `rf:` payloads still get a safe
+  Russian-language UI response (`Неизвестное действие.` + Back button)
+  AND the Telegram client stops its "loading" indicator.
+- **Startup failure is non-zero.** `bot.__main__.main()` now suppresses
+  `KeyboardInterrupt` only; `SystemExit` (e.g. raised by `run()` when
+  `TELEGRAM_BOT_TOKEN` is empty) propagates so the process exits with
+  the failure code. Normal Ctrl+C remains a clean shutdown.
+- **Token never logged.** The startup refusal path uses a static
+  constant message; no token interpolation. Regression test asserts no
+  record message on that path contains `sports_intel`, `postgres` or
+  any token-like fragment.
+- **Scope guard** — explicitly out of M3/M3.1 and not touched:
+  scheduler, automatic discovery, sports collectors, odds, lineups /
+  injuries, quota manager, research, MatchContext, LLM prediction,
+  live football analysis. The Telegram bot remains a thin UI over the
+  FastAPI backend.
+- **Regression tests** added for malformed callbacks (`fx:not-a-uuid`,
+  `pg:not-a-date:99`, `rf:not-a-date`) — assert `answer_callback` was
+  called, the user receives a safe response, and no backend call was
+  made — and for the startup-failure path (SystemExit + non-zero exit +
+  token-free log message).
 
-None. M3 is implemented on `build/m3`; the branch awaits independent
-review.
+---# 3. In progress
+
+None. M3.1 safety fixes applied on `build/m3`; the branch awaits
+independent review.
 
 ---
 
 # 4. Acceptance tests passed (actually run)
 
-- `uv run pytest -q -m "not integration"` → **151 passed** (72 new
+- `uv run pytest -q -m "not integration"` → **159 passed** (80 new
   Telegram bot tests: access, formatting, backend client, handlers,
-  callbacks, menu navigation; no token required)
+  callbacks, menu navigation, malformed-callback acknowledgement,
+  startup-failure path; no token required)
 - `make test-integration` (isolated `sports_intel_test` DB) → **26 passed**
   (incl. M2.4 identity-binding regressions, targeted concurrency,
   enqueue-race regression, fingerprint, schema-drift `alembic check`,
@@ -431,19 +461,19 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m3` (M3 work); `main` = `c737f80` (M2 accepted, tag `v0.3-m2`)
+- `build/m3` (M3 / M3.1 work); `main` = `c737f80` (M2 accepted, tag `v0.3-m2`)
 
 Commit:
-- M3 commits recorded in `docs/REVIEW_HANDOFF.md` after commit
+- M3 / M3.4 commits recorded in `docs/REVIEW_HANDOFF.md` after commit
 
 Working tree:
-- clean after the M3 commits
+- clean after the M3.1 commit
 
 ---
 
 # 12. Next action
 
-1. Independent review of M3 (see `docs/REVIEW_HANDOFF.md`).
+1. Independent review of M3.1 (see `docs/REVIEW_HANDOFF.md`).
 2. After acceptance: merge `build/m3` into `main`, tag `v0.4-m3`.
 3. Only then start M4 with explicit user approval.
 
@@ -453,6 +483,29 @@ Working tree:
 
 **Final review verdict (2026-08-21): M2 PASS — M2 ACCEPTED.**
 Safe to begin M3: YES.
+
+**Final review verdict (2026-08-21): M3 PASS WITH TWO SMALL FIXES.**
+M3.1 implements both fixes on `build/m3`; awaiting independent review.
+
+---
+
+# 14. Future roadmap (post-M3, NOT implemented)
+
+Documented future requirements only; no implementation yet, no live
+subsystem design at this stage.
+
+- The scheduled pipeline (M4+) must populate PostgreSQL automatically,
+  independent of Telegram usage. Telegram fixture screens must read
+  essentially-ready data from the DB.
+- An availability / lineup collector may in the future perform bounded
+  pre-kickoff refresh close to kickoff.
+- A confirmed / new lineup snapshot may in the future create a new
+  `PREMATCH_FINAL` prediction rather than overwriting `MORNING`.
+- Future live analytics is a separate post-v1 extension, not part of
+  M3 / M4.
+
+M3.1 explicitly does NOT implement any of this and does not design a
+live subsystem.
 
 A reviewer should start by reading:
 
