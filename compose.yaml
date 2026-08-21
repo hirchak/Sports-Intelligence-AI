@@ -112,6 +112,22 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  sports-telegram:
+    build:
+      context: .
+      target: production
+    command: ["python", "-m", "sports_intelligence.bot"]
+    profiles: ["telegram"]
+    environment:
+      <<: *app-environment
+      BOT_BACKEND_BASE_URL: http://sports-api:8000
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_USER_IDS: ${TELEGRAM_ALLOWED_USER_IDS:-}
+    depends_on:
+      sports-api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   sports_intel_pgdata:
   sports_intel_redisdata:

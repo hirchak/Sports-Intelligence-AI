@@ -738,3 +738,105 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - PR `build/m2` → `main`, merge normally, verify CI on main, tag
   `v0.3-m2`, create `build/m3`, start M3.
+
+---
+
+### 2026-08-21 — DeepSeek V4 Pro (M3 + Russian button navigation)
+
+**Milestone:** M3 (Telegram base UI / private control plane)  
+**Task:** Implement the first Telegram bot; pivot to Russian UI with
+button-based menus and a Back button on every screen.
+
+**Completed**
+- `sports_intelligence.bot` package: `app` (aiogram Bot/Dispatcher
+  factory), `access` (central allowlist middleware — message +
+  callback), `backend_client` (typed methods: health, list fixtures,
+  get fixture, discover; bot-safe error normalization), `transport`
+  (send_text / edit_text / answer_callback protocol + aiogram
+  impl + FakeTransport for tests), `context` (AppContext dataclass),
+  `formatting` (Russian text, APP_TIMEZONE kickoff with Russian month
+  abbreviations, league grouping, pagination, HTML escaping, "—"
+  for missing team names, Back button on fixture page), `strings`
+  (all Russian UI text), `menu` (main menu, find menu, dashboard,
+  back-to-main keyboard builders), `handlers` (commands + inline
+  callbacks + menu callbacks, all responses include a «← Назад»
+  button), `callback_data` (fx/pg/rf/disc/health/menu:* payloads),
+  `__main__.py` (long-polling entrypoint).
+- Russian UI (single language); main menu Сегодня / Найти / Здоровье /
+  Помощь; every screen has a «← Назад» button returning to the main
+  menu; find menu offers yesterday / today / tomorrow plus the
+  `/fixtures ГГГГ-ММ-ДД` hint for arbitrary dates; commands retained
+  as a power-user fallback reach the same screens.
+- Access control: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_USER_IDS`
+  enforced centrally (message + callback); unknown users get
+  "Доступ запрещён." / silent callback answer; empty allowlist denies
+  everyone.
+- Docker Compose `telegram` profile: isolated `sports-telegram`
+  service (no exposed ports), internal networking to `sports-api`,
+  `BOT_BACKEND_BASE_URL` env; ordinary dev stack starts without
+  Telegram credentials.
+- Settings: added `bot_backend_base_url` (default
+  `http://localhost:8000`; compose overrides to
+  `http://sports-api:8000`).
+- Dependency: `aiogram>=3.7` added to `pyproject.toml` /
+  `uv.lock` (3.30 supported).
+- Tests: 72 deterministic bot unit tests (access, formatting,
+  backend client, handlers, callbacks, menu builders) — no token
+  required.
+- Localised error / status / help / dashboard / fixture / discover
+  text to Russian; rus-month abbreviations; refresh + pagination
+  buttons renamed.
+
+**Files changed**
+- Modified: `pyproject.toml`, `uv.lock`, `compose.yaml`, `Makefile`,
+  `.env.example`, `src/sports_intelligence/core/config.py`,
+  `docs/{CURRENT_TASK,IMPLEMENTATION_STATUS,TELEGRAM,ARCHITECTURE}.md`
+- Added: `src/sports_intelligence/bot/{__main__,app,access,
+  backend_client,callback_data,context,formatting,handlers,menu,
+  strings,transport}.py`, `tests/telegram_fakes.py`,
+  `tests/unit/test_bot_{backend_client,access,formatting,callbacks,
+  handlers}.py`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (151)
+- `make test-integration` → PASS (26) incl. alembic check
+- ruff check / ruff format --check / strict mypy (62 source files)
+  → PASS
+- docker compose config -q (+ telegram profile) → OK
+- secret scan: token / user IDs only in local `.env` (gitignored)
+- live Telegram smoke (bot running in Docker):
+  - English commands /start /today /health /discover + inline fixture
+    tap verified via bot/worker logs.
+  - Russian main menu + button navigation verified live (user
+    screenshot).
+
+**Live integrations verified**
+- unchanged (M2 bounded live smokes remain valid).
+
+**Known issues**
+- One accidental live API-Football call (1301 fixtures received, 5
+  created) was consumed during the first smoke because the local
+  `.env` had `SPORTS_PROVIDER=api_football`. The smoke was pinned to
+  MOCK afterwards; the second discovery round-trip (MOCK) hit the
+  built-in dataset (4 received / 3 eligible / 0 created / 3 updated)
+  and duplicate POST returned `already_queued: true`. Quota-safe
+  default (`config/leagues.yaml`, all leagues disabled) restored on
+  the stack after the smoke.
+- `job_attempts` rows, QuotaManager, full outbox remain M4 debt;
+  documented.
+- Docker Desktop multi-service bake build bug (per-service build
+  workaround documented).
+
+**Spec / ADR deviations**
+- Initial review of M3 requested spec-defined commands; user
+  feedback pivoted the UI to single-language Russian with button-based
+  navigation (commands retained as power-user fallback). All other
+  M3 spec requirements kept.
+
+**Git**
+- branch: `build/m3`
+- commit hash: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent review of M3; merge to `main` after acceptance;
+  M4 only with explicit user approval.

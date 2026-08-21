@@ -2,8 +2,8 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M2 (+ M2.1 + M2.2 + M2.3 + M2.4 fixes) — ACCEPTED
-(independent final review verdict: PASS); M3 next  
+**Current milestone:** M3 — Telegram base UI / private control plane —
+implemented, awaiting final review (M2 accepted via `v0.3-m2`)  
 **Last updated:** 2026-08-21 (DeepSeek V4 Pro via OpenCode)  
 **Last known good commit:** see section 11
 
@@ -12,11 +12,12 @@
 # 1. Current objective
 
 M2 (including M2.1–M2.4 fixes) passed independent final review
-(verdict: **PASS — M2 ACCEPTED**).
+(verdict: **PASS — M2 ACCEPTED**), merged to `main` via PR #4, tagged
+`v0.3-m2`.
 
-Next: merge `build/m2` into `main`, tag `v0.3-m2`, then start M3
-(Telegram base UI / private control plane) on `build/m3` with explicit
-user approval.
+M3 (Telegram base UI / private control plane) is implemented on
+`build/m3` and awaiting independent review. Do not start M4 before
+acceptance.
 
 No Hetzner deployment is authorized.
 
@@ -239,30 +240,88 @@ All review items implemented:
   tests stay green.
 - No migration; no live smoke (quota preserved).
 
+## M3 — Telegram base UI / private control plane (branch `build/m3`)
+
+- **Thin UI over the backend**: aiogram 3 bot (`sports_intelligence.bot`
+  package) talks to the FastAPI control plane exclusively through a
+  typed `BackendClient` (health/ready, fixtures list, fixture detail,
+  discovery enqueue). Handlers never touch provider adapters, DB,
+  LLM or raw response dictionaries; all backend/network failures are
+  normalized into bot-safe errors (no URLs, bodies, stack traces or
+  secrets ever reach Telegram).
+- **Private access control**: central `AllowlistMiddleware` registered
+  for both messages and callback queries using
+  `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_USER_IDS`. Unknown users get
+  a minimal "Доступ запрещён." message (or a silent callback answer);
+  handlers never duplicate the check. Empty allowlist denies everyone.
+- **Russian UI, single language**: all Telegram-facing text lives in
+  `bot/strings.py`; commands and callbacks render the same Russian
+  strings; bug-free, deterministic text (no f-string concatenation at
+  call sites).
+- **Button-based navigation**: every screen reachable from the main
+  menu `Сегодня / Найти / Здоровье / Помощь`; every screen has a single
+  «← Назад» button returning to the main menu; the find menu offers
+  yesterday / today / tomorrow as quick picks alongside the
+  `/fixtures ГГГГ-ММ-ДД` hint for arbitrary dates. Commands remain as a
+  power-user fallback (`/start /help /dashboard /today /fixtures
+  [date] /match <uuid> /health /discover [date]`).
+- **Inline callbacks**: short stable payloads (`fx:<uuid>`,
+  `pg:<date>:<page>`, `rf:<date>`, `disc`, `health`, `menu:*`) — no
+  secrets, no JSON, under Telegram's 64-byte limit; fixture view,
+  pagination, refresh, discover, health, main menu. Malformed/
+  tampered payloads are answered harmlessly; repeated taps rely on
+  backend idempotency (no second idempotency scheme inside Telegram).
+- **Rendering**: /today grouped by league ordered by kickoff; kickoff
+  shown in `APP_TIMEZONE` (DB stays UTC); Russian month abbreviations
+  (янв., фев., …, авг., …); missing team names rendered as "—"
+  (stored data never mutated); pagination (8 per page, Prev/Next +
+  Refresh); HTML escaping for all backend-provided strings.
+- **Transport separated from handlers**: `TelegramTransport` protocol
+  (send_text / edit_text / answer_callback) with an aiogram
+  implementation and an in-memory fake — 72 deterministic bot unit
+  tests require no token and no network.
+- **Docker Compose `telegram` profile**: isolated `sports-telegram`
+  service (no exposed ports), internal networking to `sports-api`,
+  bot env via `BOT_BACKEND_BASE_URL`; the ordinary api/postgres/redis/
+  worker/beat stack starts without any Telegram credentials.
+- **Live Telegram smoke** (real token + allowlisted user, bounded):
+  /start /today /health /discover + inline fixture tap (initial
+  English commands) verified through bot/worker logs; Russian
+  main-menu + button navigation verified live (screenshot by user).
+  MOCK-mode discovery round-trip verified idempotent (0 created /
+  3 updated; duplicate POST → `already_queued`). Note: one accidental
+  live API-Football call was consumed before the smoke was pinned to
+  MOCK (documented in the worklog; quota-safe default restored
+  afterwards).
+
 ---
 
 # 3. In progress
 
-None. M2.4 safety fix applied; the branch awaits final review.
+None. M3 is implemented on `build/m3`; the branch awaits independent
+review.
 
 ---
 
 # 4. Acceptance tests passed (actually run)
 
-- `uv run pytest -q -m "not integration"` → **79 passed**
+- `uv run pytest -q -m "not integration"` → **151 passed** (72 new
+  Telegram bot tests: access, formatting, backend client, handlers,
+  callbacks, menu navigation; no token required)
 - `make test-integration` (isolated `sports_intel_test` DB) → **26 passed**
   (incl. M2.4 identity-binding regressions, targeted concurrency,
   enqueue-race regression, fingerprint, schema-drift `alembic check`,
   worker init failure, migration cycle)
 - `uv run ruff check .` / `ruff format --check .` → clean
-- `uv run mypy src` → **no issues in 51 source files** (strict)
-- `docker compose config -q` (+dev) → OK
-- Docker smoke: 5 services; `/health`/`/ready` 200; MOCK discovery via
-  Celery idempotent (0 created / 3 updated); observation fingerprint
-  canonical (`mock:fixtures_by_date:date=2026-08-21&timezone=Europe/Warsaw`)
-- Live API-Football smoke NOT repeated in M2.2 (no HTTP contract change —
-  quota preserved); prior bounded live verification stands (M2/M2.1)
-- Secret scan: keys only in local `.env` (gitignored)
+- `uv run mypy src` → **no issues in 62 source files** (strict)
+- `docker compose config -q` and `docker compose --profile telegram
+  config -q` (+dev) → OK
+- Docker live smoke: full stack incl. `sports-telegram` (telegram
+  profile); bot long-polls; /start /today /health /discover + inline
+  fixture tap verified through typed backend client; MOCK discovery
+  job SUCCEEDED via Celery (4-arg identity payload), duplicate POST →
+  `already_queued` (idempotent)
+- Secret scan: token/user IDs only in local `.env` (gitignored)
 
 ---
 
@@ -280,7 +339,13 @@ None. M2.4 safety fix applied; the branch awaits final review.
 - Odds provider (interface only, M4)
 - Search provider (interface only, M5)
 - Runtime LLM providers (interface only, M7)
-- Telegram bot (config fields only, M3)
+
+## Verified live (M3)
+
+- **Telegram bot** — bounded local smoke with real token and allowlisted
+  user: /start, /today, /health, /discover (job enqueued through the
+  backend) and an inline fixture tap all served correctly; MOCK-mode
+  discovery round-trip verified idempotent through the full stack.
 
 ---
 
@@ -366,22 +431,21 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m2` (M2 work); `main` = `25dda83` (M1 accepted, tag `v0.2-m1`)
+- `build/m3` (M3 work); `main` = `c737f80` (M2 accepted, tag `v0.3-m2`)
 
 Commit:
-- M2 commits recorded in `docs/REVIEW_HANDOFF.md` after commit
+- M3 commits recorded in `docs/REVIEW_HANDOFF.md` after commit
 
 Working tree:
-- clean after the M2.4 commit
+- clean after the M3 commits
 
 ---
 
 # 12. Next action
 
-1. Merge `build/m2` into `main` (accepted state).
-2. Tag `v0.3-m2` on `main`.
-3. Create `build/m3` from `main` and implement M3 with explicit user
-   approval.
+1. Independent review of M3 (see `docs/REVIEW_HANDOFF.md`).
+2. After acceptance: merge `build/m3` into `main`, tag `v0.4-m3`.
+3. Only then start M4 with explicit user approval.
 
 ---
 
