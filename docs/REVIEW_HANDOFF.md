@@ -10,48 +10,52 @@ Update it before every milestone review.
 
 **Ready for review:** YES  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M2 — Sports Provider + Fixture Discovery, awaiting review  
+**Milestone:** M2 + M2.1 fixes — awaiting final review  
 **Review target branch:** `build/m2`  
 **Review target commits:** `bdb5ef3` (DTOs + adapter), `3f62348` (schema +
-discovery service), `6625d7c` (API + Celery task), `7e71ed0` (compose/docs),
-`ac4188a` (CI test fix) — see Git section  
+discovery), `6625d7c` (API + Celery), `7e71ed0` (compose/docs),
+`ac4188a` (CI fix), **`ea9b4a8` (timezone/provider safety), `1de60af`
+(evidence history + atomic identity), `1dcd7cd` (docs/state)** — see Git
+section  
 **CI status:** green on `build/m2` (unit, integration with isolated
 Postgres/Redis, compose validation)  
+**Previous review:** M2 → PASS WITH FIXES; fixes implemented in M2.1  
 **Previous accepted state:** `main` = `25dda83` (M1 accepted, tag `v0.2-m1`)
 
 ---
 
-# What changed
+# What changed since the last review
 
-1. **Typed provider DTOs** (`providers/dto.py`) — `ProviderLeague`,
-   `ProviderSeason`, `ProviderTeam`, `ProviderFixture`,
-   `FixtureDiscoveryResult`, `ProviderResponseMetadata`. UTC-normalized
-   kickoff, explicit `None` for missing fields. M1 tech debt closed for
-   the discovery path.
-2. **API-Football adapter** (`providers/sports/api_football.py`) — async
-   httpx, env-only API key, configurable base URL, bounded retry
-   (timeout/transport/429/5xx retryable; 401/403 non-retryable),
-   normalized `ProviderError` hierarchy, rate-limit metadata, raw payload
-   returned for evidence, injectable transport, one shared client per
-   instance. Choice rationale: ADR-0007.
-3. **Mock provider** (`providers/sports/mock.py`) — recorded, sanitized
-   API-Football-shaped responses; keyless; used by MOCK mode/CI/tests.
-4. **Migration 0002** — `leagues`, `seasons`, `teams`, `fixtures`,
-   `provider_entity_ids`, `raw_provider_payloads`; UUID PKs, UTC, unique
-   constraints and indexes; PostgreSQL upserts. Scope: ADR-0008.
-   No odds/prediction/research tables.
-5. **FixtureDiscoveryService** — batch-first (one date-level request),
-   enabled leagues filtered locally, raw payload hash-deduplicated,
-   idempotent entity upserts with provider identity on mappings.
-6. **League config** — YAML (`config/leagues.yaml`, all leagues disabled
-   by default; `config/leagues.mock.yaml` demo), `make seed` path.
-7. **API** — `GET /v1/fixtures` (date/league filters), `GET
-   /v1/fixtures/{id}` (404), `POST /v1/jobs/discover` (jobs row +
-   idempotency key `discover:{provider}:{date}` + Celery enqueue; no
-   long-running provider call in the handler).
-8. **Celery** — `sports.discover_fixtures` on `sports_io`; job status
-   RUNNING/SUCCEEDED/FAILED; no automatic schedule (no quota spend unless
-   explicitly POSTed).
+M2.1 fixes (all items from the PASS WITH FIXES verdict):
+
+1. **`retrieved_at` semantics** — captured after the final successful
+   response (post-retry); regression test with retry/delay.
+2. **Immutable evidence history (ADR-0009)** — deduplicated content
+   (`raw_provider_payloads`) + append-only `provider_observations` (one
+   row per retrieval event with its own `retrieved_at`); migration 0003
+   migrates existing rows; replay resolves the snapshot available at
+   `as_of` via `retrieved_at <= as_of`.
+3. **Atomic provider identity** — PostgreSQL CTE arbiter for teams and
+   fixtures: the unique mapping insert decides the winner and the entity
+   row is created in the same statement; concurrent discoveries produce
+   exactly one Team row and one mapping (gather-based test). Fixture
+   refresh updates mutable metadata in place (same UUID; kickoff-change
+   test). `upsert_league_id` syncs `enabled` (false→true→false test).
+4. **Per-provider enabled leagues** — IDs resolved for the CURRENT
+   provider only; zero enabled → empty summary with 0 external calls
+   (counting transport test); `config/leagues.mock.yaml` carries explicit
+   `mock:` + `api_football:` IDs.
+5. **Timezone** — "today" via `APP_TIMEZONE`; `?date=` boundaries are
+   local-day UTC windows (DST-aware); API-Football receives
+   `timezone=APP_TIMEZONE`; DB timestamps stay UTC; midnight/DST tests.
+6. **Provider safety** — `mock` only when explicitly configured; unknown
+   values fail fast with `ProviderConfigError` (typo test).
+7. **Job enqueue failure** — failed enqueue marks the job FAILED (502);
+   repeated POST re-enqueues the SAME job row (PENDING), no duplicates.
+8. **Missing data** — nullable team/league names; required identity
+   (fixture status) fails validation; no invented "Unknown"/"UNKNOWN".
+9. **ADR-0008 reconciled** — composite indexes `(league_id, kickoff_at)`
+   and `(status, kickoff_at)` actually created in migration 0003.
 
 ---
 
@@ -72,11 +76,11 @@ Postgres/Redis, compose validation)
 
 ```bash
 uv sync --frozen --dev
-uv run pytest -q -m "not integration"        # 63 passed
-make test-integration                        # 10 passed, isolated sports_intel_test
+uv run pytest -q -m "not integration"        # 74 passed
+make test-integration                        # 16 passed, isolated sports_intel_test
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy src                              # 50 source files, strict
+uv run mypy src                              # 51 source files, strict
 docker compose config -q
 docker compose up -d --build                 # api/postgres/redis/worker/beat
 curl http://127.0.0.1:8000/health            # 200
@@ -88,12 +92,11 @@ curl "http://127.0.0.1:8000/v1/fixtures?date=2026-08-21"
 CI runs unit + integration (isolated service containers) + compose
 validation on every push; all three jobs green on `build/m2`.
 
-Live evidence (bounded, 2 API calls): real API-Football discovery of
-2026-08-21 fetched 383 fixtures in ONE request, persisted 1 eligible
-Premier League fixture (Arsenal vs Coventry), raw payload stored
-(hash-deduplicated), repeat run idempotent (0 created / 1 updated /
-payload dedup), job SUCCEEDED, rate-limit headers observed, key absent
-from logs.
+Live evidence (bounded): M2.1 ran one real API-Football request (383
+fixtures, 1 eligible league) through the stack — job SUCCEEDED, a new
+observation row appended while content stayed deduplicated, no API key
+in logs. Repeat-run idempotency additionally verified in MOCK mode
+(0 created / 3 updated / observation appended).
 
 Reviewer must not assume tests passed based on status text alone.
 
