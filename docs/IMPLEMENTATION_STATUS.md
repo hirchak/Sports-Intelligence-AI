@@ -2,7 +2,8 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M2 (+ M2.1 + M2.2 + M2.3 + M2.4 fixes) — implemented, awaiting final review  
+**Current milestone:** M2 (+ M2.1 + M2.2 + M2.3 + M2.4 fixes) — ACCEPTED
+(independent final review verdict: PASS); M3 next  
 **Last updated:** 2026-08-21 (DeepSeek V4 Pro via OpenCode)  
 **Last known good commit:** see section 11
 
@@ -10,8 +11,12 @@
 
 # 1. Current objective
 
-M1 implemented on branch `build/m1`. Awaiting independent review before
-merging to `main` and starting M2.
+M2 (including M2.1–M2.4 fixes) passed independent final review
+(verdict: **PASS — M2 ACCEPTED**).
+
+Next: merge `build/m2` into `main`, tag `v0.3-m2`, then start M3
+(Telegram base UI / private control plane) on `build/m3` with explicit
+user approval.
 
 No Hetzner deployment is authorized.
 
@@ -373,13 +378,17 @@ Working tree:
 
 # 12. Next action
 
-1. Independent review of M2 (see `docs/REVIEW_HANDOFF.md`).
-2. After acceptance: merge `build/m2` into `main`.
-3. Only then start M3 with explicit user approval.
+1. Merge `build/m2` into `main` (accepted state).
+2. Tag `v0.3-m2` on `main`.
+3. Create `build/m3` from `main` and implement M3 with explicit user
+   approval.
 
 ---
 
 # 13. Reviewer notes
+
+**Final review verdict (2026-08-21): M2 PASS — M2 ACCEPTED.**
+Safe to begin M3: YES.
 
 A reviewer should start by reading:
 

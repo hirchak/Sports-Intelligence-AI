@@ -8,11 +8,11 @@ Update it before every milestone review.
 
 # Review status
 
-**Ready for review:** YES  
+**Ready for review:** NO — review completed  
+**Final review verdict (2026-08-21):** **PASS. M2 ACCEPTED.** Safe to
+begin M3: YES.  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M2 + M2.1 + M2.2 + M2.3 + M2.4 fixes — final M2.3 review
-(PASS WITH ONE SMALL SAFETY FIX) addressed in M2.4; final state awaiting
-review  
+**Milestone:** M2 + M2.1 + M2.2 + M2.3 + M2.4 fixes — accepted  
 **Review target branch:** `build/m2`  
 **Review target commits:** `bdb5ef3`, `3f62348`, `6625d7c`, `7e71ed0`,
 `ac4188a` (M2); `ea9b4a8`, `1de60af`, `1dcd7cd` (M2.1);
@@ -22,7 +22,7 @@ review
 see Git section  
 **CI status:** green on `build/m2` (unit, integration with isolated
 Postgres/Redis, compose validation)  
-**Previous review:** M2.3 → PASS WITH ONE SMALL SAFETY FIX; fix implemented in M2.4  
+**Previous review:** M2.4 → **PASS**; M2 ACCEPTED (final M2 review)  
 **Previous accepted state:** `main` = `25dda83` (M1 accepted, tag `v0.2-m1`)
 
 ---

@@ -702,3 +702,39 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - Final independent review; merge to `main` after acceptance;
   M3 only with explicit user approval.
+
+---
+
+### 2026-08-21 — DeepSeek V4 Pro (M2 finalization)
+
+**Milestone:** M2 (incl. M2.1–M2.4)  
+**Task:** Record final independent review verdict; prepare accepted state
+
+**Completed**
+- Final independent review of M2.4 returned **PASS — M2 ACCEPTED**;
+  safe to begin M3: YES.
+- Documentation-state cleanup only (no production code changes):
+  IMPLEMENTATION_STATUS section 1 (current objective) no longer says M1
+  is awaiting review — now records the M2 PASS verdict and the
+  merge/tag/M3 sequence; section 12 (next action) and section 13
+  (reviewer notes — final verdict) synced; REVIEW_HANDOFF marked
+  "review completed" with the verdict; CURRENT_TASK completion notes
+  the verdict.
+
+**Files changed**
+- Modified: `docs/{IMPLEMENTATION_STATUS,REVIEW_HANDOFF,CURRENT_TASK,
+  AI_WORKLOG}.md`
+
+**Verification**
+- docs-only change; no tests required (no code touched)
+
+**Spec / ADR deviations**
+- none
+
+**Git**
+- branch: `build/m2`
+- commit: docs cleanup commit (see log)
+
+**Next action**
+- PR `build/m2` → `main`, merge normally, verify CI on main, tag
+  `v0.3-m2`, create `build/m3`, start M3.
