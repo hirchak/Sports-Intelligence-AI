@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import threading
 import uuid
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -16,6 +17,7 @@ from sports_intelligence.api.app import create_app
 from sports_intelligence.core.config import Settings
 from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.league_config import LeagueConfig, LeagueConfigEntry
+from sports_intelligence.core.time import utc_now
 from sports_intelligence.db.models import (
     Fixture,
     Job,
@@ -27,6 +29,7 @@ from sports_intelligence.db.models import (
     Team,
 )
 from sports_intelligence.pipelines.discover_fixtures import FixtureDiscoveryService
+from sports_intelligence.providers.errors import ProviderConfigError
 from sports_intelligence.providers.sports.api_football import ApiFootballProvider
 from sports_intelligence.providers.sports.mock import MockSportsDataProvider
 
@@ -559,3 +562,172 @@ def test_job_row_created_with_pending_status(
             await engine.dispose()
 
     assert asyncio.run(job_count_for_key()) == 1
+
+
+async def _job_status(service_settings: Settings, job_id: str) -> str:
+    from sports_intelligence.db.session import create_engine, create_session_factory
+
+    engine = create_engine(service_settings.database_url)
+    try:
+        async with create_session_factory(engine)() as session:
+            job = await session.get(Job, uuid.UUID(job_id))
+            assert job is not None
+            return job.status
+    finally:
+        await engine.dispose()
+
+
+async def _set_job_status_directly(
+    service_settings: Settings, job_id: str, status: JobStatus
+) -> None:
+    from sports_intelligence.db.session import create_engine, create_session_factory
+
+    engine = create_engine(service_settings.database_url)
+    try:
+        async with create_session_factory(engine)() as session:
+            job = await session.get(Job, uuid.UUID(job_id))
+            assert job is not None
+            job.status = status.value
+            await session.commit()
+    finally:
+        await engine.dispose()
+
+
+def test_enqueue_requeue_never_downgrades_running_job(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_intelligence.workers.tasks import sports as sports_tasks
+
+    def failing_apply_async(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("broker unavailable")
+
+    monkeypatch.setattr(sports_tasks.discover_fixtures_task, "apply_async", failing_apply_async)
+
+    with TestClient(create_app(service_settings)) as client:
+        first = client.post("/v1/jobs/discover", json={"date": "2026-08-28"})
+        assert first.status_code == 502
+        failed_job_id = first.json()["detail"]["job_id"]
+
+    def racing_apply_async(*args: object, **kwargs: object) -> None:
+        job_id = kwargs["args"][0]
+
+        def mark_running_in_new_thread() -> None:
+            asyncio.run(_set_job_status_directly(service_settings, job_id, JobStatus.RUNNING))
+
+        thread = threading.Thread(target=mark_running_in_new_thread)
+        thread.start()
+        thread.join()
+
+    monkeypatch.setattr(sports_tasks.discover_fixtures_task, "apply_async", racing_apply_async)
+
+    with TestClient(create_app(service_settings)) as client:
+        second = client.post("/v1/jobs/discover", json={"date": "2026-08-28"})
+        assert second.status_code == 200
+        body = second.json()
+        assert body["job_id"] == failed_job_id
+        assert body["status"] == JobStatus.RUNNING.value
+
+    assert asyncio.run(_job_status(service_settings, failed_job_id)) == JobStatus.RUNNING.value
+
+
+def test_concurrent_team_identity_produces_single_entity(
+    service_settings: Settings,
+) -> None:
+    from sports_intelligence.db.repositories.discovery import get_or_create_team_id
+    from sports_intelligence.db.session import create_engine, create_session_factory
+
+    provider_name = "mock-team-race"
+    external_id = 999001
+    name = "Racing FC"
+    participant_count = 6
+
+    async def run_race() -> list[uuid.UUID]:
+        engine = create_engine(service_settings.database_url)
+        session_factory = create_session_factory(engine)
+        barrier = asyncio.Barrier(participant_count)
+
+        async def participant() -> uuid.UUID:
+            await barrier.wait()
+            async with session_factory() as session:
+                resolved, _ = await get_or_create_team_id(session, provider_name, external_id, name)
+                await session.commit()
+                return resolved
+
+        try:
+            results = await asyncio.gather(*(participant() for _ in range(participant_count)))
+        finally:
+            await engine.dispose()
+        return results
+
+    results = asyncio.run(run_race())
+    assert len(set(results)) == 1
+
+    async def counts() -> tuple[int, int]:
+        engine = create_engine(service_settings.database_url)
+        try:
+            async with create_session_factory(engine)() as session:
+                mapping_count = int(
+                    (
+                        await session.execute(
+                            select(func.count())
+                            .select_from(ProviderEntityId)
+                            .where(
+                                ProviderEntityId.provider == provider_name,
+                                ProviderEntityId.entity_type == "team",
+                                ProviderEntityId.external_id == str(external_id),
+                            )
+                        )
+                    ).scalar_one()
+                )
+                team_count = int(
+                    (
+                        await session.execute(
+                            select(func.count()).select_from(Team).where(Team.id == results[0])
+                        )
+                    ).scalar_one()
+                )
+        finally:
+            await engine.dispose()
+        return mapping_count, team_count
+
+    mapping_count, team_count = asyncio.run(counts())
+    assert mapping_count == 1
+    assert team_count == 1
+
+
+def test_worker_init_failure_marks_job_failed(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_intelligence.db.session import create_engine, create_session_factory
+    from sports_intelligence.pipelines.discover_fixtures import create_or_get_job
+    from sports_intelligence.workers.tasks import sports as sports_tasks
+
+    monkeypatch.setattr(sports_tasks, "get_settings", lambda: service_settings)
+
+    def boom(settings: Settings) -> object:
+        raise ProviderConfigError("unknown provider")
+
+    monkeypatch.setattr(sports_tasks, "build_sports_provider", boom)
+
+    async def create_job() -> str:
+        engine = create_engine(service_settings.database_url)
+        factory = create_session_factory(engine)
+        try:
+            async with factory() as session:
+                job, _ = await create_or_get_job(
+                    session,
+                    "discover_fixtures",
+                    "discover:mock:2026-08-29",
+                    utc_now(),
+                )
+                await session.commit()
+                return str(job.id)
+        finally:
+            await engine.dispose()
+
+    job_id = asyncio.run(create_job())
+
+    with pytest.raises(ProviderConfigError):
+        asyncio.run(sports_tasks._run_discovery(job_id, "2026-08-29"))
+
+    assert asyncio.run(_job_status(service_settings, job_id)) == JobStatus.FAILED.value

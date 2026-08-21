@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime
 from typing import Any
@@ -147,23 +148,40 @@ async def get_or_create_team_id(
     session: AsyncSession, provider: str, external_id: int, name: str | None
 ) -> tuple[uuid.UUID, bool]:
     internal_id = uuid.uuid4()
-    result = await session.execute(
-        _TEAM_ARBITER_SQL,
-        {
-            "provider": provider,
-            "external_id": str(external_id),
-            "internal_id": internal_id,
-            "name": name,
-        },
+    for attempt in range(3):
+        result = await session.execute(
+            _TEAM_ARBITER_SQL,
+            {
+                "provider": provider,
+                "external_id": str(external_id),
+                "internal_id": internal_id,
+                "name": name,
+            },
+        )
+        row = result.first()
+        if row is not None:
+            resolved = row[0]
+            created = resolved == internal_id
+            if not created:
+                await _sync_team_name(session, resolved, name)
+            return resolved, created
+        existing = await find_internal_id(session, provider, "team", external_id)
+        if existing is not None:
+            await _sync_team_name(session, existing, name)
+            return existing, False
+        await asyncio.sleep(0.01 * (attempt + 1))
+    raise RuntimeError(
+        f"team identity resolution failed for provider={provider!r} external_id={external_id}"
     )
-    resolved = result.scalar_one()
-    created = resolved == internal_id
-    if not created and name is not None:
-        team = await session.get(Team, resolved)
-        if team is not None and team.name != name:
-            team.name = name
-            await session.flush()
-    return resolved, created
+
+
+async def _sync_team_name(session: AsyncSession, internal_id: uuid.UUID, name: str | None) -> None:
+    if name is None:
+        return
+    team = await session.get(Team, internal_id)
+    if team is not None and team.name != name:
+        team.name = name
+        await session.flush()
 
 
 async def upsert_league_with_mapping(
@@ -198,35 +216,63 @@ async def upsert_fixture_id(
     status: str,
 ) -> tuple[uuid.UUID, bool]:
     internal_id = uuid.uuid4()
-    result = await session.execute(
-        _FIXTURE_ARBITER_SQL,
-        {
-            "provider": provider,
-            "external_id": str(external_id),
-            "internal_id": internal_id,
-            "league_id": league_id,
-            "season_id": season_id,
-            "home_team_id": home_team_id,
-            "away_team_id": away_team_id,
-            "kickoff_at": kickoff_at,
-            "venue": venue,
-            "round_name": round_name,
-            "status": status,
-        },
+    for attempt in range(3):
+        result = await session.execute(
+            _FIXTURE_ARBITER_SQL,
+            {
+                "provider": provider,
+                "external_id": str(external_id),
+                "internal_id": internal_id,
+                "league_id": league_id,
+                "season_id": season_id,
+                "home_team_id": home_team_id,
+                "away_team_id": away_team_id,
+                "kickoff_at": kickoff_at,
+                "venue": venue,
+                "round_name": round_name,
+                "status": status,
+            },
+        )
+        row = result.first()
+        if row is not None:
+            resolved = row[0]
+            created = resolved == internal_id
+            if not created:
+                await _refresh_fixture(
+                    session, resolved, league_id, season_id, kickoff_at, venue, round_name, status
+                )
+            return resolved, created
+        existing = await find_internal_id(session, provider, "fixture", external_id)
+        if existing is not None:
+            await _refresh_fixture(
+                session, existing, league_id, season_id, kickoff_at, venue, round_name, status
+            )
+            return existing, False
+        await asyncio.sleep(0.01 * (attempt + 1))
+    raise RuntimeError(
+        f"fixture identity resolution failed for provider={provider!r} external_id={external_id}"
     )
-    resolved = result.scalar_one()
-    created = resolved == internal_id
-    if not created:
-        fixture = await session.get(Fixture, resolved)
-        if fixture is not None:
-            fixture.kickoff_at = kickoff_at
-            fixture.status = status
-            fixture.league_id = league_id
-            fixture.season_id = season_id
-            fixture.venue = venue
-            fixture.round = round_name
-            await session.flush()
-    return resolved, created
+
+
+async def _refresh_fixture(
+    session: AsyncSession,
+    internal_id: uuid.UUID,
+    league_id: uuid.UUID,
+    season_id: uuid.UUID | None,
+    kickoff_at: datetime,
+    venue: str | None,
+    round_name: str | None,
+    status: str,
+) -> None:
+    fixture = await session.get(Fixture, internal_id)
+    if fixture is not None:
+        fixture.kickoff_at = kickoff_at
+        fixture.status = status
+        fixture.league_id = league_id
+        fixture.season_id = season_id
+        fixture.venue = venue
+        fixture.round = round_name
+        await session.flush()
 
 
 async def store_raw_evidence(
