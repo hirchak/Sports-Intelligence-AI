@@ -55,7 +55,7 @@ persistence/publishing
 | Odds provider        | M4        | `OddsProvider` Protocol only                       |
 | Search provider      | M5        | `SearchProvider` Protocol only                     |
 | LLM provider         | M7        | `LLMProvider` Protocol + `LLMResult` only          |
-| Telegram bot         | M3        | Reserved package                                  |
+| Telegram bot         | M3        | aiogram 3, Russian UI, button-based navigation, Back button on every screen, central allowlist, typed BackendClient, long polling |
 | Feature/context/…    | M6+       | Reserved packages                                  |
 
 ## Resource lifecycle (M1)

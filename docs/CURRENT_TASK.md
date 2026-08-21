@@ -1,7 +1,7 @@
 # Current Task
 
-**Status:** COMPLETE — awaiting final review  
-**Milestone:** M2.4 (minimal fix after final M2.3 review: PASS WITH ONE SMALL SAFETY FIX)  
+**Status:** COMPLETE — awaiting independent review  
+**Milestone:** M3.1 (minimal fix after final M3 review: PASS WITH TWO SMALL FIXES)  
 **Owner/agent:** DeepSeek V4 Pro (lead engineer, OpenCode)  
 **Started at:** 2026-08-21  
 **Last updated:** 2026-08-21
@@ -10,38 +10,42 @@
 
 # Task
 
-Apply the one required safety fix on `build/m2`. → **Done, commit on `build/m2`.**
+Apply the two required small fixes on `build/m3`. → **Done, commit on `build/m3`.**
 
 ---
 
 # Acceptance criteria — verified
 
-- discovery task receives `job_id`, `fixture_date`,
-  `expected_league_config_version`, `discovery_timezone` → OK
-- worker loads LeagueConfig and refuses to run when the loaded `version`
-  differs from the job's expected version: deterministic
-  `LeagueConfigVersionMismatchError`, no provider request, job FAILED → OK
-- `FixtureDiscoveryService` uses the job's `discovery_timezone`, never
-  mutable `settings.app_timezone` → OK
-- regression tests (version match executes / drift → 0 provider calls +
-  FAILED / job timezone wins over changed settings) → OK
-- existing MOCK discovery/idempotency tests remain green → OK
-- full unit + integration + ruff + format + strict mypy + alembic check
-  green → OK
-- no migration; no live API smoke (quota preserved) → OK
-- docs synced (IMPLEMENTATION_STATUS, REVIEW_HANDOFF) → OK
+- every callback query (valid and malformed `fx:` / `pg:` / `rf:` / `menu:*`
+  payloads, catch-all) is acknowledged exactly once so the Telegram
+  client stops its loading indicator → OK
+- malformed callbacks (`fx:not-a-uuid`, `pg:not-a-date:99`,
+  `rf:not-a-date`) get a safe UI response, never call the backend, and
+  never crash → OK
+- missing `TELEGRAM_BOT_TOKEN` at startup raises `SystemExit(1)` and
+  the process exits with a non-zero status (not silently swallowed) → OK
+- normal Ctrl+C (`KeyboardInterrupt`) is still handled cleanly for normal
+  manual shutdown → OK
+- token is never logged, today or in any future path → OK
+- scope guard: scheduler / automatic discovery / odds / lineups /
+  injuries / quota manager / research / MatchContext / LLM prediction /
+  live analysis — still NOT implemented → OK
+- 159 unit + 26 integration green; Ruff; format; strict mypy (62 source
+  files); alembic check (in integration); compose validation →
+  OK
+- one coherent M3.1 commit, no merge of `build/m3` into `main`,
+  M4 not started → OK
 
 ---
 
 # Work notes
 
-- 2026-08-21: fix implemented and verified (see worklog).
+- see `docs/AI_WORKLOG.md` for the M3.1 entry.
 
 ---
 
 # Completion
 
 - Status set to COMPLETE.
-- Final independent review verdict: **PASS — M2 ACCEPTED**.
 - Commit: see `docs/REVIEW_HANDOFF.md`.
-- State files/docs updated. No merge to main; stopped before M3.
+- State files/docs updated. No merge to main; stopped before M4.

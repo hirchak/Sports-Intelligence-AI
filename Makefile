@@ -1,4 +1,4 @@
-.PHONY: help dev up down logs logs-worker logs-beat bootstrap migrate test test-integration lint format typecheck lock check
+.PHONY: help dev up down logs logs-worker logs-beat telegram-up telegram-down telegram-logs bootstrap migrate test test-integration lint format typecheck lock check
 
 help:
 	@echo "Targets:"
@@ -8,6 +8,9 @@ help:
 	@echo "  logs            - follow api logs"
 	@echo "  logs-worker     - follow worker logs"
 	@echo "  logs-beat       - follow beat logs"
+	@echo "  telegram-up     - start the stack with the telegram bot profile"
+	@echo "  telegram-down   - stop the telegram bot service"
+	@echo "  telegram-logs   - follow telegram bot logs"
 	@echo "  bootstrap       - create .env if missing, start postgres + redis"
 	@echo "  migrate         - run alembic migrations inside the api container"
 	@echo "  test            - run pytest (unit, no external services)"
@@ -34,6 +37,15 @@ logs-worker:
 
 logs-beat:
 	docker compose logs -f sports-beat
+
+telegram-up:
+	docker compose --profile telegram up -d --build sports-telegram
+
+telegram-down:
+	docker compose --profile telegram stop sports-telegram
+
+telegram-logs:
+	docker compose logs -f sports-telegram
 
 bootstrap:
 	@test -f .env || cp .env.example .env

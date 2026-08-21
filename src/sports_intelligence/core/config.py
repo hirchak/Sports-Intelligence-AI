@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = ""
     telegram_allowed_user_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
+    bot_backend_base_url: str = "http://localhost:8000"
 
     sports_provider: str = "mock"
     sports_api_key: str = ""
