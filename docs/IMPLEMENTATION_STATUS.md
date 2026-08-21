@@ -461,10 +461,10 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m3` (M3 / M3.1 work); `main` = `c737f80` (M2 accepted, tag `v0.3-m2`)
+- `build/m3` (M3 work); `main` = `c737f80` (M2 accepted, tag `v0.3-m2`)
 
 Commit:
-- M3 / M3.4 commits recorded in `docs/REVIEW_HANDOFF.md` after commit
+- M3 commits recorded in `docs/REVIEW_HANDOFF.md` after commit
 
 Working tree:
 - clean after the M3.1 commit
@@ -484,8 +484,8 @@ Working tree:
 **Final review verdict (2026-08-21): M2 PASS — M2 ACCEPTED.**
 Safe to begin M3: YES.
 
-**Final review verdict (2026-08-21): M3 PASS WITH TWO SMALL FIXES.**
-M3.1 implements both fixes on `build/m3`; awaiting independent review.
+**Final review verdict (2026-08-21): M3 PASS — M3 ACCEPTED.**
+Safe to begin M4: YES.
 
 ---
 

@@ -843,7 +843,7 @@ button-based menus and a Back button on every screen.
 
 ---
 
-### 2026-08-21 — DeepSeek V4 Pro (minimal fix milestone M3.4)
+### 2026-08-21 — DeepSeek V4 Pro (minimal fix milestone M3.1)
 
 **Milestone:** M3.1  
 **Task:** Apply final M3 review fix (verdict: PASS WITH TWO SMALL FIXES)

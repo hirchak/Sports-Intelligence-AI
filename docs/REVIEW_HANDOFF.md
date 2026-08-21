@@ -9,18 +9,20 @@ Update it before every milestone review.
 
 # Review status
 
-**Ready for review:** YES  
+**Ready for review:** NO — review completed  
+**Final review verdict (2026-08-21):** **PASS. M3 ACCEPTED.** Safe to
+begin M4: YES.  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M3.1 — Telegram base UI / private control plane — minimal
-fix (final M3 review: PASS WITH TWO SMALL FIXES); awaiting independent
-review  
+**Milestone:** M3 + M3.1 — Telegram base UI / private control plane —
+accepted  
 **Review target branch:** `build/m3`  
 **Review target commits:** `3ad5dc0` (M3: Russian Telegram bot UI with
-button-based menus and Back navigation) — see Git section  
+button-based menus and Back navigation); `99f4a3c` (M3.1: guarantee
+callback acknowledgement and non-zero startup failure) — see Git
+section  
 **CI status:** green on `build/m3` (unit, integration with isolated
 Postgres/Redis, compose validation incl. telegram profile)  
-**Previous review:** M3 → **PASS WITH TWO SMALL FIXES**; fixes implemented
-in M3.1  
+**Previous review:** M3.1 → **PASS**; M3 ACCEPTED  
 **Previous accepted state:** `main` = `c737f80` (M2 accepted, tag
 `v0.3-m2`)
 
