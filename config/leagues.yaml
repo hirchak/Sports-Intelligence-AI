@@ -3,6 +3,11 @@
 # the default (committed, all leagues disabled — no API quota is spent
 # without explicitly enabling leagues).
 #
+# IMPORTANT: any SEMANTIC change to this file (enabling/disabling leagues,
+# changing provider ids) MUST bump `version`. The version is part of the
+# discovery job idempotency identity
+# (discover:{provider}:{date}:v{version}:{timezone}).
+#
 # Each entry:
 #   slug         internal league identifier (used in the API as ?league=)
 #   enabled      whether discovery processes this league

@@ -468,6 +468,85 @@ def test_discover_job_endpoint_is_idempotent(
     assert len(enqueued) == 1
 
 
+def test_discover_key_includes_config_version_and_timezone(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_intelligence.workers.tasks import sports as sports_tasks
+
+    monkeypatch.setattr(
+        sports_tasks.discover_fixtures_task,
+        "apply_async",
+        lambda args=None, queue=None, **kwargs: None,
+    )
+
+    with TestClient(create_app(service_settings)) as client:
+        response = client.post("/v1/jobs/discover", json={"date": "2026-08-21"})
+        assert response.status_code == 200
+        assert response.json()["idempotency_key"] == "discover:mock:2026-08-21:v1:Europe/Warsaw"
+
+
+def test_league_config_version_change_creates_new_job(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_intelligence.api.routes import jobs as jobs_route
+    from sports_intelligence.workers.tasks import sports as sports_tasks
+
+    enqueued: list[list[object]] = []
+    monkeypatch.setattr(
+        sports_tasks.discover_fixtures_task,
+        "apply_async",
+        lambda args=None, queue=None, **kwargs: enqueued.append(args or []),
+    )
+
+    with TestClient(create_app(service_settings)) as client:
+        first = client.post("/v1/jobs/discover", json={"date": "2026-08-25"})
+        assert first.status_code == 200
+        assert first.json()["already_queued"] is False
+
+        monkeypatch.setattr(
+            jobs_route,
+            "load_league_config",
+            lambda path: LeagueConfig(version=2, leagues=[]),
+        )
+        second = client.post("/v1/jobs/discover", json={"date": "2026-08-25"})
+        assert second.status_code == 200
+        assert second.json()["already_queued"] is False
+        assert second.json()["job_id"] != first.json()["job_id"]
+        assert second.json()["idempotency_key"] == "discover:mock:2026-08-25:v2:Europe/Warsaw"
+
+    assert len(enqueued) == 2
+
+
+def test_timezone_is_part_of_discovery_identity(
+    service_settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from sports_intelligence.workers.tasks import sports as sports_tasks
+
+    enqueued: list[list[object]] = []
+    monkeypatch.setattr(
+        sports_tasks.discover_fixtures_task,
+        "apply_async",
+        lambda args=None, queue=None, **kwargs: enqueued.append(args or []),
+    )
+
+    warsaw_settings = service_settings.model_copy(update={"app_timezone": "Europe/Warsaw"})
+    london_settings = service_settings.model_copy(update={"app_timezone": "Europe/London"})
+
+    with TestClient(create_app(warsaw_settings)) as client:
+        warsaw = client.post("/v1/jobs/discover", json={"date": "2026-09-01"})
+        assert warsaw.status_code == 200
+        assert warsaw.json()["idempotency_key"] == "discover:mock:2026-09-01:v1:Europe/Warsaw"
+
+    with TestClient(create_app(london_settings)) as client:
+        london = client.post("/v1/jobs/discover", json={"date": "2026-09-01"})
+        assert london.status_code == 200
+        assert london.json()["already_queued"] is False
+        assert london.json()["idempotency_key"] == "discover:mock:2026-09-01:v1:Europe/London"
+        assert london.json()["job_id"] != warsaw.json()["job_id"]
+
+    assert len(enqueued) == 2
+
+
 def test_enqueue_failure_marks_job_failed_and_repost_requeues(
     service_settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -508,7 +587,7 @@ def test_enqueue_failure_marks_job_failed_and_repost_requeues(
 def test_discover_without_date_uses_app_timezone_local_date(
     service_settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from sports_intelligence.core import time as time_module
+    from sports_intelligence.api.routes import jobs as jobs_route
     from sports_intelligence.workers.tasks import sports as sports_tasks
 
     enqueued: list[list[object]] = []
@@ -517,16 +596,16 @@ def test_discover_without_date_uses_app_timezone_local_date(
         "apply_async",
         lambda args=None, queue=None, **kwargs: enqueued.append(args or []),
     )
-    fixed_now = datetime(2026, 8, 20, 23, 30, tzinfo=UTC)
-    monkeypatch.setattr(time_module, "utc_now", lambda: fixed_now)
+    fixed_now = datetime(2026, 9, 2, 23, 30, tzinfo=UTC)
+    monkeypatch.setattr(jobs_route, "utc_now", lambda: fixed_now)
 
     with TestClient(create_app(service_settings)) as client:
         response = client.post("/v1/jobs/discover", json={})
         assert response.status_code == 200
-        assert response.json()["idempotency_key"] == "discover:mock:2026-08-21"
+        assert response.json()["idempotency_key"] == "discover:mock:2026-09-03:v1:Europe/Warsaw"
 
     assert len(enqueued) == 1
-    assert enqueued[0][1] == "2026-08-21"
+    assert enqueued[0][1] == "2026-09-03"
 
 
 def test_job_row_created_with_pending_status(
@@ -554,7 +633,9 @@ def test_job_row_created_with_pending_status(
                         await session.execute(
                             select(func.count())
                             .select_from(Job)
-                            .where(Job.idempotency_key == "discover:mock:2026-08-26")
+                            .where(
+                                Job.idempotency_key == "discover:mock:2026-08-26:v1:Europe/Warsaw"
+                            )
                         )
                     ).scalar_one()
                 )

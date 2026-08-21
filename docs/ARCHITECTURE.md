@@ -94,7 +94,8 @@ probes DB and Redis and logs the result without crashing the API.
 ## Discovery flow (M2)
 
 ```text
-POST /v1/jobs/discover (idempotency key: discover:{provider}:{date})
+POST /v1/jobs/discover (idempotency key:
+discover:{provider}:{date}:v{league_config_version}:{timezone})
     → jobs row (PENDING)
     → Celery sports.discover_fixtures on sports_io
         → provider.get_fixtures_by_date (1 bounded request)

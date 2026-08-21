@@ -587,3 +587,60 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 **Next action**
 - Final independent M2.2 review; merge to `main` after acceptance;
   M3 only with explicit user approval.
+
+---
+
+### 2026-08-21 — DeepSeek V4 Pro (minimal fix milestone M2.3)
+
+**Milestone:** M2.3  
+**Task:** Apply final M2.2 review fix (verdict: PASS WITH ONE REQUIRED FIX)
+
+**Completed**
+- Discovery job idempotency key now matches `09` spec:
+  `discover:{provider}:{date}:v{league_config_version}:{timezone}` —
+  LeagueConfig version loaded from the configured YAML is the canonical
+  identity mechanism; enabled-league list never appears in the key;
+  timezone included because the provider request depends on it.
+- Rule documented: semantic changes to config/leagues.yaml must bump
+  `version` (config file header + LOCAL_DEVELOPMENT + ARCHITECTURE).
+- Tests: duplicate POST same identity → no duplicate job/enqueue;
+  config-version change → new job + enqueue; timezone change → distinct
+  identity (Warsaw vs London); FAILED retry keeps the same job UUID.
+- Stale IMPLEMENTATION_STATUS strings synced (In-progress block, provider
+  selected/verified — API-Football, reviewer diff main..build/m2, raw
+  evidence description post-ADR-0009).
+
+**Files changed**
+- Modified: `src/sports_intelligence/api/routes/jobs.py` (key construction),
+  `tests/integration/test_fixture_discovery.py` (new/updated identity
+  tests), `config/leagues.yaml` (version-bump rule),
+  `docs/{ARCHITECTURE,LOCAL_DEVELOPMENT,IMPLEMENTATION_STATUS,CURRENT_TASK,
+  AI_WORKLOG,REVIEW_HANDOFF}.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (79)
+- `make test-integration` → PASS (23) incl. alembic check
+- ruff / format / strict mypy (51 files) / compose validation → PASS
+- live API smoke NOT repeated (no HTTP contract change — quota preserved)
+- CI on push → confirmed below
+
+**Live integrations verified**
+- unchanged (bounded live smokes from M2/M2.1 remain valid).
+
+**Mocked only**
+- MockSportsDataProvider for offline/CI/test runs.
+
+**Known issues**
+- Docker Desktop bake bug (per-service build workaround).
+- job_attempts rows (M4); QuotaManager (M4); full outbox (M4).
+
+**Spec / ADR deviations**
+- none new (key format now matches spec 09 exactly).
+
+**Git**
+- branch: `build/m2`
+- commits: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Final independent review; merge to `main` after acceptance;
+  M3 only with explicit user approval.

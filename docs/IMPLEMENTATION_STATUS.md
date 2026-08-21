@@ -92,9 +92,9 @@ Review fixes implemented:
 - **Batch-first discovery**: one date-level request fetches all fixtures
   of the day; enabled leagues filtered locally; `ProviderCapabilities`;
   N+1 guard test proves a single provider call for N fixtures.
-- **Raw evidence**: `raw_provider_payloads` persisted with provider,
-  endpoint family, request fingerprint, payload hash (dedup), JSONB
-  payload, retrieved_at. No secrets stored.
+- **Raw evidence**: `raw_provider_payloads` (deduplicated content: payload
+  hash + JSONB) plus `provider_observations` (per-retrieval events with
+  fingerprint/retrieved_at, ADR-0009). No secrets stored.
 - **Migration 0002** (ADR-0008): `leagues`, `seasons`, `teams`,
   `fixtures`, `provider_entity_ids`, `raw_provider_payloads` — UUID PKs,
   UTC, unique constraints + indexes; PostgreSQL upserts
@@ -198,18 +198,33 @@ All review items implemented:
   integration marks FAILED; unit proves dispose + re-raise with
   unreachable DB).
 
+## M2.3 — Minimal fix (final M2.2 review: PASS WITH ONE REQUIRED FIX)
+
+- **Idempotency key per `09` spec**: manual discovery job identity is now
+  `discover:{provider}:{date}:v{league_config_version}:{timezone}` — the
+  LeagueConfig `version` is the canonical mechanism (enabled-league list
+  never appears in the key); timezone included because the provider
+  request depends on it. Rule documented: any semantic change to
+  `config/leagues.yaml` must bump `version`.
+- Tests: duplicate POST with same identity → no new job/enqueue;
+  config-version change → new job + enqueue; timezone change → distinct
+  identity; FAILED-job retry keeps the same job UUID.
+- Stale IMPLEMENTATION_STATUS strings synced (In-progress block, provider
+  selected/verified, reviewer diff `main..build/m2`, raw-evidence
+  description post-ADR-0009).
+
 ---
 
 # 3. In progress
 
-None. M1 waits for review.
+None. M2.3 fixes are being applied; the branch awaits final review.
 
 ---
 
 # 4. Acceptance tests passed (actually run)
 
 - `uv run pytest -q -m "not integration"` → **79 passed**
-- `make test-integration` (isolated `sports_intel_test` DB) → **20 passed**
+- `make test-integration` (isolated `sports_intel_test` DB) → **23 passed**
   (incl. targeted concurrency, enqueue-race regression, fingerprint,
   schema-drift `alembic check`, worker init failure, migration cycle)
 - `uv run ruff check .` / `ruff format --check .` → clean
@@ -297,7 +312,8 @@ Local DB preservation required:
 # 9. API/quota status
 
 Provider:
-- not selected/verified (open decision, `17_OPEN_QUESTIONS_AND_CONFIG_DEFAULTS.md`)
+- API-Football — selected (ADR-0007); verified via bounded live smokes
+  (M2/M2.1). Sportmonks remains a documented migration path.
 
 Quota telemetry:
 - not implemented (M4)
@@ -350,4 +366,4 @@ A reviewer should start by reading:
 3. `docs/CURRENT_TASK.md`
 4. `docs/REVIEW_HANDOFF.md`
 5. relevant specification
-6. Git diff `main..build/m1`
+6. Git diff `main..build/m2`

@@ -110,10 +110,18 @@ curl "http://127.0.0.1:8000/v1/fixtures?date=2026-08-21&league=premier-league"
 ```
 
 The handler enqueues a Celery job (`sports.discover_fixtures` on
-`sports_io`); repeated POSTs for the same date reuse the same job
-(idempotency key `discover:{provider}:{date}`) and do not enqueue again.
-There is no automatic schedule in M2 — quota is only spent when you
-explicitly POST a discovery job.
+`sports_io`); repeated POSTs for the same identity reuse the same job and
+do not enqueue again. Job identity per `09` spec:
+
+```text
+discover:{provider}:{date}:v{league_config_version}:{timezone}
+```
+
+Rule: any semantic change to `config/leagues.yaml` MUST bump `version`
+(the version is the canonical identity mechanism — never list enabled
+leagues in the key). Changing `APP_TIMEZONE` likewise creates a distinct
+discovery identity. There is no automatic schedule in M2 — quota is only
+spent when you explicitly POST a discovery job.
 
 ## Quality gates
 

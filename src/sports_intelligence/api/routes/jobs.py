@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sports_intelligence.api.dependencies import get_session
 from sports_intelligence.core.job_status import JobStatus
+from sports_intelligence.core.league_config import load_league_config
 from sports_intelligence.core.logging import get_logger
 from sports_intelligence.core.time import local_today, utc_now
 from sports_intelligence.pipelines.discover_fixtures import (
@@ -31,12 +32,16 @@ async def create_discovery_job(
     session: SessionDependency,
 ) -> DiscoverJobResponse:
     settings = request.app.state.settings
+    league_config = load_league_config(settings.leagues_config_path)
     if payload.date is not None:
         fixture_date = payload.date
     else:
         fixture_date = local_today(utc_now(), settings.app_timezone)
     fixture_date_iso = fixture_date.isoformat()
-    idempotency_key = f"discover:{settings.sports_provider}:{fixture_date_iso}"
+    idempotency_key = (
+        f"discover:{settings.sports_provider}:{fixture_date_iso}"
+        f":v{league_config.version}:{settings.app_timezone}"
+    )
 
     job, created = await create_or_get_job(
         session,
