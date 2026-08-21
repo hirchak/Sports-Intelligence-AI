@@ -9,7 +9,11 @@ from sports_intelligence.api.dependencies import get_session
 from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.logging import get_logger
 from sports_intelligence.core.time import local_today, utc_now
-from sports_intelligence.pipelines.discover_fixtures import create_or_get_job, update_job_status
+from sports_intelligence.pipelines.discover_fixtures import (
+    create_or_get_job,
+    transition_job_status_if,
+    update_job_status,
+)
 from sports_intelligence.schemas.fixtures import DiscoverJobRequest, DiscoverJobResponse
 from sports_intelligence.workers.tasks import sports as sports_tasks
 
@@ -73,12 +77,13 @@ async def create_discovery_job(
                     already_queued=False,
                 ).model_dump(mode="json"),
             )
-        await update_job_status(session, str(job.id), JobStatus.PENDING)
+        await transition_job_status_if(session, str(job.id), JobStatus.FAILED, JobStatus.PENDING)
         await session.commit()
+        await session.refresh(job)
         return DiscoverJobResponse(
             job_id=job.id,
             idempotency_key=idempotency_key,
-            status=JobStatus.PENDING.value,
+            status=job.status,
             already_queued=False,
         )
 

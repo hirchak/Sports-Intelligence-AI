@@ -194,7 +194,7 @@ async def test_response_metadata_carries_rate_limit_and_evidence() -> None:
 
     assert result.metadata.provider == "api_football"
     assert result.metadata.endpoint_family == "fixtures_by_date"
-    assert result.metadata.request_fingerprint == "fixtures:date:2026-08-21"
+    assert result.metadata.request_fingerprint == "api_football:fixtures_by_date:date=2026-08-21"
     assert result.metadata.rate_limit_remaining == 88
     assert result.raw_payload is not None
     assert result.raw_payload["results"] == 4

@@ -26,7 +26,7 @@ async def test_mock_provider_returns_empty_result_for_unknown_date() -> None:
     result = await provider.get_fixtures_by_date(date(2030, 1, 1))
 
     assert result.fixtures == []
-    assert result.metadata.request_fingerprint == "fixtures:date:2030-01-01"
+    assert result.metadata.request_fingerprint == "mock:fixtures_by_date:date=2030-01-01"
 
 
 async def test_mock_provider_uses_injected_responses() -> None:

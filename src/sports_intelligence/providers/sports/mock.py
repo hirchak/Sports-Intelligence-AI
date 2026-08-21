@@ -6,7 +6,11 @@ from pathlib import Path
 
 from sports_intelligence.core.time import utc_now
 from sports_intelligence.providers.base import ProviderCapabilities
-from sports_intelligence.providers.dto import FixtureDiscoveryResult, ProviderResponseMetadata
+from sports_intelligence.providers.dto import (
+    FixtureDiscoveryResult,
+    ProviderResponseMetadata,
+    canonical_request_fingerprint,
+)
 from sports_intelligence.providers.sports.api_football import parse_fixtures_response
 
 DEFAULT_DATASET_PATH = Path(__file__).parent / "mock_data" / "fixtures_2026-08-21.json"
@@ -30,9 +34,12 @@ class MockSportsDataProvider:
         self, fixture_date: date, timezone_name: str | None = None
     ) -> FixtureDiscoveryResult:
         iso = fixture_date.isoformat()
+        params = {"date": iso}
+        if timezone_name is not None:
+            params["timezone"] = timezone_name
         retrieved_at = utc_now()
         payload = self._load(iso)
-        fingerprint = f"fixtures:date:{iso}"
+        fingerprint = canonical_request_fingerprint(self._provider_name, "fixtures_by_date", params)
         if payload is None:
             return FixtureDiscoveryResult(
                 metadata=ProviderResponseMetadata(

@@ -15,6 +15,7 @@ from sports_intelligence.providers.dto import (
     ProviderResponseMetadata,
     ProviderSeason,
     ProviderTeam,
+    canonical_request_fingerprint,
 )
 from sports_intelligence.providers.errors import (
     RETRYABLE_PROVIDER_ERRORS,
@@ -68,7 +69,9 @@ class ApiFootballProvider:
         result = parse_fixtures_response(
             payload, retrieved_at=retrieved_at, provider="api_football"
         )
-        result.metadata.request_fingerprint = f"fixtures:date:{fixture_date.isoformat()}"
+        result.metadata.request_fingerprint = canonical_request_fingerprint(
+            "api_football", ENDPOINT_FAMILY, params
+        )
         rate_limit = response.headers.get("x-ratelimit-requests-remaining")
         if rate_limit is not None:
             with suppress(ValueError):
@@ -205,7 +208,7 @@ def parse_fixtures_response(
         metadata=ProviderResponseMetadata(
             provider=provider,
             endpoint_family=ENDPOINT_FAMILY,
-            request_fingerprint="fixtures:date:unknown",
+            request_fingerprint=f"{provider}:{ENDPOINT_FAMILY}:unresolved",
             retrieved_at=retrieved_at,
             results_count=len(fixtures),
         ),

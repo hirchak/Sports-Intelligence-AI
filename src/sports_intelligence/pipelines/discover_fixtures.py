@@ -7,7 +7,7 @@ from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -215,3 +215,21 @@ async def update_job_status(session: AsyncSession, job_id: str, status: JobStatu
     if job is None:
         return
     job.status = status.value
+
+
+async def transition_job_status_if(
+    session: AsyncSession, job_id: str, from_status: JobStatus, to_status: JobStatus
+) -> bool:
+    """Conditional (CAS) status transition; never downgrades a newer state."""
+    try:
+        job_uuid = uuid.UUID(job_id)
+    except ValueError:
+        return False
+    statement = (
+        update(Job)
+        .where(Job.id == job_uuid, Job.status == from_status.value)
+        .values(status=to_status.value)
+    )
+    result = await session.execute(statement)
+    rowcount: int = getattr(result, "rowcount", 0)
+    return rowcount == 1

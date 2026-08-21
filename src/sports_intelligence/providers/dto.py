@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+
+def canonical_request_fingerprint(
+    provider: str, endpoint_family: str, params: Mapping[str, str]
+) -> str:
+    normalized = "&".join(f"{key}={params[key]}" for key in sorted(params))
+    return f"{provider}:{endpoint_family}:{normalized}"
 
 
 class ProviderResponseMetadata(BaseModel):

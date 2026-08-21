@@ -60,12 +60,20 @@ def test_migrations_apply_downgrade_and_reapply_on_fresh_database(
 
     tables = asyncio.run(fetch_table_names(service_settings.database_url))
     assert {"jobs", "job_attempts", "alembic_version"}.issubset(tables)
+    assert {"leagues", "fixtures", "provider_observations"}.issubset(tables)
 
     command.downgrade(alembic_config, "base")
     tables_after_downgrade = asyncio.run(fetch_table_names(service_settings.database_url))
     assert "jobs" not in tables_after_downgrade
-    assert "job_attempts" not in tables_after_downgrade
+    assert "fixtures" not in tables_after_downgrade
 
     command.upgrade(alembic_config, "head")
     tables_after_reapply = asyncio.run(fetch_table_names(service_settings.database_url))
-    assert {"jobs", "job_attempts"}.issubset(tables_after_reapply)
+    assert {"jobs", "job_attempts", "fixtures", "provider_observations"}.issubset(
+        tables_after_reapply
+    )
+
+
+def test_no_schema_drift_at_head(alembic_config: AlembicConfig) -> None:
+    require_test_database(TEST_DATABASE_URL)
+    command.check(alembic_config)
