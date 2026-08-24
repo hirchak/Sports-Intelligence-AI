@@ -387,36 +387,49 @@ class AvailabilityCollector(_ResolverMixin):
         team_id: uuid.UUID,
         **_inputs: object,
     ) -> tuple[SnapshotRef, ...]:
+        """Persist correct availability state for BOTH fixture teams from
+        one observation (M4.2 §3). Actual fixture home/away drive the
+        rows; a side the provider did not cover gets explicit UNKNOWN."""
         teams_data = [t for t in result.normalized.get("teams", []) if isinstance(t, dict)]
 
         async with ctx.session_factory() as session:
-            exists = await session.get(FixtureModel, fixture_id)
-            if exists is None:
+            fixture = await session.get(FixtureModel, fixture_id)
+            if fixture is None:
                 raise LookupError(f"fixture {fixture_id} not found for availability persist")
 
-            refs: list[SnapshotRef] = []
-            persisted_internal: set[uuid.UUID] = set()
+            provider_by_internal: dict[uuid.UUID, dict[str, Any]] = {}
             for team in teams_data:
-                ext_team_id = int(team["provider_team_id"])
                 internal = await _internal_team_for_external(
-                    session, ctx.provider_name(), ext_team_id
+                    session, ctx.provider_name(), int(team.get("provider_team_id", -1))
                 )
-                row_team_id = internal or team_id
-                if row_team_id in persisted_internal:
-                    continue
-                persisted_internal.add(row_team_id)
-                entries = [e for e in team.get("entries", []) if isinstance(e, dict)]
-                missing = [e for e in entries if e.get("missing")]
-                state = "UNKNOWN" if not entries else ("KNOWN_PRESENT" if missing else "KNOWN_NONE")
-                impact_flags = [
-                    str(e["player_name"])
-                    for e in entries
-                    if e.get("missing") and e.get("player_name")
-                ]
+                if internal is not None:
+                    provider_by_internal[internal] = team
+
+            refs: list[SnapshotRef] = []
+            for side_internal in (fixture.home_team_id, fixture.away_team_id):
+                side_data = provider_by_internal.get(side_internal)
+                if side_data is not None:
+                    entries = [e for e in side_data.get("entries", []) if isinstance(e, dict)]
+                    missing = [e for e in entries if e.get("missing")]
+                    state = (
+                        "UNKNOWN" if not entries else ("KNOWN_PRESENT" if missing else "KNOWN_NONE")
+                    )
+                    impact_flags = [
+                        str(e["player_name"])
+                        for e in entries
+                        if e.get("missing") and e.get("player_name")
+                    ]
+                else:
+                    # Side not covered by the provider response: explicit
+                    # conservative state, never treated as healthy.
+                    entries = []
+                    impact_flags = []
+                    state = "UNKNOWN"
+
                 snapshot = AvailabilitySnapshot(
                     provider=ctx.provider_name(),
                     fixture_id=fixture_id,
-                    team_id=row_team_id,
+                    team_id=side_internal,
                     captured_at=captured_at,
                     payload_id=payload_id,
                     players_jsonb=entries,
@@ -431,32 +444,7 @@ class AvailabilityCollector(_ResolverMixin):
                         table="availability_snapshots",
                         snapshot_id=snapshot.id,
                         captured_at=captured_at,
-                        team_id=row_team_id,
-                    )
-                )
-
-            # The requested side produced no provider entry at all →
-            # still store an UNKNOWN observation bound to it so the
-            # freshness view never confuses silence with healthy.
-            if team_id not in persisted_internal:
-                snapshot = AvailabilitySnapshot(
-                    provider=ctx.provider_name(),
-                    fixture_id=fixture_id,
-                    team_id=team_id,
-                    captured_at=captured_at,
-                    payload_id=payload_id,
-                    players_jsonb=[],
-                    impact_flags_jsonb=[],
-                    conflicts_jsonb=[],
-                    availability_state="UNKNOWN",
-                )
-                session.add(snapshot)
-                refs.append(
-                    SnapshotRef(
-                        table="availability_snapshots",
-                        snapshot_id=snapshot.id,
-                        captured_at=captured_at,
-                        team_id=team_id,
+                        team_id=side_internal,
                     )
                 )
             await session.commit()
@@ -496,6 +484,57 @@ class LineupCollector(_ResolverMixin):
             return None, None
         return (row[0], row[1]) if row else (None, None)
 
+    async def _latest_publication_state(
+        self, session: AsyncSession, *, fixture_id: uuid.UUID, team_id: uuid.UUID
+    ) -> str | None:
+        stmt = (
+            select(LineupSnapshot.publication_state)
+            .where(
+                LineupSnapshot.fixture_id == fixture_id,
+                LineupSnapshot.team_id == team_id,
+            )
+            .order_by(LineupSnapshot.captured_at.desc())
+            .limit(1)
+        )
+        return (await session.execute(stmt)).scalar_one_or_none()
+
+    async def refresh_due(
+        self,
+        ctx: CollectorContext,
+        inputs: dict[str, Any],
+        *,
+        captured_at: datetime | None,
+        now: datetime,
+    ) -> bool:
+        """State/window policy (M4.2 §2): never the generic 24h TTL.
+
+        A NOT_YET_PUBLISHED snapshot at T-120 permits the T-60 window;
+        NOT_YET_PUBLISHED at T-60 permits T-20; CONFIRMED stops normal
+        polling; already-started fixtures are never polled.
+        """
+        fixture_id = inputs.get("fixture_id")
+        team_id = inputs.get("team_id")
+        if fixture_id is None or team_id is None:
+            return True
+        async with ctx.session_factory() as session:
+            kickoff = (
+                await session.execute(
+                    select(FixtureModel.kickoff_at).where(FixtureModel.id == fixture_id)
+                )
+            ).scalar_one_or_none()
+            state = await self._latest_publication_state(
+                session, fixture_id=fixture_id, team_id=team_id
+            )
+        if kickoff is None:
+            return True
+        return lineup_poll_due(
+            kickoff_at=kickoff,
+            now=now,
+            windows_minutes=ctx.settings.lineup_window_t_minutes,
+            latest_state=state,
+            latest_captured_at=captured_at,
+        )
+
     async def fetch(
         self, ctx: CollectorContext, *, fixture_id: uuid.UUID, **_: object
     ) -> CollectorResult:
@@ -524,68 +563,81 @@ class LineupCollector(_ResolverMixin):
         team_id: uuid.UUID,
         **_inputs: object,
     ) -> tuple[SnapshotRef, ...]:
+        """Persist state for BOTH fixture teams from ONE observation.
+
+        The actual `fixture.home_team_id` / `away_team_id` drive the
+        team rows. A provider response that covers only one side leaves
+        the other side conservative (NOT_YET_PUBLISHED) — never
+        CONFIRMED. An empty response persists explicit
+        NOT_YET_PUBLISHED for both sides without a second request.
+        """
         publication_state = str(result.normalized.get("publication_state", "UNKNOWN"))
         if publication_state not in _LINEUP_STATES:
             publication_state = "PROVIDER_ERROR"
         teams_data = [t for t in result.normalized.get("teams", []) if isinstance(t, dict)]
-        confirmed_flag = publication_state == "CONFIRMED"
-        formation = None
-        players: list[dict[str, Any]] = []
-        persist_team_id = team_id
 
         async with ctx.session_factory() as session:
-            exists = await session.get(FixtureModel, fixture_id)
-            if exists is None:
+            fixture = await session.get(FixtureModel, fixture_id)
+            if fixture is None:
                 raise LookupError(f"fixture {fixture_id} not found for lineup persist")
+            home_id = fixture.home_team_id
+            away_id = fixture.away_team_id
 
-            if teams_data:
-                target = None
-                for candidate in teams_data:
-                    ext_team_id = int(candidate.get("provider_team_id", -1))
-                    internal = await _internal_team_for_external(
-                        session, ctx.provider_name(), ext_team_id
-                    )
-                    if internal == team_id:
-                        target = candidate
-                        break
-                if target is None:
-                    # Requested team not published yet in this response.
-                    target = None
-                else:
+            provider_team_by_internal: dict[uuid.UUID, dict[str, Any]] = {}
+            for candidate in teams_data:
+                internal = await _internal_team_for_external(
+                    session, ctx.provider_name(), int(candidate.get("provider_team_id", -1))
+                )
+                if internal is not None:
+                    provider_team_by_internal[internal] = candidate
+
+            refs: list[SnapshotRef] = []
+            # Home and away, in a fixed deterministic order.
+            for side_internal in (home_id, away_id):
+                target = provider_team_by_internal.get(side_internal)
+                if target is not None:
+                    side_state = "CONFIRMED"
+                    confirmed_flag = bool(target.get("confirmed", True))
                     formation = target.get("formation")
                     starters = target.get("starters", [])
                     substitutes = target.get("substitutes", [])
                     players = [p for p in [*starters, *substitutes] if isinstance(p, dict)]
-                    confirmed_flag = bool(target.get("confirmed", confirmed_flag))
-                    ext_team_id = int(target["provider_team_id"])
-                    internal_for_ext = await _internal_team_for_external(
-                        session, ctx.provider_name(), ext_team_id
+                else:
+                    # Provider did not publish this side (or returned
+                    # nothing at all): explicit conservative state —
+                    # never CONFIRMED, never an empty confirmed lineup.
+                    side_state = (
+                        "NOT_YET_PUBLISHED"
+                        if publication_state in ("CONFIRMED", "NOT_YET_PUBLISHED")
+                        else publication_state
                     )
-                    persist_team_id = internal_for_ext or team_id
+                    confirmed_flag = False
+                    formation = None
+                    players = []
 
-            # NOT_YET_PUBLISHED / UNSUPPORTED / PROVIDER_ERROR still store
-            # an immutable observation bound to the requesting team.
-            snapshot = LineupSnapshot(
-                provider=ctx.provider_name(),
-                fixture_id=fixture_id,
-                team_id=persist_team_id,
-                captured_at=captured_at,
-                payload_id=payload_id,
-                confirmed=confirmed_flag,
-                formation=formation,
-                players_jsonb=players,
-                publication_state=publication_state if not teams_data else "CONFIRMED",
-            )
-            session.add(snapshot)
+                snapshot = LineupSnapshot(
+                    provider=ctx.provider_name(),
+                    fixture_id=fixture_id,
+                    team_id=side_internal,
+                    captured_at=captured_at,
+                    payload_id=payload_id,
+                    confirmed=confirmed_flag,
+                    formation=formation,
+                    players_jsonb=players,
+                    publication_state=side_state,
+                )
+                session.add(snapshot)
+                await session.flush()
+                refs.append(
+                    SnapshotRef(
+                        table="lineup_snapshots",
+                        snapshot_id=snapshot.id,
+                        captured_at=captured_at,
+                        team_id=side_internal,
+                    )
+                )
             await session.commit()
-        return (
-            SnapshotRef(
-                table="lineup_snapshots",
-                snapshot_id=snapshot.id,
-                captured_at=captured_at,
-                team_id=persist_team_id,
-            ),
-        )
+        return tuple(refs)
 
 
 class FormInputsCollector(_ResolverMixin):

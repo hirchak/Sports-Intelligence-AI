@@ -59,10 +59,12 @@ def _combined_status(
     now: datetime,
     phase: ForecastPhase,
 ) -> CategoryStatus:
-    """Both-team semantics: fresh only when EVERY requested side is
-    fresh; stale when ANY side is stale; unknown when ALL are missing."""
+    """Both-team semantics (M4.2 §12): fresh ONLY when EVERY required
+    side has a snapshot AND every snapshot is fresh. One fresh + one
+    missing → unknown (partial), never fresh. Any stale → stale."""
+    required = len(latest_rows)
     present = [captured for captured, _ in latest_rows if captured is not None]
-    if not present:
+    if len(present) < required:
         return CategoryStatus(captured_at=None, age_seconds=None, state="unknown")
     newest = max(present)
     any_stale = any(policy.is_stale(category, captured, now, phase) for captured in present)
@@ -74,9 +76,19 @@ def _combined_status(
     )
 
 
+def _fixture_phase(settings: Settings, *, kickoff_at: datetime, now: datetime) -> ForecastPhase:
+    """PREMATCH semantics when the fixture is inside the configured
+    pre-match horizon (max T-window); MORNING otherwise."""
+    windows = [w for w in settings.lineup_window_t_minutes if w > 0]
+    horizon = max(windows) if windows else 60
+    minutes_until = (kickoff_at - now).total_seconds() / 60.0
+    return ForecastPhase.PREMATCH if minutes_until <= horizon else ForecastPhase.MORNING
+
+
 async def _fixture_freshness(
     session: AsyncSession,
     policy: FreshnessPolicy,
+    settings: Settings,
     now: datetime,
     *,
     fixture: Fixture,
@@ -84,7 +96,7 @@ async def _fixture_freshness(
     out: dict[str, CategoryStatus] = {}
     league_id = fixture.league_id
     team_ids = [fixture.home_team_id, fixture.away_team_id]
-    phase = ForecastPhase.MORNING
+    phase = _fixture_phase(settings, kickoff_at=fixture.kickoff_at, now=now)
 
     if league_id is not None:
         captured, _ = await _latest_snapshot(session, StandingSnapshot, league_id=league_id)
@@ -174,7 +186,7 @@ async def fixture_status(fixture_id: UUID, request: Request) -> FixtureStatusOut
         fixture = await session.get(Fixture, fixture_id)
         if fixture is None:
             raise HTTPException(status_code=404, detail="fixture not found")
-        freshness = await _fixture_freshness(session, policy, now, fixture=fixture)
+        freshness = await _fixture_freshness(session, policy, settings, now, fixture=fixture)
         team_ids = [fixture.home_team_id, fixture.away_team_id]
         lineup_confirmed = await _lineup_confirmed_for_all_teams(session, fixture.id, team_ids)
 

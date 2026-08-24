@@ -28,10 +28,18 @@ def test_decide_categories_morning_when_kickoff_far() -> None:
     assert FreshnessCategory.AVAILABILITY not in categories
 
 
-def test_decide_categories_prematch_when_close_to_window() -> None:
+def test_decide_categories_prematch_starts_at_outermost_window() -> None:
+    """M4.2 §2: PREMATCH begins exactly at the outermost T-window — no
+    `max(window)+60` approximation. 180 min is MORNING now; 110 is
+    PREMATCH."""
     now = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
-    kickoff = now + timedelta(minutes=180)
-    phase, categories = decide_categories(_settings(), kickoff_at=kickoff, now=now)
+    far = now + timedelta(minutes=180)
+    phase, categories = decide_categories(_settings(), kickoff_at=far, now=now)
+    assert phase is ForecastPhase.MORNING
+    assert FreshnessCategory.LINEUPS not in categories
+
+    close = now + timedelta(minutes=110)
+    phase, categories = decide_categories(_settings(), kickoff_at=close, now=now)
     assert phase is ForecastPhase.PREMATCH
     assert FreshnessCategory.LINEUPS in categories
     assert FreshnessCategory.AVAILABILITY in categories

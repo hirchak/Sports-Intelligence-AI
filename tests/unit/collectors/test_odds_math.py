@@ -76,3 +76,49 @@ def test_derive_market_view_complete() -> None:
     assert view.is_complete
     assert len(view.no_vig) == 3
     assert abs(sum(view.no_vig, Decimal("0")) - Decimal("1")) < Decimal("0.000001")
+
+
+def test_incomplete_market_no_vig_is_not_normalized() -> None:
+    """M4.2 §6: no-vig ONLY on a complete expected selection set. An
+    incomplete 1X2 (home+away only) must never be normalized even when
+    implied probabilities happen to sum above 1."""
+    from decimal import Decimal as _D
+
+    from sports_intelligence.collectors.odds_collector import derive_market_view_safe
+
+    # Complete 1X2 → view derived.
+    complete = derive_market_view_safe(
+        "bookie",
+        "h2h_1x2",
+        ["home", "draw", "away"],
+        (_D("2.10"), _D("3.40"), _D("3.60")),
+    )
+    assert complete is not None
+    assert complete.no_vig
+
+    # Incomplete 1X2 (missing draw) → NO view, no no-vig.
+    incomplete = derive_market_view_safe(
+        "bookie",
+        "h2h_1x2",
+        ["home", "away"],
+        (_D("1.30"), _D("3.60")),  # implied sum > 1, but incomplete
+    )
+    assert incomplete is None
+
+    # Incomplete O/U (only over) → no view.
+    ou_partial = derive_market_view_safe(
+        "bookie",
+        "ou_25",
+        ["over"],
+        (_D("1.85"),),
+    )
+    assert ou_partial is None
+
+    # Complete BTTS → view.
+    btts = derive_market_view_safe(
+        "bookie",
+        "btts",
+        ["yes", "no"],
+        (_D("1.75"), _D("2.05")),
+    )
+    assert btts is not None and btts.no_vig

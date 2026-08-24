@@ -95,16 +95,16 @@ SENTINEL_LINEUPS = {
 }
 
 SENTINEL_TEAM_STATS = {
-    "response": [
-        {
-            "team": {"id": SENTINEL_TEAM_HOME, "name": "Sentinel United"},
-            "league": {"id": SENTINEL_LEAGUE, "season": SENTINEL_SEASON},
-            "fixtures": {"played": {"total": 10}, "wins": {"total": 9}},
-            "goals": {"for": {"total": 28}},
-            "clean_sheet": {"total": 4},
-            "form": "WWWWL",
-        }
-    ]
+    "get": "teams/statistics",
+    "parameters": {"team": str(SENTINEL_TEAM_HOME), "league": str(SENTINEL_LEAGUE)},
+    "response": {
+        "team": {"id": SENTINEL_TEAM_HOME, "name": "Sentinel United"},
+        "league": {"id": SENTINEL_LEAGUE, "season": SENTINEL_SEASON},
+        "fixtures": {"played": {"total": 10}, "wins": {"total": 9}},
+        "goals": {"for": {"total": 28}},
+        "clean_sheet": {"total": 4},
+        "form": "WWWWL",
+    },
 }
 
 SENTINEL_COMPLETED = {

@@ -458,20 +458,24 @@ def parse_team_statistics_response(
     retrieved_at: datetime,
     rate_headers: dict[str, str] | None = None,
 ) -> ProviderTeamStatisticsResult:
-    response_block = _response_list(payload)
-    if not response_block:
-        raise ProviderResponseError("team statistics response is empty")
-    entry = response_block[0]
-    if not isinstance(entry, dict):
-        raise ProviderResponseError("team statistics entry is not an object")
-    team = entry.get("team") or {}
+    """Parse GET /teams/statistics (actual v3 contract).
+
+    The v3 `response` block is a SINGLE team-statistics object, not a
+    list (unlike /fixtures etc.).
+    """
+    raw = payload.get("response")
+    if not isinstance(raw, dict):
+        raise ProviderResponseError(
+            "team statistics response block must be a single object (v3 contract)"
+        )
+    team = raw.get("team") or {}
     if not isinstance(team, dict) or team.get("id") is None:
         raise ProviderResponseError("team statistics entry missing team id")
     if int(team["id"]) != provider_team_id:
         raise ProviderResponseError(
             f"team statistics returned team {team['id']}, expected {provider_team_id}"
         )
-    league = entry.get("league") or {}
+    league = raw.get("league") or {}
 
     def _total(block: object, key: str) -> int | None:
         if not isinstance(block, dict):
@@ -483,12 +487,12 @@ def parse_team_statistics_response(
             return _int_or_none(nested.get("total"))
         return None
 
-    fixtures = entry.get("fixtures") or {}
-    goals = entry.get("goals") or {}
-    clean_sheets = entry.get("clean_sheet") or {}
-    failed_to_score = entry.get("failed_to_score") or {}
+    fixtures = raw.get("fixtures") or {}
+    goals = raw.get("goals") or {}
+    clean_sheets = raw.get("clean_sheet") or {}
+    failed_to_score = raw.get("failed_to_score") or {}
     metrics: dict[str, Any] = {
-        "form": entry.get("form"),
+        "form": raw.get("form"),
         "played": _total(fixtures, "played"),
         "wins": _total(fixtures, "wins"),
         "draws": _total(fixtures, "draws"),

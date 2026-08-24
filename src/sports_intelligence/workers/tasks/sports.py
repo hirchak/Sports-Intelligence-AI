@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import UTC, date, datetime
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -49,6 +50,7 @@ async def _run_discovery(
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     provider: SportsDataProvider | None = None
+    redis: Any = None
     started_at = datetime.now(UTC)
     try:
         league_config = load_league_config(settings.leagues_config_path)
@@ -64,11 +66,15 @@ async def _run_discovery(
 
             redis = Redis.from_url(settings.redis_url)
             quota = QuotaManager(settings, session_factory, redis=redis)
-        except Exception:  # noqa: BLE001 — quota gating is best-effort at worker init
-            logger.warning(
-                "quota manager unavailable for discovery; running ungated",
-                exc_info=True,
-            )
+        except Exception:  # noqa: BLE001
+            # M4.2 §10: fail CLOSED for real providers — automatic
+            # external collection must never run ungated. MOCK may stay
+            # keyless/quota-safe.
+            if settings.sports_provider not in ("", "mock"):
+                logger.error("quota manager initialization failed; refusing to run ungated")
+                raise
+            logger.warning("quota manager unavailable (MOCK); running ungated", exc_info=True)
+            quota = None
 
         service = FixtureDiscoveryService(
             provider=provider,
@@ -105,6 +111,11 @@ async def _run_discovery(
         await _record_attempt(session_factory, job_id, started_at, "FAILED", exc)
         raise
     finally:
+        if redis is not None:
+            try:
+                await redis.aclose()
+            except Exception:  # noqa: BLE001
+                logger.warning("redis cleanup failed during discovery", exc_info=True)
         if provider is not None:
             try:
                 await provider.aclose()

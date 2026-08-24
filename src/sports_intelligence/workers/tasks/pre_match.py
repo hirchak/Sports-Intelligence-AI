@@ -74,7 +74,7 @@ async def _run() -> dict[str, object]:
     enqueued_total = 0
     for decision in decisions:
         try:
-            jobs = await _dispatch_decision(factory, decision)
+            jobs = await _dispatch_decision(factory, decision, now=started_at)
             for category, count in jobs.items():
                 counters[category] = counters.get(category, 0) + count
                 enqueued_total += count
@@ -116,6 +116,8 @@ async def _run() -> dict[str, object]:
 async def _dispatch_decision(
     factory: Any,
     decision: PreMatchDecision,
+    *,
+    now: datetime | None = None,
 ) -> dict[str, int]:
     """Create-or-get a Job per (collector, lock key, phase) and enqueue
     `sports.collect` with the full immutable inputs."""
@@ -153,7 +155,28 @@ async def _dispatch_decision(
             return
         lock_key = collector.lock_key(**{k: v for k, v in inputs.items() if k != "phase"})
         phase_value = str(inputs.get("phase", decision.phase.value))
-        job_key = f"collect:{name}:{hashlib.sha1(lock_key.encode()).hexdigest()[:20]}:{phase_value}"
+
+        # Refresh-opportunity identity (M4.2 §1): repeated scans inside
+        # the same opportunity dedupe; a later window / TTL bucket opens
+        # a NEW job. Lineups use the explicit T-window (t120/t60/t20);
+        # TTL categories use a deterministic freshness time bucket.
+        from sports_intelligence.collectors.freshness import FreshnessPolicy
+        from sports_intelligence.collectors.refresh import (
+            refresh_opportunity_suffix,
+        )
+
+        ttl = FreshnessPolicy(settings).ttl_for(collector.category, decision.phase)
+        opportunity = refresh_opportunity_suffix(
+            collector_name=name,
+            kickoff_at=decision.kickoff_at,
+            now=now or datetime.now(UTC),
+            windows_minutes=settings.lineup_window_t_minutes,
+            ttl_seconds=int(ttl.total_seconds()),
+        )
+        job_key = (
+            f"collect:{name}:{hashlib.sha1(lock_key.encode()).hexdigest()[:20]}:"
+            f"{phase_value}:{opportunity}"
+        )
         try:
             async with factory() as session:
                 job, created = await create_or_get_job(

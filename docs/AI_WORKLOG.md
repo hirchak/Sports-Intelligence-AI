@@ -1016,3 +1016,79 @@ button-based menus and a Back button on every screen.
 
 **Next action**
 - Independent re-review of M4.1 (diff `main..build/m4`); merge + tag `v0.5-m4` after PASS; M5 only with explicit user approval.
+
+---
+
+### 2026-08-24 — ox-alpha (OpenCode)
+
+**Milestone:** M4.2
+**Task:** Focused corrective implementation after M4.1 review **FAIL**
+
+**Completed**
+- 1. Refresh-opportunity job identity (`collectors/refresh.py`):
+  lineups → T-window id (t120/t60/t20); TTL categories → deterministic
+  time bucket tied to TTL; scanner job key includes opportunity; repeat
+  scan dedupes, later window/expiry opens new job (integration test).
+- 2. Lineup policy in real execution: Collector.refresh_due hook used by
+  framework (fast + double-check); LineupCollector uses lineup_poll_due
+  with fixture kickoff + latest state; decide_categories PREMATCH starts
+  at outermost window (removed max+60); runtime T120→T60→CONFIRMED-stops
+  test.
+- 3. Team-split persistence from actual fixture home/away: both teams
+  snapshotted from one observation; uncovered side conservative
+  (NOT_YET_PUBLISHED/UNKNOWN), never CONFIRMED; published refs include
+  both team refs; synchronized home+away test (1 call, 2 snapshots,
+  per-team UUIDs).
+- 4. Odds events contract: top-level JSON array accepted; contract
+  fixtures; no-match/ambiguity hard errors.
+- 5. Real double-chance names + alternate_totals → canonical ou_15/ou_25.
+- 6. No-vig only on complete expected selection sets.
+- 7. Explicit home/away name loading (no unordered IN) + reversed-order
+  regression test.
+- 8. sports.collect reserves OddsProvider.estimate_cost (4 markets × 1
+  region → 4), actual_cost from x-requests-last.
+- 9. Quota reservation baseline = observed remaining − reservations
+  since; post-INCR decision with rollback; P0 reserve preserved; test
+  observed=4 limit=100 concurrent P0/P1.
+- 10. Fail closed on quota-init failure for real providers (job FAILED,
+  zero calls); MOCK stays keyless; discovery Redis closed in finally.
+- 11. /teams/statistics parser: v3 single-object contract + faithful
+  fixture.
+- 12. Status both-team fresh-requires-both; one missing → unknown;
+  PREMATCH phase semantics.
+
+**Files changed**
+- src: collectors/{refresh(new),framework,sports_collectors,odds_collector,quota,pre_match_scan}.py;
+  providers/odds/{factory,parse}.py; providers/sports/api_football.py;
+  workers/tasks/{pre_match,collect,sports}.py; api/routes/status.py
+- tests: unit/{test_refresh(new),test_odds_mapping,test_api_football_categories,
+  collectors/test_odds_math,collectors/test_sports_collectors}.py;
+  integration/test_m4_collectors.py (23 tests)
+- docs: CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, AI_WORKLOG
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (254)
+- integration suite → PASS (49)
+- ruff check/format → PASS; mypy src strict → PASS (87 files)
+- compose config (+telegram) → PASS; secret scan → clean
+
+**Live integrations verified**
+- none (MOCK-only; live smokes require local credentials — allowed but
+  not run).
+
+**Mocked only**
+- The Odds API + /teams/statistics network paths (contract-tested).
+
+**Known issues**
+- Odds league-level batch endpoint remains a future optimization.
+
+**Spec / ADR deviations**
+- none new.
+
+**Git**
+- branch: build/m4
+- commit: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent re-review of M4.2; merge + tag `v0.5-m4` after PASS; M5
+  only with explicit user approval.

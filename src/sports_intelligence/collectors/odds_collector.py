@@ -94,12 +94,14 @@ class OddsCollector:
         fixture = await session.get(Fixture, fixture_id)
         if fixture is None:
             raise LookupError(f"fixture {fixture_id} not found for odds collection")
-        names = await session.execute(
-            select(Team.name).where(Team.id.in_([fixture.home_team_id, fixture.away_team_id]))
-        )
-        name_rows = [row[0] for row in names.all()]
-        home_name = next((n for n in name_rows if n), None)
-        away_name = next((n for n in reversed(name_rows) if n), None)
+        # M4.2 §7: load home and away EXPLICITLY by their ids — never an
+        # unordered SQL IN whose row order is undefined.
+        home_name = (
+            await session.execute(select(Team.name).where(Team.id == fixture.home_team_id))
+        ).scalar_one_or_none()
+        away_name = (
+            await session.execute(select(Team.name).where(Team.id == fixture.away_team_id))
+        ).scalar_one_or_none()
         if not home_name or not away_name:
             raise ProviderMappingError(
                 f"fixture {fixture_id} lacks team names required for event resolution"
@@ -298,11 +300,28 @@ class OddsCollector:
 def derive_market_view_safe(
     bookmaker: str, market: str, selections: Sequence[str], prices: tuple[Decimal, ...]
 ) -> Any:
+    """No-vig normalization ONLY on a COMPLETE expected selection set
+    (M4.2 §6). An incomplete 1X2 / double-chance / two-sided O-U / BTTS
+    market is never normalized merely because its implied probabilities
+    happen to sum above 1."""
     from sports_intelligence.collectors.odds_math import (
         OddsPriceError,
         derive_market_view,
     )
 
+    expected: dict[str, frozenset[str]] = {
+        "h2h_1x2": frozenset({"home", "draw", "away"}),
+        "double_chance": frozenset({"home_or_draw", "draw_or_away", "home_or_away"}),
+        "ou_15": frozenset({"over", "under"}),
+        "ou_25": frozenset({"over", "under"}),
+        "btts": frozenset({"yes", "no"}),
+    }
+    required = expected.get(market)
+    if required is None:
+        # Unknown canonical market: derive nothing.
+        return None
+    if set(selections) != required:
+        return None
     try:
         return derive_market_view(
             bookmaker=bookmaker,

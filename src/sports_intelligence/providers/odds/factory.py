@@ -95,16 +95,25 @@ class TheOddsApiProvider:
         commence_time_utc: datetime,
         tolerance_seconds: int = 900,
     ) -> str:
-        payload = await self._get_json(f"/sports/{sport_key}/events", params={"dateFormat": "iso"})
-        events = payload.get("data") if isinstance(payload.get("data"), list) else None
-        if events is None and isinstance(payload, dict):
-            # Some responses embed the list directly under different keys.
-            for key in ("events",):
-                if isinstance(payload.get(key), list):
-                    events = payload[key]
-                    break
-        if not isinstance(events, list):
-            raise ProviderResponseError("the-odds-api events payload missing list")
+        """Resolve our fixture → provider event id STRICTLY by team names
+        + kickoff tolerance.
+
+        GET /v4/sports/{sport_key}/events returns a TOP-LEVEL JSON ARRAY
+        (official contract — no synthetic `data` wrapper). Zero matches
+        and multiple matches are hard errors — never guessed.
+        """
+        payload = await self._get_json_any(
+            f"/sports/{sport_key}/events", params={"dateFormat": "iso"}
+        )
+        if isinstance(payload, list):
+            events: list[object] = payload
+        elif isinstance(payload, dict) and isinstance(payload.get("data"), list):
+            # Defensive: tolerate a data-wrapped payload.
+            events = payload["data"]  # type: ignore[assignment]
+        else:
+            raise ProviderResponseError(
+                "the-odds-api events payload must be a top-level JSON array"
+            )
         candidates: list[str] = []
         home_l = home_team.strip().lower()
         away_l = away_team.strip().lower()
@@ -188,6 +197,28 @@ class TheOddsApiProvider:
 
     async def _get_json(self, path: str, params: dict[str, str] | None = None) -> dict[str, object]:
         payload, _ = await self._get_json_with_headers(path, params)
+        return payload
+
+    async def _get_json_any(
+        self, path: str, params: dict[str, str] | None = None
+    ) -> dict[str, object] | list[object]:
+        """Raw JSON body (object OR array — the events endpoint returns a
+        top-level array per the official contract)."""
+        retryer = AsyncRetrying(
+            stop=stop_after_attempt(self._max_attempts),
+            wait=wait_exponential_jitter(
+                initial=self._backoff_seconds, max=self._backoff_seconds * 4
+            ),
+            retry=retry_if_exception(lambda exc: isinstance(exc, RETRYABLE_PROVIDER_ERRORS)),
+            reraise=True,
+        )
+        response: httpx.Response = await retryer(self._single_get, path, params or {})
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ProviderResponseError("the-odds-api returned malformed JSON") from exc
+        if not isinstance(payload, (dict, list)):
+            raise ProviderResponseError("the-odds-api returned a non-object/array payload")
         return payload
 
     async def _get_json_with_headers(

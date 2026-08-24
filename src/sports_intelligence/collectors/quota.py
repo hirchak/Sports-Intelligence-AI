@@ -399,10 +399,14 @@ class QuotaManager:
     ) -> QuotaDecision:
         """Gate + atomically consume estimated cost across workers.
 
+        The Redis reservation is based on the provider's LATEST OBSERVED
+        remaining budget minus reservations made since that observation
+        (M4.2 §9) — never a fresh counter against the original full
+        limit. Each INCR is atomic, so concurrent workers cannot all
+        spend the last remaining units.
+
         Without Redis the decision falls back to the read-only path
-        (unit-test / degraded mode); with Redis, INCRBY counters make
-        concurrent workers serialize consumption of the last remaining
-        units deterministically.
+        (unit-test / degraded mode).
         """
         async with self._session_factory() as session:
             buckets = await self._observe_buckets(session, provider)
@@ -424,8 +428,19 @@ class QuotaManager:
         minute_key = f"quota:{provider}:minute:{now:%Y%m%d%H%M}"
 
         daily_limit = buckets.daily_limit or self._settings.quota_provider_daily_limit_default
-        usable_daily = daily_limit - self._settings.quota_reserve_p0_calls
-        minute_limit = self._settings.quota_provider_minute_limit_default
+        # Baseline = latest observed remaining; reservations since that
+        # observation accumulate in the Redis counter.
+        baseline_daily = (
+            buckets.daily_remaining if buckets.daily_remaining is not None else daily_limit
+        )
+        reserve_eff = effective_reserve(
+            daily_limit, self._settings.quota_reserve_p0_calls, self._critical_pct
+        )
+        baseline_minute = (
+            buckets.minute_remaining
+            if buckets.minute_remaining is not None
+            else self._settings.quota_provider_minute_limit_default
+        )
 
         incr = getattr(self._redis, "incrby", None)
         expire = getattr(self._redis, "expire", None)
@@ -435,31 +450,46 @@ class QuotaManager:
         if incr is None or expire is None or decrby is None:  # pragma: no cover
             return base_decision
 
+        # Daily budget: atomically reserve; decision on the post-INCR
+        # running total so concurrent callers serialize correctly.
         used_daily = int(await incr(day_key, estimated_cost))
         if used_daily == estimated_cost:
             await expire(day_key, ttl_seconds)
-        if used_daily > usable_daily:
+        current_daily = baseline_daily - used_daily
+        if current_daily < 0:
             await decrby(day_key, estimated_cost)
             return QuotaDecision(
                 allowed=False,
                 mode=base_decision.mode,
-                kind=QuotaDecisionKind.DENIED_RESERVATION_EXHAUSTED,
-                reason="daily_reservation_exhausted",
+                kind=QuotaDecisionKind.DENIED_NO_REMAINING,
+                reason="insufficient_daily_budget_for_estimated_cost",
+                remaining_daily=buckets.daily_remaining,
+                remaining_minute=buckets.minute_remaining,
+            )
+        if priority != Priority.P0 and current_daily < reserve_eff:
+            await decrby(day_key, estimated_cost)
+            return QuotaDecision(
+                allowed=False,
+                mode=DegradationMode.RESERVE_ONLY,
+                kind=QuotaDecisionKind.DENIED_RESERVE_ONLY,
+                reason="reserve_protection",
                 remaining_daily=buckets.daily_remaining,
                 remaining_minute=buckets.minute_remaining,
             )
 
+        # Minute budget.
         used_minute = int(await incr(minute_key, estimated_cost))
         if used_minute == estimated_cost:
             await expire(minute_key, 120)
-        if used_minute > minute_limit:
+        current_minute = baseline_minute - used_minute
+        if current_minute < 0:
             await decrby(minute_key, estimated_cost)
             await decrby(day_key, estimated_cost)
             return QuotaDecision(
                 allowed=False,
                 mode=base_decision.mode,
-                kind=QuotaDecisionKind.DENIED_RESERVATION_EXHAUSTED,
-                reason="minute_reservation_exhausted",
+                kind=QuotaDecisionKind.DENIED_NO_REMAINING,
+                reason="minute_budget_exhausted",
                 remaining_daily=buckets.daily_remaining,
                 remaining_minute=buckets.minute_remaining,
             )

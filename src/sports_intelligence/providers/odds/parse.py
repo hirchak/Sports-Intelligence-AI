@@ -60,11 +60,28 @@ def _canonical_1x2(name: str, home_team: object, away_team: object) -> str:
     raise ProviderResponseError(f"unrecognized 1X2 outcome {name!r}")
 
 
-def _canonical_double_chance(name: str) -> str:
+def _canonical_double_chance(name: str, home_team: object, away_team: object) -> str:
+    """Normalize BOTH provider spellings of double-chance outcomes:
+
+    - synthetic/compact: `HomeOrDraw`, `home_or_draw`;
+    - real official API: `Arsenal or Draw`, `Coventry or Draw`,
+      `Arsenal or Coventry` (team names embedded).
+    """
     key = name.lower().replace(" ", "_")
-    if key not in _SELECTIONS_DOUBLE_CHANCE:
-        raise ProviderResponseError(f"unrecognized double-chance outcome {name!r}")
-    return _SELECTIONS_DOUBLE_CHANCE[key]
+    if key in _SELECTIONS_DOUBLE_CHANCE:
+        return _SELECTIONS_DOUBLE_CHANCE[key]
+    if isinstance(home_team, str) and isinstance(away_team, str):
+        home_l = home_team.lower()
+        away_l = away_team.lower()
+        if f"{home_l}_or_draw" == key:
+            return "home_or_draw"
+        if f"{away_l}_or_draw" == key:
+            return "draw_or_away"
+        if f"{home_l}_or_{away_l}" == key:
+            return "home_or_away"
+        if f"{away_l}_or_{home_l}" == key:
+            return "home_or_away"
+    raise ProviderResponseError(f"unrecognized double-chance outcome {name!r}")
 
 
 def _canonical_btts(name: str) -> str:
@@ -89,7 +106,7 @@ def _canonical_selection(market: str, name: str, home_team: object, away_team: o
     if market == "h2h_1x2":
         return _canonical_1x2(name, home_team, away_team)
     if market == "double_chance":
-        return _canonical_double_chance(name)
+        return _canonical_double_chance(name, home_team, away_team)
     if market == "btts":
         return _canonical_btts(name)
     if market.startswith("ou_"):
@@ -242,7 +259,10 @@ def _canonical_for_outcome(
 ) -> str | None:
     if provider_key in _PROVIDER_TO_CANONICAL:
         return _PROVIDER_TO_CANONICAL[provider_key]
-    if provider_key == "totals" and "totals" in whitelist:
+    # `alternate_totals` carries exact O/U lines (e.g. 1.5) that the
+    # featured `totals` market may omit (M4.2 §5). Both are totals
+    # sources gated by the `totals` whitelist entry.
+    if provider_key in ("totals", "alternate_totals") and "totals" in whitelist:
         return _total_market_for(outcome_raw.get("point"), totals_markers)
     return None
 
@@ -305,7 +325,7 @@ def parse_event_odds_payload(
                     continue
                 if provider_key in _PROVIDER_TO_CANONICAL:
                     canonical: str | None = _PROVIDER_TO_CANONICAL[provider_key]
-                elif provider_key == "totals":
+                elif provider_key in ("totals", "alternate_totals"):
                     canonical = _total_market_for(
                         outcome_raw.get("point"),
                         (Decimal("1.5"), Decimal("2.5")),

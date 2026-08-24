@@ -67,20 +67,22 @@ def decide_categories(
     kickoff_at: datetime,
     now: datetime,
 ) -> tuple[ForecastPhase, tuple[FreshnessCategory, ...]]:
-    """Pick the phase and the categories worth collecting.
+    """Pick the phase and the categories worth collecting (M4.2 §2).
 
-    PREMATCH once inside the configured T-window horizon (lineup
-    windows + availability + odds); MORNING otherwise (standings, team
-    stats, form inputs).
+    PREMATCH begins exactly at the outermost configured T-window
+    (max(lineup_window_t_minutes)) — no `+60` approximation. Inside
+    PREMATCH, lineups/availability/odds are collected; the per-window
+    enforcement (T-120 → T-60 → T-20) happens at execution time via the
+    refresh-opportunity identity and the lineup window policy.
+    MORNING otherwise (standings, team stats, form inputs).
     """
     delta = kickoff_at - now
     minutes_until = delta.total_seconds() / 60.0
 
-    prematch_window_minutes = (
-        max(settings.lineup_window_t_minutes) if settings.lineup_window_t_minutes else 60
-    )
+    windows = [w for w in settings.lineup_window_t_minutes if w > 0]
+    prematch_horizon = max(windows) if windows else 60
 
-    if minutes_until <= prematch_window_minutes + 60:
+    if minutes_until <= prematch_horizon:
         phase = ForecastPhase.PREMATCH
         categories: tuple[FreshnessCategory, ...] = (
             FreshnessCategory.STANDINGS,

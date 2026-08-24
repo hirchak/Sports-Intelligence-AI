@@ -102,11 +102,23 @@ async def _run_collect_job(
                 else ForecastPhase.MORNING
             ),
         )
+        # M4.2 §8: odds cost is provider-estimated credits (markets ×
+        # regions), reserved BEFORE the network call — never the generic
+        # per-request count of 1.
+        effective_cost = estimated_cost
+        if collector_name == "odds" and hasattr(provider, "estimate_cost"):
+            effective_cost = max(
+                provider.estimate_cost(
+                    markets=settings.odds_provider_markets,
+                    regions=settings.odds_provider_regions,
+                ),
+                1,
+            )
         ref = await run_collector(
             ctx,
             collector_name,
             inputs={k: v for k, v in inputs.items() if k != "phase"},
-            estimated_cost=estimated_cost,
+            estimated_cost=effective_cost,
         )
 
         async with factory() as session:

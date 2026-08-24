@@ -114,6 +114,27 @@ class Collector(Protocol):
     ) -> tuple[SnapshotRef, ...]: ...
 
 
+async def collector_refresh_due(
+    collector: Collector,
+    ctx: CollectorContext,
+    inputs: dict[str, Any],
+    captured_at: datetime | None,
+    now: datetime,
+) -> bool:
+    """Ask the collector whether a refresh is due.
+
+    Collectors may override the default TTL policy (lineups use the
+    state/window policy, never the generic 24h TTL).
+    """
+    override = getattr(collector, "refresh_due", None)
+    if override is not None:
+        due = await override(ctx, inputs, captured_at=captured_at, now=now)
+        return bool(due)
+    if captured_at is None:
+        return True
+    return ctx.freshness.is_stale(collector.category, captured_at, now, ctx.phase)
+
+
 _REGISTRY: dict[str, Collector] = {}
 
 
@@ -220,7 +241,7 @@ async def run_collector(
     if (
         captured is not None
         and snapshot_id is not None
-        and not ctx.freshness.is_stale(collector.category, captured, now, ctx.phase)
+        and not await collector_refresh_due(collector, ctx, inputs, captured, now)
     ):
         return SnapshotRef(
             table=_table_for(collector),
@@ -246,14 +267,13 @@ async def run_collector(
         )
 
     try:
-        # 3. Winner double-check under the lock.
+        # 3. Winner double-check under the lock (same `now` semantics as
+        # the fast check — deterministic window/TTL decisions).
         captured, snapshot_id = await latest_snapshot_state(ctx, collector, inputs)
         if (
             captured is not None
             and snapshot_id is not None
-            and not ctx.freshness.is_stale(
-                collector.category, captured, datetime.now(UTC), ctx.phase
-            )
+            and not await collector_refresh_due(collector, ctx, inputs, captured, now)
         ):
             ref = SnapshotRef(
                 table=_table_for(collector),

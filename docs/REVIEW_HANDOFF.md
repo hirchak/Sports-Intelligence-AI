@@ -11,202 +11,155 @@ Update it before every milestone review.
 
 **Ready for review:** YES  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M4.1 — corrective implementation after M4 review **FAIL**  
+**Milestone:** M4.2 — focused corrective implementation after M4.1 review **FAIL**  
 **Review target branch:** `build/m4` (NOT merged to main)  
-**Review target commit:** `2fa0316` — M4.1 corrective fixes after M4
-review FAIL  
 **Previous accepted state:** `main` = `7d23c9d` (M3 accepted via PR #5)  
-**Review scope:** diff `main..build/m4` (M4 + M4.1)
+**Review scope:** diff `main..build/m4` (M4 + M4.1 + M4.2)
 
 ---
 
 # Independent review history
 
-- **M4 review verdict (2026-08-24):** **FAIL — M4 is NOT mergeable.**
-  Core automatic/live-data paths contained correctness and
-  data-integrity failures. M4.1 implemented on `build/m4`.
-- **M4.1:** awaiting independent review.
+- **M4 review verdict (2026-08-24):** **FAIL** — M4.1 implemented.
+- **M4.1 review verdict (2026-08-24):** **FAIL** — runtime/contract
+  blockers; M4.2 implemented on `build/m4`.
+- **M4.2:** awaiting independent review.
 
 ---
 
-# What changed in M4.1 (the 14 required fixes)
+# What changed in M4.2 (per FAIL item)
 
-## 1. Scheduled discovery execution
+## 1. Collector job refresh identity
 
-- New Beat target `sports.schedule_discovery(slot)` (slot ∈
-  {morning, refresh}) in `workers/tasks/scheduling.py`. It resolves
-  today in APP_TIMEZONE, loads LeagueConfig + version, captures
-  provider + timezone, creates-or-gets a proper `jobs` row with a
-  slot-distinct idempotency key, and enqueues
-  `sports.discover_fixtures` with the full immutable tuple
-  (job_id, fixture_date, version, timezone). Enqueue failure marks the
-  job FAILED.
-- Beat schedule now targets the wrapper (with `args: ["morning"]` /
-  `["refresh"]`, queue `control`). Morning and refresh are distinct
-  idempotent runs — the 13:00 refresh is never suppressed by the
-  successful 09:00 run (test proves distinct keys).
-- Eager execution test proves Job creation + full-tuple enqueue with no
-  argument errors.
-- Discovery pipeline passes through quota reservation + ledger before
-  the provider HTTP call (started_at before request, duration incl.
-  HTTP, status/error class/headers recorded).
+- `collectors/refresh.py`: `refresh_opportunity_suffix()` — lineups →
+  explicit T-window id (`t120`/`t60`/`t20`/`no_window`); TTL categories
+  → deterministic time bucket (≈ TTL/2, min 5 min).
+- `workers/tasks/pre_match.py` `_enqueue` job key now includes the
+  opportunity suffix: `collect:{name}:{lock_hash}:{phase}:{opportunity}`.
+  Repeated scans inside one opportunity dedupe; a later window / expired
+  TTL opens a NEW job (integration test: T120 scan → 1 job; duplicate
+  scan → still 1; T60 scan → 2).
 
-## 2. No fake sports data in real-provider paths
+## 2. Lineup policy wired into real execution
 
-- `SportsDataProvider` protocol extended with typed methods:
-  `get_standings`, `get_team_statistics`, `get_availability`,
-  `get_lineups`, `get_completed_fixtures` (DTOs in `providers/dto.py`).
-- `ApiFootballProvider` implements all five against real endpoints
-  (/standings, /teams/statistics, /injuries, /fixtures/lineups,
-  /fixtures?status=ft-aet-pen) with pure parser functions; it NEVER
-  reads `_MOCK_*` constants (those live only in `MockSportsDataProvider`).
-- Collectors resolve internal UUIDs → provider external ids via
-  `provider_entity_ids` (never send internal UUIDs as API-Football ids).
-- Sentinel regression tests: real adapter + MockTransport returning
-  distinctive values; each collector persists EXACTLY those values;
-  canned Arsenal/Coventry/Mock United never appear.
+- `Collector.refresh_due` hook in the framework (fast check + winner
+  double-check); `LineupCollector.refresh_due` uses `lineup_poll_due`
+  (kickoff from the fixture, latest publication_state, configured
+  windows) — the generic 24h lineup TTL never applies.
+- `decide_categories` PREMATCH starts exactly at the outermost T-window
+  (removed `max+60`).
+- Runtime flow proven end-to-end (integration): T-110 NOT_YET_PUBLISHED
+  → 1 call; T-50 (T60 window) → 2nd call; published → CONFIRMED; T-10 →
+  zero calls.
 
-## 3. Team-specific availability/lineup persistence
+## 3. Fixture-level team snapshots
 
-- One provider request per fixture returns BOTH teams; the collector
-  persists ONE snapshot PER TEAM from that single observation (players
-  are never concatenated/merged).
-- `latest_snapshot` includes `team_id` for team-scoped entities.
-- Test: one fixture, two teams → exactly two correctly separated
-  snapshots (KNOWN_PRESENT home, UNKNOWN away in MOCK).
+- Availability + lineup persists BOTH fixture teams from ONE observation
+  using actual `fixture.home_team_id`/`away_team_id`; provider sides map
+  via `provider_entity_ids`; uncovered side → conservative
+  NOT_YET_PUBLISHED (lineups) / UNKNOWN (availability), never CONFIRMED;
+  empty response persists explicit state for both sides.
+- Published refs contain BOTH team refs; `_select_ref` returns each
+  waiter its own UUID.
+- Synchronized home+away test: exactly 1 provider call, 2 separated
+  snapshots, correct per-team refs.
 
-## 4. Bounded, state-aware lineup windows
+## 4. The Odds API events contract
 
-- `lineup_poll_due()` policy: no polling for started fixtures; CONFIRMED
-  stops polling; within-window per-window refresh (T-120 unconfirmed
-  does NOT block T-60/T-20); outside all windows → no poll.
-- Lineup snapshots carry `publication_state`
-  (NOT_YET_PUBLISHED / CONFIRMED / UNSUPPORTED / PROVIDER_ERROR) via
-  migration 0005; absence is never an empty confirmed lineup.
-- Planner uses Warsaw calendar-day → UTC boundaries
-  (`utc_window_for_local_day`) and only future/not-started fixtures.
-- `PreMatchDecision.phase` propagates into `CollectorContext` so
-  PREMATCH freshness TTLs are actually applied.
+- `resolve_event` accepts the actual top-level JSON array from
+  GET /v4/sports/{sport}/events (defensive `data` wrapper tolerated).
+  Contract-faithful array fixtures in tests; no-match/ambiguity remain
+  `ProviderMappingError`s.
 
-## 5. Coalescing correctness
+## 5. Odds markets
 
-- Framework flow: fast freshness hit → real persisted snapshot id →
-  lock (correctness/budget boundary) → winner double-check → quota
-  reserve → provider fetch → raw evidence + snapshot persist → ledger →
-  publish REAL persisted refs.
-- Waiters NEVER call the provider, NEVER persist a second copy, NEVER
-  write another ledger row; they return the winner's persisted UUID.
-- Freshness hit returns the actual existing snapshot id (never a random
-  UUID).
-- The "still contended → fetch anyway" fallback is REMOVED: a contended
-  lock without a published result raises `LockContendedError`.
-- 10-caller synchronized integration test: 1 provider call / 1
-  snapshot / 1 ledger row / all callers get the same UUID.
+- Real double-chance names (`Arsenal or Draw`, `Coventry or Draw`,
+  `Arsenal or Coventry`) → `home_or_draw` / `draw_or_away` /
+  `home_or_away`.
+- `alternate_totals` accepted as a totals source so exact O/U 1.5/2.5
+  lines are captured even when the featured totals market omits one;
+  canonical `ou_15`/`ou_25` preserved.
 
-## 6. QuotaManager semantics
+## 6. No-vig completeness
 
-- Thresholds are percentages of the ACTUAL observed limit
-  (`effective_reserve` clamps the absolute reserve into the CRITICAL
-  band so CRITICAL stays reachable — tested at limits 100/500/7500).
-- CONSERVE pauses P3; CRITICAL pauses P2/P3 (preserves P0/P1);
-  RESERVE_ONLY allows P0 only; reserve protection denies non-P0 work
-  that would breach the floor.
-- Concurrency-safe reservation via atomic Redis INCRBY counters keyed
-  provider/window/period (integration test: 10 workers, exactly 4
-  succeed against usable budget).
-- Estimated cost supported (credits), not just request counts.
+- `derive_market_view_safe` validates the COMPLETE expected selection
+  set (1X2 = home/draw/away; double_chance = 3; O/U = over/under; BTTS =
+  yes/no) before computing no-vig; incomplete markets → None (unit
+  tests).
 
-## 7. Provider-specific quota headers
+## 7. Odds fixture mapping
 
-- `parse_quota_headers(provider, headers)`: API-Football → daily
-  (x-ratelimit-requests-limit/remaining) + minute
-  (X-RateLimit-Limit/Remaining); The Odds API →
-  x-requests-remaining / x-requests-used / x-requests-last = COST (not
-  minute remaining).
+- Home/away names loaded EXPLICITLY via
+  `select(Team.name).where(Team.id == fixture.home_team_id)` (and
+  away) — no unordered SQL IN. Reversed-row-order regression test.
 
-## 8. Request-ledger telemetry
+## 8. Odds quota cost
 
-- `record_success` / `record_failure`: started_at BEFORE the network
-  request, duration covering the HTTP operation, status code where
-  known, normalized error class, actual response quota headers,
-  estimated + actual cost, cache/coalesced status. Failures are
-  visible (error_class + status_code persisted).
+- `workers/tasks/collect.py`: for odds, `effective_cost =
+  provider.estimate_cost(markets, regions)` reserved BEFORE the network
+  call; `actual_cost` reconciled from `x-requests-last` via the ledger.
+  Integration test: 4 markets × 1 region → 4 credits.
 
-## 9. The Odds API integration
+## 9. Quota reservation baseline
 
-- Correct endpoint contract:
-  `/v4/sports/{sport_key}/events/{provider_event_id}/odds` and the free
-  events listing for resolution.
-- `odds_sport_key` per internal league (string) from LeagueConfig.
-- `resolve_event` matches strictly by team names + kickoff tolerance;
-  zero matches and multiple matches are hard `ProviderMappingError`s —
-  never guessed.
-- Resolved mappings persisted in `odds_event_mappings` (migration 0005)
-  for reuse.
-- Internal fixture UUIDs NEVER placed in external URLs (test asserts
-  exact path uses sport key + provider event id).
+- `QuotaManager.reserve`: baseline = latest OBSERVED remaining;
+  reservations since the observation accumulate in the Redis counter;
+  post-INCR running total decides (insufficient → rollback; non-P0
+  breaching the reserve floor → rollback). Test: observed remaining 4
+  (limit 100) → exactly 2 P1 units + 2 P0 reserve units across 10
+  concurrent callers.
 
-## 10. Raw evidence linkage
+## 10. Fail closed on quota init failure
 
-- Framework stores content-deduped raw payloads + observation rows
-  (`store_raw_evidence`) BEFORE snapshot persist; every M4 snapshot
-  carries `payload_id` → raw payload (test asserts non-null + raw row
-  exists). Repeated identical payload creates a new observation but
-  reuses the content blob (M2 semantics).
+- Discovery: real providers FAIL CLOSED if QuotaManager init fails
+  (job FAILED, zero provider calls); MOCK may stay ungated. Redis client
+  created by discovery is closed in `finally`. Integration test with
+  unreachable Redis.
 
-## 11. job_attempts
+## 11. API-Football /teams/statistics
 
-- `record_job_attempt` derives attempt_number per job (1, 2, 3…);
-  uniqueness races retried then fail loud (never silently swallowed);
-  worker identity = real `hostname:pid`.
+- Parser matches the actual v3 contract (response = SINGLE object, not a
+  list); contract-faithful fixture; standings/injuries/lineups/
+  completed-fixtures contracts unchanged. A bounded live smoke is
+  allowed only with a local SPORTS_API_KEY (not run here).
 
-## 12. Pre-match scanner dispatches jobs
+## 12. Status API both-team + phase
 
-- Scanner is cheap: DB scan → deterministic plan → enqueue
-  `sports.collect` jobs with proper `jobs` rows + attempt recording.
-  No external collectors run inline in the Beat task.
-- Exception-safe finally: Redis client, provider clients, DB engine all
-  closed.
+- `_combined_status`: fresh only when BOTH required snapshots exist AND
+  are fresh; one fresh + one missing → `unknown`; any stale → `stale`.
+- `_fixture_phase` applies PREMATCH freshness TTLs when the fixture is
+  inside the pre-match horizon.
+- One-team-missing test: state is `unknown`, never `fresh`.
 
-## 13. Form inputs
+# Kept from M4.1 (unchanged good work)
 
-- `FormInputsCollector` derives deterministic W/D/L from normalized
-  completed-fixture results (window last-N), persisted as
-  `team_form_snapshots`; no LLM, no settlement logic.
-
-## 14. Status API correctness
-
-- `/v1/system/status` reports the ACTUAL degradation mode via
-  `QuotaManager.observe` (no hard-coded NORMAL).
-- Fixture freshness: team_stats/availability/lineups require BOTH teams
-  fresh; lineup availability is publication-aware (CONFIRMED for all
-  teams).
-- Uses `Priority` enum properly (no string + type-ignore).
-- Read endpoints remain DB-only (zero external calls — integration
-  proven).
+scheduler wrapper, external-ID resolution, evidence linkage, coalescing
+winner publishing real persisted refs, sequential job attempts,
+completed-form inputs, DB-first reads.
 
 ---
 
 # Verification (actually run on this machine)
 
-- `uv run pytest -q -m "not integration"` → **242 passed**
-- Integration suite (`sports_intel_test` + Redis db15) → **41 passed**
-  (M2/M2.4 regressions, schema-drift `alembic check`, migration cycle
-  incl. 0005 + new M4.1 integration file)
+- `uv run pytest -q -m "not integration"` → **254 passed**
+- Integration suite (`sports_intel_test` + Redis db15) → **49 passed**
+  (incl. M4.2 file: opportunity identity, T-window runtime, home+away
+  concurrency, odds cost, partial-depleted quota, fail-closed, status
+  one-team-missing, reversed mapping; alembic check + migration cycle)
 - `uv run ruff check .` / `ruff format --check .` → clean
-- `uv run mypy src` → **no issues in 86 source files** (strict)
+- `uv run mypy src` → **no issues in 87 source files** (strict)
 - `docker compose config -q` (+telegram profile) → OK
 - Secret scan → clean
 
 # Known limitations (documented, intentional)
 
-1. Form inputs = deterministic completed-result history; prediction/form
-   features are M7+ scope.
-2. The Odds API live path contract-tested; live verification only if
-   credentials configured (never blocks acceptance).
-3. Pre-match scan enqueues per (collector, lock-key, phase); batching
-   odds across fixtures and per-collector queue fan-out are future
-   optimizations.
+1. Live The Odds API + live /teams/statistics smokes require local
+   credentials; contract tests cover normalization; never blocks
+   acceptance.
+2. Odds league-level batch endpoint remains a future optimization;
+   event-specific calls only after strict resolution.
+3. Pre-match scan enqueues per (collector, lock-key, phase, opportunity);
+   no inline provider work inside the Beat task.
 
 # Scope guard respected
 
@@ -220,16 +173,17 @@ settlement, live in-play, Hetzner, Hermes.
 1. `AGENTS.md`, this file, `docs/CURRENT_TASK.md`
 2. Git diff `main..build/m4`
 3. Key files:
-   - `src/sports_intelligence/collectors/framework.py` (lock/evidence/
-     refs flow)
-   - `src/sports_intelligence/collectors/quota.py`
-   - `src/sports_intelligence/providers/sports/api_football.py`
-   - `src/sports_intelligence/providers/odds/{factory,parse,base,mock}.py`
-   - `src/sports_intelligence/workers/tasks/{scheduling,collect,pre_match}.py`
+   - `src/sports_intelligence/collectors/refresh.py` (opportunity ids)
+   - `src/sports_intelligence/collectors/sports_collectors.py`
+     (team-split persist, lineup refresh_due)
+   - `src/sports_intelligence/collectors/framework.py` (refresh_due
+     hook, now semantics)
+   - `src/sports_intelligence/collectors/quota.py` (reservation
+     baseline)
+   - `src/sports_intelligence/providers/odds/{factory,parse}.py`
+   - `src/sports_intelligence/workers/tasks/{pre_match,collect,sports}.py`
+   - `src/sports_intelligence/api/routes/status.py`
    - `tests/integration/test_m4_collectors.py`
-   - `tests/unit/test_scheduled_discovery.py`,
-     `tests/unit/test_api_football_categories.py`,
-     `tests/unit/test_odds_mapping.py`
 
 # Next action after PASS
 

@@ -24,11 +24,15 @@ class _FakeSession:
         *,
         fixture_id: uuid.UUID | None,
         team_mapping: dict[int, uuid.UUID] | None = None,
+        fixture_teams: tuple[uuid.UUID, uuid.UUID] | None = None,
+        external_to_internal=None,
     ) -> None:
         self.added: list[object] = []
         self.committed = False
         self._fixture_id = fixture_id
         self.team_mapping = team_mapping or {}
+        self.fixture_teams = fixture_teams
+        self.external_to_internal = external_to_internal
 
     async def __aenter__(self) -> _FakeSession:
         return self
@@ -61,41 +65,75 @@ class _FakeSession:
 
     async def get(self, _model: object, key: uuid.UUID) -> object | None:
         if self._fixture_id is not None and key == self._fixture_id:
+            if self.fixture_teams is not None:
+                fake = MagicMock()
+                fake.home_team_id = self.fixture_teams[0]
+                fake.away_team_id = self.fixture_teams[1]
+                fake.kickoff_at = datetime.now(UTC)
+                return fake
             return MagicMock()
         return None
 
-    async def execute(self, *_args: object, **_kwargs: object) -> MagicMock:
+    async def execute(self, stmt: object = None, *_args: object, **_kwargs: object) -> MagicMock:
         result = MagicMock()
         result.first = MagicMock(
-            return_value=(next(iter(self.team_mapping.values()), None),)
-            if self.team_mapping
+            return_value=(self._resolve_external(stmt),)
+            if self._resolve_external(stmt) is not None
             else None
         )
-        result.scalar_one_or_none = MagicMock(side_effect=self._scalar_one_or_none)
+        result.scalar_one_or_none = MagicMock(side_effect=lambda *a: self._resolve_external(stmt))
         result.scalar_one = MagicMock(return_value=uuid.uuid4())
         return result
 
-    def _scalar_one_or_none(self, *args: object) -> object:
-        # Team external-id resolution: return the mapped internal uuid.
+    def _resolve_external(self, stmt: object) -> uuid.UUID | None:
+        """Resolve the external team id from compiled statement params
+        (e.g. external_id = '9001')."""
+        if stmt is not None:
+            try:
+                params = stmt.compile().params  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                params = {}
+            for ext, internal in self.team_mapping.items():
+                if any(str(value) == str(ext) for value in params.values()):
+                    return internal
         if self.team_mapping:
-            # The query filters by external_id; our fake cannot inspect
-            # SQL, so fall back to the first mapping.
             return next(iter(self.team_mapping.values()))
-        return 42
+        return None
 
 
 class _FakeSessionFactory:
     def __init__(
-        self, *, fixture_id: uuid.UUID | None, team_mapping: dict[int, uuid.UUID] | None = None
+        self,
+        *,
+        fixture_id: uuid.UUID | None,
+        team_mapping: dict[int, uuid.UUID] | None = None,
+        fixture_teams: tuple[uuid.UUID, uuid.UUID] | None = None,
     ) -> None:
         self.fixture_id = fixture_id
         self.team_mapping = team_mapping or {}
+        self.fixture_teams = fixture_teams
         self.sessions: list[_FakeSession] = []
 
     def __call__(self) -> _FakeSession:  # type: ignore[no-untyped-def]
-        session = _FakeSession(fixture_id=self.fixture_id, team_mapping=self.team_mapping)
+        session = _FakeSession(
+            fixture_id=self.fixture_id,
+            team_mapping=self.team_mapping,
+            fixture_teams=self.fixture_teams,
+            external_to_internal=self._resolve,
+        )
         self.sessions.append(session)
         return session
+
+    def _resolve(self, stmt: object) -> uuid.UUID | None:
+        if stmt is not None:
+            try:
+                params = stmt.compile().params  # type: ignore[attr-defined]
+            except Exception:  # noqa: BLE001
+                params = {}
+            for ext, internal in self.team_mapping.items():
+                if any(str(value) == str(ext) for value in params.values()):
+                    return internal
+        return None
 
 
 def _ctx(
@@ -127,7 +165,9 @@ async def test_availability_persist_two_team_snapshots_from_one_observation() ->
     home_internal = uuid.uuid4()
     away_internal = uuid.uuid4()
     session_factory = _FakeSessionFactory(
-        fixture_id=uuid.uuid4(), team_mapping={9001: home_internal, 9002: away_internal}
+        fixture_id=uuid.uuid4(),
+        team_mapping={9001: home_internal, 9002: away_internal},
+        fixture_teams=(home_internal, away_internal),
     )
     ctx = _ctx(fixture_id=session_factory.fixture_id, session_factory=session_factory)
 
@@ -194,10 +234,15 @@ async def test_availability_persist_requires_known_fixture() -> None:
 
 @pytest.mark.asyncio
 async def test_lineup_persist_keeps_publication_state() -> None:
-    """NOT_YET_PUBLISHED persists as an immutable observation bound to
-    the requesting team — never collapsed into an empty confirmed
-    lineup."""
-    session_factory = _FakeSessionFactory(fixture_id=uuid.uuid4())
+    """NOT_YET_PUBLISHED persists as immutable observations for BOTH
+    fixture teams — never collapsed into an empty confirmed lineup."""
+    home_internal = uuid.uuid4()
+    away_internal = uuid.uuid4()
+    session_factory = _FakeSessionFactory(
+        fixture_id=uuid.uuid4(),
+        team_mapping={9001: home_internal, 9002: away_internal},
+        fixture_teams=(home_internal, away_internal),
+    )
     ctx = _ctx(fixture_id=session_factory.fixture_id, session_factory=session_factory)
     result = CollectorResult(
         raw_payload={"response": []},
@@ -211,20 +256,26 @@ async def test_lineup_persist_keeps_publication_state() -> None:
         source_fingerprint="mock:lineups:v1:test",
         payload_id=uuid.uuid4(),
         fixture_id=session_factory.fixture_id,
-        team_id=uuid.uuid4(),
+        team_id=home_internal,
     )
     added = session_factory.sessions[-1].added
-    assert added[0].publication_state == "NOT_YET_PUBLISHED"
-    assert added[0].players_jsonb == []
-    assert added[0].confirmed is False
-    assert len(refs) == 1
+    assert len(added) == 2
+    assert all(s.publication_state == "NOT_YET_PUBLISHED" for s in added)
+    assert all(s.players_jsonb == [] for s in added)
+    assert all(s.confirmed is False for s in added)
+    # Published refs contain BOTH team refs.
+    assert len(refs) == 2
+    assert {r.team_id for r in refs} == {home_internal, away_internal}
 
 
 @pytest.mark.asyncio
 async def test_lineup_persist_confirmed_with_players() -> None:
-    requested_team_id = uuid.uuid4()
+    home_internal = uuid.uuid4()
+    away_internal = uuid.uuid4()
     session_factory = _FakeSessionFactory(
-        fixture_id=uuid.uuid4(), team_mapping={9001: requested_team_id}
+        fixture_id=uuid.uuid4(),
+        team_mapping={9001: home_internal, 9002: away_internal},
+        fixture_teams=(home_internal, away_internal),
     )
     ctx = _ctx(fixture_id=session_factory.fixture_id, session_factory=session_factory)
     result = CollectorResult(
@@ -258,13 +309,17 @@ async def test_lineup_persist_confirmed_with_players() -> None:
         source_fingerprint="test",
         payload_id=uuid.uuid4(),
         fixture_id=session_factory.fixture_id,
-        team_id=requested_team_id,
+        team_id=home_internal,
     )
     added = session_factory.sessions[-1].added
-    assert added[0].publication_state == "CONFIRMED"
-    assert added[0].formation == "4-3-3"
-    assert len(added[0].players_jsonb) == 1
-    assert added[0].team_id == requested_team_id
+    by_team = {snap.team_id: snap for snap in added}
+    home = by_team[home_internal]
+    assert home.publication_state == "CONFIRMED"
+    assert home.formation == "4-3-3"
+    assert len(home.players_jsonb) == 1
+    away = by_team[away_internal]
+    assert away.publication_state == "NOT_YET_PUBLISHED"
+    assert away.confirmed is False
 
 
 @pytest.mark.asyncio
