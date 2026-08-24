@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 from kombu import Queue
 
 from sports_intelligence.core.config import Settings, get_settings
@@ -9,6 +10,35 @@ QUEUE_NAMES = ("control", "sports_io", "research_io", "llm", "evaluation", "noti
 
 
 def create_celery_app(settings: Settings) -> Celery:
+    beat_schedule: dict[str, dict[str, object]] = {}
+    if settings.scheduler_enabled:
+        # Celery resolves schedule times in `app.conf.timezone`
+        # (configured below to APP_TIMEZONE); crontab itself does not
+        # take a timezone parameter. This keeps the on-disk schedule
+        # independent of a particular machine's local time.
+        beat_schedule["discovery.morning"] = {
+            "task": "sports.discover_fixtures",
+            "schedule": crontab(
+                hour=settings.scheduler_discovery_morning_hour,
+                minute=settings.scheduler_discovery_morning_minute,
+            ),
+            "options": {"queue": "sports_io"},
+        }
+        beat_schedule["discovery.refresh"] = {
+            "task": "sports.discover_fixtures",
+            "schedule": crontab(
+                hour=settings.scheduler_discovery_refresh_hour,
+                minute=settings.scheduler_discovery_refresh_minute,
+            ),
+            "options": {"queue": "sports_io"},
+        }
+        if settings.scheduler_pre_match_scan_enabled:
+            beat_schedule["pre_match.scan"] = {
+                "task": "sports.pre_match_scan",
+                "schedule": crontab(minute=settings.scheduler_pre_match_scan_cron),
+                "options": {"queue": "sports_io"},
+            }
+
     application = Celery(
         "sports_intelligence",
         broker=settings.celery_broker_url,
@@ -16,6 +46,7 @@ def create_celery_app(settings: Settings) -> Celery:
         include=[
             "sports_intelligence.workers.tasks.control",
             "sports_intelligence.workers.tasks.sports",
+            "sports_intelligence.workers.tasks.pre_match",
         ],
     )
     application.conf.update(
@@ -36,7 +67,7 @@ def create_celery_app(settings: Settings) -> Celery:
         },
         task_track_started=True,
         broker_connection_retry_on_startup=True,
-        beat_schedule={},
+        beat_schedule=beat_schedule,
     )
     return application
 

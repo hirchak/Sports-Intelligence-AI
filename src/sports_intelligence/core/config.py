@@ -33,6 +33,44 @@ class Settings(BaseSettings):
     telegram_allowed_user_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
     bot_backend_base_url: str = "http://localhost:8000"
 
+    # --- M4: scheduler, freshness, quota, odds ---
+    scheduler_enabled: bool = False
+    scheduler_discovery_morning_hour: int = 9
+    scheduler_discovery_morning_minute: int = 0
+    scheduler_discovery_refresh_hour: int = 13
+    scheduler_discovery_refresh_minute: int = 0
+    scheduler_pre_match_scan_enabled: bool = False
+    scheduler_pre_match_scan_cron: str = "*/15"
+
+    freshness_standings_seconds: int = 12 * 3600
+    freshness_team_statistics_seconds: int = 12 * 3600
+    freshness_team_form_seconds: int = 6 * 3600
+    freshness_availability_seconds: int = 4 * 3600
+    freshness_lineups_seconds: int = 24 * 3600
+    freshness_odds_seconds: int = 2 * 3600
+    freshness_prematch_odds_seconds: int = 30 * 60
+    freshness_prematch_availability_seconds: int = 60 * 60
+
+    lineup_window_t_minutes: Annotated[list[int], NoDecode] = Field(
+        default_factory=lambda: [120, 60, 20]
+    )
+
+    quota_provider_daily_limit_default: int = 100
+    quota_provider_minute_limit_default: int = 10
+    quota_reserve_p0_calls: int = 20
+    quota_degrade_normal_remaining_pct: int = 50
+    quota_degrade_conserve_remaining_pct: int = 25
+    quota_degrade_critical_remaining_pct: int = 10
+
+    redis_lock_default_ttl_seconds: int = 120
+    redis_lock_acquire_timeout_seconds: float = 5.0
+
+    odds_provider_base_url: str = "https://api.the-odds-api.com/v4"
+    odds_provider_regions: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["eu"])
+    odds_provider_markets: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["h2h", "double_chance", "totals", "btts"]
+    )
+
     sports_provider: str = "mock"
     sports_api_key: str = ""
     api_football_base_url: str = "https://v3.football.api-sports.io"
@@ -68,6 +106,26 @@ class Settings(BaseSettings):
             if not stripped:
                 return []
             return [int(part) for part in stripped.split(",") if part.strip()]
+        return value
+
+    @field_validator("lineup_window_t_minutes", mode="before")
+    @classmethod
+    def parse_lineup_window(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            return [int(part) for part in stripped.split(",") if part.strip()]
+        return value
+
+    @field_validator("odds_provider_regions", "odds_provider_markets", mode="before")
+    @classmethod
+    def parse_csv_str(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            return [part.strip() for part in stripped.split(",") if part.strip()]
         return value
 
     @model_validator(mode="after")

@@ -907,3 +907,55 @@ button-based menus and a Back button on every screen.
 **Next action**
 - Final independent review of M3.1; merge to `main` after
   acceptance; M4 only with explicit user approval.
+
+---
+
+### 2026-08-24 — ox-alpha (OpenCode)
+
+**Milestone:** M4
+**Task:** Automated Match Data Collection + Odds + Quota/Freshness — finish implementation started in a prior session (uncommitted working tree on `build/m4`)
+
+**Completed**
+- Recovered state from repo (no chat memory): M3 merged to `main` (`7d23c9d`); M4 work existed uncommitted on `build/m4` (config, celery beat, migration 0004, snapshot models, collectors skeleton, quota, locks, freshness, status API, job_attempts util).
+- Fixed `framework.run_collector` ordering: quota is now acquired BEFORE any provider fetch; denial raises `QuotaUnavailableError` and never reaches the provider.
+- Made coalescing result publication JSON-safe: dataclass results serialize via `asdict`; waiters rebuild `CollectorResult`.
+- Removed double provider call in `OddsCollector.persist` (reuses fetched normalized prices; Decimal round-trip via strings).
+- Implemented The Odds API v4 normalizer (`providers/odds/parse.py`, contract-tested) and rewired `TheOddsApiProvider`: bounded tenacity retry, ProviderError hierarchy (401/403/429/5xx/timeout/transport), apiKey never logged (httpx INFO silenced at init because the key rides the URL).
+- Fixed Celery crontab usage (no `timezone=` kwarg; timezone resolves via `conf.timezone`=APP_TIMEZONE, DST-safe); pre-match scan toggle honored.
+- Aligned ORM with migration 0004 DESC indexes (alembic check clean); added explicit `updated_at` on snapshot persist (no server_default in DB for those columns).
+- Fixed duplicate-table-alias SQL bug in `select_upcoming_fixtures` (ORM `aliased(Team)`).
+- Tests: framework quota-order/stale/concurrency, confirmed-lineup polling stop, locks concurrency, sports-collector availability/lineup semantics, odds normalizer contract (8), TheOddsApiProvider error mapping + key-leak (7), beat schedule semantics incl. disabled default (12 total in file), new integration file `test_m4_collectors.py` (12 tests: persist/reuse, standings shared → single ledger row, odds immutable history, quota ledger, job_attempts, status API 200/404/system, DB-first UX zero external rows, planner idempotent).
+
+**Files changed**
+- src: collectors/{framework,locks,sports_collectors,odds_collector,pre_match_scan}.py; providers/odds/{factory,parse}.py (new parse); workers/{celery_app,tasks/sports,tasks/pre_match,utils}.py; db/models/snapshots.py; api/routes/status.py; core/{config,phases}.py; db/migrations/versions/0004_*.py
+- tests: unit/collectors/{test_framework,test_sports_collectors,test_quota,test_freshness,test_odds_math,test_pre_match_scan}; unit/test_celery_app; unit/test_odds_normalize (new); unit/test_theoddsapi (new); integration/test_m4_collectors (new)
+- docs: CURRENT_TASK.md, IMPLEMENTATION_STATUS.md, REVIEW_HANDOFF.md, AI_WORKLOG.md
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (233)
+- integration suite (`sports_intel_test` + redis db15) → PASS (38)
+- `uv run ruff check . && uv run ruff format --check .` → PASS
+- `uv run mypy src` → PASS (82 files, strict)
+- `docker compose config -q` (+telegram profile) → PASS
+- secret scan → clean
+
+**Live integrations verified**
+- none this session (MOCK-only by design; live Odds API intentionally not called — no credentials required for acceptance).
+
+**Mocked only**
+- FormInputsCollector (completed-fixture form needs score columns — deferred);
+- TheOddsApiProvider network path (contract-tested against documented v4 shape).
+
+**Known issues**
+- Pre-match scan executes collectors inline in one task (queue fan-out is future optimization).
+- Dev DB accumulated test leagues from repeated integration runs (unique-slug strategy; harmless).
+
+**Spec / ADR deviations**
+- none new; ADRs 0001–0009 unchanged. Framework quota-before-fetch ordering implements spec 11 §"prevent unnecessary requests" explicitly.
+
+**Git**
+- branch: build/m4
+- commit: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent review of M4 (diff `main..build/m4`); merge + tag `v0.5-m4` after PASS; M5 only with explicit user approval.
