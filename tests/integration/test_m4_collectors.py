@@ -1101,8 +1101,21 @@ async def test_scanner_opportunity_identity_dedupes_then_opens_new_job(
     """M4.2 §1: first PREMATCH scan enqueues one job; a duplicate scan
     inside the same opportunity reuses it; a later T60 window opens a
     NEW lineup job."""
+    from unittest.mock import patch as _patch
+
     from sports_intelligence.collectors.pre_match_scan import PreMatchDecision
+    from sports_intelligence.workers.tasks.collect import collect_task
     from sports_intelligence.workers.tasks.pre_match import _dispatch_decision
+
+    captured: list[list[object]] = []
+
+    def _fake_apply_async(*, args, **_kwargs):  # type: ignore[no-untyped-def]
+        captured.append(list(args))
+
+    captured: list[list[object]] = []
+
+    def _fake_apply_async(*, args, **_kwargs):  # type: ignore[no-untyped-def]
+        captured.append(list(args))
 
     kickoff = datetime.now(UTC) + timedelta(minutes=110)  # inside T120
     seeded = await _seed_league_team_fixture(m4_session_factory, kickoff_at=kickoff)
@@ -1118,18 +1131,16 @@ async def test_scanner_opportunity_identity_dedupes_then_opens_new_job(
 
     captured: list[list[object]] = []
 
-    class _Task:
-        def apply_async(self, *, args):  # type: ignore[no-untyped-def]
-            captured.append(args)
-
-    first = await _dispatch_decision(
-        m4_session_factory, decision, now=kickoff - timedelta(minutes=110)
-    )
-    second = await _dispatch_decision(
-        m4_session_factory, decision, now=kickoff - timedelta(minutes=105)
-    )
+    with _patch.object(collect_task, "apply_async", _fake_apply_async):
+        first = await _dispatch_decision(
+            m4_session_factory, decision, now=kickoff - timedelta(minutes=110)
+        )
+        second = await _dispatch_decision(
+            m4_session_factory, decision, now=kickoff - timedelta(minutes=105)
+        )
     assert first == {"lineups": 2}
     assert second == {"lineups": 2}
+    assert len(captured) == 1  # one enqueue (home+away share the job)
     # Same opportunity (both inside T120): ONE fixture-level job
     # (lineups share one provider request per fixture).
     async with m4_session_factory() as session:
@@ -1143,9 +1154,10 @@ async def test_scanner_opportunity_identity_dedupes_then_opens_new_job(
     assert len(jobs) == 1  # deduped across the two scans in T120
 
     # Later T60 window → NEW opportunity → new job.
-    later = await _dispatch_decision(
-        m4_session_factory, decision, now=kickoff - timedelta(minutes=50)
-    )
+    with _patch.object(collect_task, "apply_async", _fake_apply_async):
+        later = await _dispatch_decision(
+            m4_session_factory, decision, now=kickoff - timedelta(minutes=50)
+        )
     assert later == {"lineups": 2}
     async with m4_session_factory() as session:
         jobs_after = (
