@@ -12,6 +12,8 @@ class LeagueConfigEntry(BaseModel):
     country: str | None = None
     enabled: bool = False
     provider_ids: dict[str, int] = Field(default_factory=dict)
+    # The Odds API uses string sport keys per league (e.g. soccer_epl).
+    odds_sport_key: str | None = None
 
 
 class LeagueConfigVersionMismatchError(RuntimeError):

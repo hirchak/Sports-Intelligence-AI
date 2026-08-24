@@ -14,29 +14,37 @@ def create_celery_app(settings: Settings) -> Celery:
     if settings.scheduler_enabled:
         # Celery resolves schedule times in `app.conf.timezone`
         # (configured below to APP_TIMEZONE); crontab itself does not
-        # take a timezone parameter. This keeps the on-disk schedule
-        # independent of a particular machine's local time.
+        # take a timezone parameter.
+        #
+        # Beat NEVER schedules the discovery worker directly — it
+        # targets the argument-free `sports.schedule_discovery(slot)`
+        # wrapper which builds the proper Job row and enqueues the full
+        # immutable execution tuple (M4.1 §1). Morning and refresh are
+        # distinct slots, so the 13:00 refresh cannot be suppressed by
+        # the successful 09:00 run.
         beat_schedule["discovery.morning"] = {
-            "task": "sports.discover_fixtures",
+            "task": "sports.schedule_discovery",
             "schedule": crontab(
                 hour=settings.scheduler_discovery_morning_hour,
                 minute=settings.scheduler_discovery_morning_minute,
             ),
-            "options": {"queue": "sports_io"},
+            "args": ["morning"],
+            "options": {"queue": "control"},
         }
         beat_schedule["discovery.refresh"] = {
-            "task": "sports.discover_fixtures",
+            "task": "sports.schedule_discovery",
             "schedule": crontab(
                 hour=settings.scheduler_discovery_refresh_hour,
                 minute=settings.scheduler_discovery_refresh_minute,
             ),
-            "options": {"queue": "sports_io"},
+            "args": ["refresh"],
+            "options": {"queue": "control"},
         }
         if settings.scheduler_pre_match_scan_enabled:
             beat_schedule["pre_match.scan"] = {
                 "task": "sports.pre_match_scan",
                 "schedule": crontab(minute=settings.scheduler_pre_match_scan_cron),
-                "options": {"queue": "sports_io"},
+                "options": {"queue": "control"},
             }
 
     application = Celery(
@@ -47,6 +55,7 @@ def create_celery_app(settings: Settings) -> Celery:
             "sports_intelligence.workers.tasks.control",
             "sports_intelligence.workers.tasks.sports",
             "sports_intelligence.workers.tasks.pre_match",
+            "sports_intelligence.workers.tasks.scheduling",
         ],
     )
     application.conf.update(

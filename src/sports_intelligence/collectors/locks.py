@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import TypeVar
 
 from redis.asyncio import Redis
 
 from sports_intelligence.core.config import Settings
-
-T = TypeVar("T")
 
 
 @dataclass
@@ -75,55 +70,31 @@ class CoalesceLockManager:
             return value.decode("utf-8")
         return str(value)
 
-    async def wait_or_use(
+    async def wait_for_published(
         self,
+        lock_key: str,
         *,
-        key: str,
-        fetch_fresh: Callable[[], Awaitable[T]],
-        ttl: timedelta | None = None,
-        max_wait: timedelta | None = None,
-    ) -> T:
-        """Run `fetch_fresh` exactly once for equivalent callers.
+        max_wait: float | None = None,
+        poll_interval: float = 0.05,
+    ) -> str | None:
+        """Poll for the winner's published result up to `max_wait`.
 
-        Winner: acquires lock, runs fetch, releases lock, publishes
-        result for waiters, returns result.
-        Waiters: poll the companion result key up to `max_wait`; on
-        timeout, falls back to acquiring the lock and fetching.
+        Returns the published JSON payload or None. Callers must NEVER
+        fall back to their own provider call on timeout — the lock is a
+        quota/correctness boundary (M4.1 §5).
         """
-        result_ttl = ttl or timedelta(seconds=self._settings.redis_lock_default_ttl_seconds)
-        lock = await self.acquire(key=key, ttl=result_ttl)
-        if lock is not None:
-            try:
-                result = await fetch_fresh()
-                with suppress(Exception):  # best-effort result publication
-                    await self.publish_result(key, _serialize(result), result_ttl)
-                return result
-            finally:
-                await self.release(lock)
+        import asyncio
 
-        # Wait for the winner to publish its result.
-        wait = max_wait or timedelta(seconds=self._settings.redis_lock_acquire_timeout_seconds)
+        settings_wait = self._settings.redis_lock_acquire_timeout_seconds
+        wait = max_wait if max_wait is not None else settings_wait
         waited = 0.0
-        interval = 0.05
-        while waited < wait.total_seconds():
-            existing = await self.fetch_result(key)
+        while waited < wait:
+            existing = await self.fetch_result(lock_key)
             if existing is not None:
-                return _deserialize(existing)  # type: ignore[return-value]
-            import asyncio
-
-            await asyncio.sleep(interval)
-            waited += interval
-
-        # Fall back to taking the lock and fetching ourselves.
-        lock = await self.acquire(key=key, ttl=result_ttl)
-        if lock is None:
-            # Still contended — fetch anyway (best effort, the lock
-            # is purely an optimisation, never a correctness barrier).
-            return await fetch_fresh()
-        try:
-            return await fetch_fresh()
-        finally:
-            await self.release(lock)
+                return existing
+            await asyncio.sleep(poll_interval)
+            waited += poll_interval
+        return None
 
 
 def _serialize(value: object) -> str:
@@ -135,12 +106,3 @@ def _serialize(value: object) -> str:
     if is_dataclass(value) and not isinstance(value, type):
         return json.dumps(asdict(value), default=str, ensure_ascii=False)
     return json.dumps(value, default=str, ensure_ascii=False)
-
-
-def _deserialize(value: str) -> object:
-    import json
-
-    try:
-        return json.loads(value)
-    except (TypeError, ValueError):
-        return value

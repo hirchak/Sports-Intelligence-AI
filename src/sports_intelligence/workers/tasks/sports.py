@@ -6,6 +6,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from sports_intelligence.collectors.quota import QuotaManager  # noqa: E402
 from sports_intelligence.core.config import get_settings
 from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.league_config import (
@@ -57,11 +58,24 @@ async def _run_discovery(
                 actual=league_config.version,
             )
         provider = build_sports_provider(settings)
+        quota: QuotaManager | None = None
+        try:
+            from redis.asyncio import Redis
+
+            redis = Redis.from_url(settings.redis_url)
+            quota = QuotaManager(settings, session_factory, redis=redis)
+        except Exception:  # noqa: BLE001 — quota gating is best-effort at worker init
+            logger.warning(
+                "quota manager unavailable for discovery; running ungated",
+                exc_info=True,
+            )
+
         service = FixtureDiscoveryService(
             provider=provider,
             session_factory=session_factory,
             league_config=league_config,
             app_timezone=discovery_timezone,
+            quota=quota,
         )
 
         async with session_factory() as session:
@@ -110,13 +124,12 @@ async def _record_attempt(
     exc: BaseException | None,
 ) -> None:
     try:
-        uuid.UUID(job_id)
+        job_uuid = uuid.UUID(job_id)
     except ValueError:
         return
     await record_job_attempt(
         session_factory,
-        job_id=uuid.UUID(job_id),
-        attempt_number=1,
+        job_id=job_uuid,
         started_at=started_at,
         finished_at=datetime.now(UTC),
         outcome=outcome,

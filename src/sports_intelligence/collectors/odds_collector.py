@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import uuid as _uuid
 from collections.abc import Sequence
-from datetime import datetime
-from decimal import Decimal
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy import select
@@ -14,16 +15,17 @@ from sports_intelligence.collectors.framework import (
     SnapshotRef,
     register,
 )
-from sports_intelligence.collectors.odds_math import (
-    OddsPriceError,
-    derive_market_view,
-    quantize,
-)
+from sports_intelligence.core.league_config import load_league_config
 from sports_intelligence.core.phases import FreshnessCategory, Priority
 from sports_intelligence.db.models import (
+    Fixture,
+    League,
+    OddsEventMapping,
     OddsPrice,
     OddsSnapshotSet,
+    Team,
 )
+from sports_intelligence.providers.errors import ProviderMappingError
 from sports_intelligence.providers.odds.base import OddsProvider
 
 
@@ -31,9 +33,6 @@ class OddsCollector:
     name = "odds"
     category = FreshnessCategory.ODDS
     priority = Priority.P1
-
-    def __init__(self) -> None:
-        pass
 
     def lock_key(self, *, fixture_id: object, **_: Any) -> str:
         return f"odds:{fixture_id}"
@@ -44,16 +43,112 @@ class OddsCollector:
             raise RuntimeError("odds collector requires an OddsProvider context")
         return provider
 
-    async def latest_captured_at(
+    async def latest_snapshot(
         self, session: AsyncSession, *, fixture_id: object, **_: Any
-    ) -> datetime | None:
+    ) -> tuple[datetime | None, _uuid.UUID | None]:
         stmt = (
-            select(OddsSnapshotSet.captured_at)
+            select(OddsSnapshotSet.captured_at, OddsSnapshotSet.id)
             .where(OddsSnapshotSet.fixture_id == fixture_id)
             .order_by(OddsSnapshotSet.captured_at.desc())
             .limit(1)
         )
-        return (await session.execute(stmt)).scalar_one_or_none()
+        row = (await session.execute(stmt)).first()
+        return (row[0], row[1]) if row else (None, None)
+
+    async def _sport_key_for_league(
+        self, session: AsyncSession, ctx: CollectorContext, league_id: _uuid.UUID
+    ) -> str:
+        slug = (
+            await session.execute(select(League.slug).where(League.id == league_id))
+        ).scalar_one_or_none()
+        if slug is None:
+            raise ProviderMappingError(f"league {league_id} not found for odds mapping")
+        config = load_league_config(ctx.settings.leagues_config_path)
+        for entry in config.leagues:
+            if entry.slug == str(slug):
+                if entry.odds_sport_key:
+                    return entry.odds_sport_key
+                break
+        raise ProviderMappingError(
+            f"no odds_sport_key configured for league {slug!r}; refusing to guess"
+        )
+
+    async def _resolve_or_get_event_id(
+        self,
+        session: AsyncSession,
+        ctx: CollectorContext,
+        *,
+        fixture_id: _uuid.UUID,
+        sport_key: str,
+    ) -> str:
+        provider_name = self._require_odds_provider(ctx).name
+        stmt = select(OddsEventMapping.provider_event_id).where(
+            OddsEventMapping.provider == provider_name,
+            OddsEventMapping.fixture_id == fixture_id,
+            OddsEventMapping.sport_key == sport_key,
+        )
+        existing = (await session.execute(stmt)).scalar_one_or_none()
+        if existing:
+            return existing
+
+        fixture = await session.get(Fixture, fixture_id)
+        if fixture is None:
+            raise LookupError(f"fixture {fixture_id} not found for odds collection")
+        names = await session.execute(
+            select(Team.name).where(Team.id.in_([fixture.home_team_id, fixture.away_team_id]))
+        )
+        name_rows = [row[0] for row in names.all()]
+        home_name = next((n for n in name_rows if n), None)
+        away_name = next((n for n in reversed(name_rows) if n), None)
+        if not home_name or not away_name:
+            raise ProviderMappingError(
+                f"fixture {fixture_id} lacks team names required for event resolution"
+            )
+
+        provider = self._require_odds_provider(ctx)
+        kickoff = fixture.kickoff_at
+        if kickoff.tzinfo is None:
+            kickoff = kickoff.replace(tzinfo=UTC)
+        event_id = await provider.resolve_event(
+            sport_key=sport_key,
+            home_team=home_name,
+            away_team=away_name,
+            commence_time_utc=kickoff,
+        )
+        mapping = OddsEventMapping(
+            provider=provider_name,
+            sport_key=sport_key,
+            provider_event_id=event_id,
+            fixture_id=fixture_id,
+            home_team_name=home_name,
+            away_team_name=away_name,
+            commence_time=kickoff,
+            mapped_at=datetime.now(UTC),
+        )
+        from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+        stmt_ins = (
+            pg_insert(OddsEventMapping)
+            .values(
+                provider=mapping.provider,
+                sport_key=mapping.sport_key,
+                provider_event_id=mapping.provider_event_id,
+                fixture_id=mapping.fixture_id,
+                home_team_name=mapping.home_team_name,
+                away_team_name=mapping.away_team_name,
+                commence_time=mapping.commence_time,
+                mapped_at=mapping.mapped_at,
+            )
+            .on_conflict_do_nothing(
+                index_elements=[
+                    OddsEventMapping.provider,
+                    OddsEventMapping.provider_event_id,
+                ]
+            )
+        )
+        await session.execute(stmt_ins)
+        await session.commit()
+        return event_id
 
     async def fetch(
         self,
@@ -63,19 +158,32 @@ class OddsCollector:
         **_: Any,
     ) -> CollectorResult:
         provider = self._require_odds_provider(ctx)
-        ctx_settings = ctx.settings
-        result = await provider.fetch_odds(
-            fixture_id=str(fixture_id),
-            markets=ctx_settings.odds_provider_markets,
-            regions=ctx_settings.odds_provider_regions,
+        fixture_uuid = _uuid.UUID(str(fixture_id))
+        markets: Sequence[str] = ctx.settings.odds_provider_markets
+        regions: Sequence[str] = ctx.settings.odds_provider_regions
+
+        async with ctx.session_factory() as session:
+            league_id = (
+                await session.execute(select(Fixture.league_id).where(Fixture.id == fixture_uuid))
+            ).scalar_one()
+            sport_key = await self._sport_key_for_league(session, ctx, league_id)
+            event_id = await self._resolve_or_get_event_id(
+                session, ctx, fixture_id=fixture_uuid, sport_key=sport_key
+            )
+
+        result = await provider.fetch_event_odds(
+            sport_key=sport_key,
+            event_id=event_id,
+            markets=markets,
+            regions=regions,
         )
-        # Decimal values are stringified: the framework publishes the
-        # winner's result via Redis as JSON, so the waiter path must be
-        # JSON-safe. persist() re-parses strings back to Decimal.
+        # Decimal values stringified: framework publishes results via
+        # Redis JSON; persist() re-parses strings back to Decimal.
         return CollectorResult(
-            raw_payload=None,
+            raw_payload=result.raw_payload or {"prices": []},
             normalized={
-                "fixture_id": result.fixture_id,
+                "provider_event_id": result.fixture_id,
+                "sport_key": sport_key,
                 "captured_at": result.captured_at,
                 "prices": [
                     {
@@ -88,26 +196,24 @@ class OddsCollector:
                     for p in result.prices
                 ],
             },
+            rate_headers=dict(result.rate_headers),
+            retrieved_at=None,
         )
 
     async def persist(
         self,
         ctx: CollectorContext,
         result: CollectorResult,
+        *,
         captured_at: datetime,
         source_fingerprint: str,
-        *,
+        payload_id: _uuid.UUID | None,
         fixture_id: object,
         **_: Any,
-    ) -> SnapshotRef:
-        import uuid as _uuid
-        from decimal import Decimal, InvalidOperation
-
+    ) -> tuple[SnapshotRef, ...]:
         markets: Sequence[str] = ctx.settings.odds_provider_markets
 
         fixture_uuid = _uuid.UUID(str(fixture_id))
-        from sports_intelligence.db.models import Fixture as FixtureModel
-
         raw_prices = result.normalized.get("prices", [])
 
         snapshot_set = OddsSnapshotSet(
@@ -115,6 +221,7 @@ class OddsCollector:
             fixture_id=fixture_uuid,
             captured_at=captured_at,
             market_whitelist_jsonb=list(markets),
+            payload_id=payload_id,
         )
         prices_rows: list[dict[str, object]] = []
         for row in raw_prices:
@@ -145,25 +252,17 @@ class OddsCollector:
             grouped.setdefault(key, []).append(row)
 
         async with ctx.session_factory() as session:
-            exists = await session.get(FixtureModel, fixture_uuid)
+            exists = await session.get(Fixture, fixture_uuid)
             if exists is None:
                 raise LookupError(f"fixture {fixture_id} not found for odds persist")
 
             session.add(snapshot_set)
-            await session.flush()  # populate snapshot_set.id
+            await session.flush()
 
             for (bookmaker, market), rows in grouped.items():
                 selections = tuple(str(r["selection"]) for r in rows)
                 decimal_prices = tuple(Decimal(str(r["decimal_odds"])) for r in rows)
-                try:
-                    view = derive_market_view(
-                        bookmaker=bookmaker,
-                        market=market,
-                        selections=selections,
-                        decimal_prices=decimal_prices,
-                    )
-                except OddsPriceError:
-                    view = None
+                view = derive_market_view_safe(bookmaker, market, selections, decimal_prices)
                 nv_by_selection: dict[str, Decimal | None] = {}
                 if view is not None:
                     nv_by_selection = dict(
@@ -183,13 +282,42 @@ class OddsCollector:
                             implied_probability=quantize(
                                 Decimal("1") / Decimal(str(row["decimal_odds"]))
                             ),
-                            no_vig_probability=quantize(nv) if nv is not None else None,
+                            no_vig_probability=(quantize(nv) if nv is not None else None),
                         )
                     )
             await session.commit()
-        return SnapshotRef(
-            table="odds_snapshot_sets", snapshot_id=snapshot_set.id, captured_at=captured_at
+        return (
+            SnapshotRef(
+                table="odds_snapshot_sets",
+                snapshot_id=snapshot_set.id,
+                captured_at=captured_at,
+            ),
         )
+
+
+def derive_market_view_safe(
+    bookmaker: str, market: str, selections: Sequence[str], prices: tuple[Decimal, ...]
+) -> Any:
+    from sports_intelligence.collectors.odds_math import (
+        OddsPriceError,
+        derive_market_view,
+    )
+
+    try:
+        return derive_market_view(
+            bookmaker=bookmaker,
+            market=market,
+            selections=selections,
+            decimal_prices=prices,
+        )
+    except OddsPriceError:
+        return None
+
+
+def quantize(value: Decimal) -> Decimal:
+    from sports_intelligence.collectors.odds_math import quantize as q
+
+    return q(value)
 
 
 register(OddsCollector())

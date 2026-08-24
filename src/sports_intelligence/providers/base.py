@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import BaseModel
 
-from sports_intelligence.providers.dto import FixtureDiscoveryResult
+from sports_intelligence.providers.dto import (
+    FixtureDiscoveryResult,
+    ProviderAvailabilityResult,
+    ProviderCompletedFixturesResult,
+    ProviderLineupsResult,
+    ProviderStandingsResult,
+    ProviderTeamStatisticsResult,
+)
 
 
 @dataclass(frozen=True)
@@ -14,10 +21,20 @@ class ProviderCapabilities:
     provider: str
     supports_fixtures_by_date: bool = True
     supports_fixture_ids_batch: bool = False
+    supports_standings: bool = False
+    supports_team_statistics: bool = False
+    supports_availability: bool = False
+    supports_lineups: bool = False
+    supports_completed_fixtures: bool = False
 
 
+@runtime_checkable
 class SportsDataProvider(Protocol):
-    """Typed provider surface. Extended by later milestones with typed DTOs."""
+    """Typed provider surface for discovery + M4 collection categories.
+
+    Implementations MUST return provider-shaped real data. Canned MOCK
+    payloads are allowed ONLY inside the mock provider implementation.
+    """
 
     @property
     def capabilities(self) -> ProviderCapabilities: ...
@@ -25,6 +42,27 @@ class SportsDataProvider(Protocol):
     async def get_fixtures_by_date(
         self, fixture_date: date, timezone_name: str | None = None
     ) -> FixtureDiscoveryResult: ...
+
+    async def get_standings(
+        self, *, provider_league_id: int, season: int | None
+    ) -> ProviderStandingsResult: ...
+
+    async def get_team_statistics(
+        self, *, provider_team_id: int, provider_league_id: int, season: int | None
+    ) -> ProviderTeamStatisticsResult: ...
+
+    async def get_availability(self, *, provider_fixture_id: int) -> ProviderAvailabilityResult:
+        """Single request per fixture; the result carries BOTH teams."""
+        ...
+
+    async def get_lineups(self, *, provider_fixture_id: int) -> ProviderLineupsResult:
+        """Single request per fixture; result carries BOTH teams plus an
+        explicit publication state (absence ≠ empty lineup)."""
+        ...
+
+    async def get_completed_fixtures(
+        self, *, provider_team_id: int, last_n: int
+    ) -> ProviderCompletedFixturesResult: ...
 
     async def aclose(self) -> None: ...
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -15,6 +15,7 @@ from sports_intelligence.collectors.freshness import FreshnessPolicy
 from sports_intelligence.core.config import Settings
 from sports_intelligence.core.league_config import load_league_config
 from sports_intelligence.core.phases import ForecastPhase, FreshnessCategory
+from sports_intelligence.core.time import utc_window_for_local_day
 from sports_intelligence.db.models import Fixture, League, Team
 
 
@@ -34,20 +35,25 @@ async def select_upcoming_fixtures(
     *,
     window_start: datetime,
     window_end: datetime,
+    now: datetime | None = None,
     limit: int = 200,
 ) -> list[tuple[Fixture, League, Team, Team]]:
     HomeTeam = aliased(Team, name="home_team")
     AwayTeam = aliased(Team, name="away_team")
+    conditions = [
+        League.enabled == True,  # noqa: E712
+        Fixture.kickoff_at >= window_start,
+        Fixture.kickoff_at <= window_end,
+    ]
+    if now is not None:
+        # Only future / not-yet-started fixtures (M4.1 §4).
+        conditions.append(Fixture.kickoff_at > now)
     stmt = (
         select(Fixture, League, HomeTeam, AwayTeam)
         .join(League, League.id == Fixture.league_id)
         .join(HomeTeam, HomeTeam.id == Fixture.home_team_id)
         .join(AwayTeam, AwayTeam.id == Fixture.away_team_id)
-        .where(
-            League.enabled == True,  # noqa: E712
-            Fixture.kickoff_at >= window_start,
-            Fixture.kickoff_at <= window_end,
-        )
+        .where(*conditions)
         .order_by(Fixture.kickoff_at.asc())
         .limit(limit)
     )
@@ -63,8 +69,9 @@ def decide_categories(
 ) -> tuple[ForecastPhase, tuple[FreshnessCategory, ...]]:
     """Pick the phase and the categories worth collecting.
 
-    Pre-kickoff: lineup windows T-120/T-60/T-20 plus availability and odds.
-    MORNING: standings, team_stats, form_inputs (cheap, broad).
+    PREMATCH once inside the configured T-window horizon (lineup
+    windows + availability + odds); MORNING otherwise (standings, team
+    stats, form inputs).
     """
     delta = kickoff_at - now
     minutes_until = delta.total_seconds() / 60.0
@@ -101,18 +108,25 @@ async def plan_for_date(
     day: date,
     now: datetime | None = None,
 ) -> list[PreMatchDecision]:
-    """Read DB and decide which collectors to enqueue for a given date.
+    """Read DB and decide which collectors to enqueue for a given
+    Warsaw calendar day.
 
-    Honors the YAML league config (disabled leagues skip everything).
+    - window boundaries are the Warsaw local-midnight → UTC conversions
+      (`utc_window_for_local_day`), so the scan covers the full local
+      day across DST transitions;
+    - only future/not-started fixtures are considered;
+    - disabled leagues (YAML config) are skipped.
     """
     now = now or datetime.now(UTC).replace(tzinfo=UTC)
-    window_start = datetime.combine(day, datetime.min.time()).replace(tzinfo=UTC)
-    window_end = window_start + timedelta(days=1)
+    window_start, window_end = utc_window_for_local_day(day, settings.app_timezone)
     league_config = load_league_config(settings.leagues_config_path)
     enabled_by_id: dict[str, object] = {str(slug): True for slug in league_config.enabled_slugs()}
     async with session_factory() as session:
         rows = await select_upcoming_fixtures(
-            session, window_start=window_start, window_end=window_end
+            session,
+            window_start=window_start,
+            window_end=window_end,
+            now=now,
         )
     decisions: list[PreMatchDecision] = []
     for fixture, league, home, away in rows:
@@ -165,19 +179,21 @@ async def execute_plan(
 
     `enqueue_collector(name, **inputs)` is provided by the caller
     (Celery `apply_async` in production; in-memory queue in tests).
-    Returns a counter of enqueues by category.
+    Every enqueue carries the decision's phase so the collector worker
+    executes under the SAME freshness phase (PREMATCH values actually
+    applied). Returns a counter of enqueues by category.
     """
     counters: dict[str, int] = {}
     for decision in decisions:
-        # Standings / team_stats are per-league / per-team, deduplicated
-        # across fixtures sharing the same team. Live optimization
-        # lives in the framework + Redis lock layer; here we naively
-        # enqueue per fixture and let the framework coalesce.
+        phase = decision.phase.value
+        # Standings / team_stats are per-league / per-team; the
+        # framework + Redis lock layer deduplicates across fixtures.
         if FreshnessCategory.STANDINGS in decision.categories_to_collect:
             await enqueue_collector(
                 "standings",
                 league_id=decision.league_id,
                 season_id=None,
+                phase=phase,
             )
             counters["standings"] = counters.get("standings", 0) + 1
         if FreshnessCategory.TEAM_STATISTICS in decision.categories_to_collect:
@@ -187,6 +203,7 @@ async def execute_plan(
                     team_id=team_id,
                     league_id=decision.league_id,
                     season_id=None,
+                    phase=phase,
                 )
             counters["team_stats"] = counters.get("team_stats", 0) + 2
         if FreshnessCategory.AVAILABILITY in decision.categories_to_collect:
@@ -195,6 +212,7 @@ async def execute_plan(
                     "availability",
                     fixture_id=decision.fixture_id,
                     team_id=team_id,
+                    phase=phase,
                 )
             counters["availability"] = counters.get("availability", 0) + 2
         if FreshnessCategory.LINEUPS in decision.categories_to_collect:
@@ -203,12 +221,15 @@ async def execute_plan(
                     "lineups",
                     fixture_id=decision.fixture_id,
                     team_id=team_id,
+                    phase=phase,
                 )
             counters["lineups"] = counters.get("lineups", 0) + 2
         if FreshnessCategory.ODDS in decision.categories_to_collect:
             await enqueue_collector(
                 "odds",
                 fixture_id=decision.fixture_id,
+                league_id=decision.league_id,
+                phase=phase,
             )
             counters["odds"] = counters.get("odds", 0) + 1
     return counters

@@ -7,122 +7,147 @@ from sports_intelligence.collectors.quota import (
     Priority,
     QuotaDecisionKind,
     decide,
+    effective_reserve,
+    parse_quota_headers,
 )
 
-# Pure-function decision matrix. Deterministic, no DB.
+
+def _decide(
+    *,
+    daily_remaining: int | None,
+    daily_limit: int = 100,
+    minute_remaining: int | None = None,
+    priority: Priority,
+    reserve: int = 20,
+    critical_pct: int = 10,
+    conserve_pct: int = 25,
+    estimated_cost: int = 1,
+):
+    return decide(
+        daily_remaining=daily_remaining,
+        daily_limit=daily_limit,
+        minute_remaining=minute_remaining,
+        minute_limit=10,
+        reserve=reserve,
+        critical_pct=critical_pct,
+        conserve_pct=conserve_pct,
+        priority=priority,
+        estimated_cost=estimated_cost,
+    )
 
 
 @pytest.mark.parametrize(
-    ("daily_remaining", "minute_remaining", "priority", "expected_allowed", "expected_mode"),
+    ("limit", "remaining"),
     [
-        # NORMAL: P0..P3 all allowed.
-        (90, 5, Priority.P0, True, DegradationMode.NORMAL),
-        (90, 5, Priority.P3, True, DegradationMode.NORMAL),
-        # CONSERVE: P3 paused; P0..P2 allowed.
-        (15, 5, Priority.P3, False, DegradationMode.CONSERVE),
-        (15, 5, Priority.P2, True, DegradationMode.CONSERVE),
-        (15, 5, Priority.P1, True, DegradationMode.CONSERVE),
-        (15, 5, Priority.P0, True, DegradationMode.CONSERVE),
-        # CRITICAL: P3 paused; P0..P2 allowed. (reserve=2 keeps 5 daily
-        # above the reserve floor and inside the CRITICAL band.)
-        (5, 5, Priority.P3, False, DegradationMode.CRITICAL),
-        (5, 5, Priority.P2, True, DegradationMode.CRITICAL),
-        # RESERVE_ONLY: only P0.
-        (1, 5, Priority.P3, False, DegradationMode.RESERVE_ONLY),
-        (1, 5, Priority.P2, False, DegradationMode.RESERVE_ONLY),
-        (1, 5, Priority.P1, False, DegradationMode.RESERVE_ONLY),
-        (1, 5, Priority.P0, True, DegradationMode.RESERVE_ONLY),
-        # Minute-budget exhausted: even P0 denied.
-        (90, 0, Priority.P0, False, DegradationMode.NORMAL),
+        (100, 21),
+        (500, 105),
+        (7500, 1575),
     ],
 )
-def test_decide_matrix(
-    daily_remaining: int | None,
-    minute_remaining: int | None,
-    priority: Priority,
-    expected_allowed: bool,
-    expected_mode: DegradationMode,
-) -> None:
-    decision = decide(
-        daily_remaining=daily_remaining,
-        daily_limit=100,
-        minute_remaining=minute_remaining,
-        minute_limit=10,
-        reserve=2,
-        thresholds=(10, 25, 50),
-        priority=priority,
-    )
-    assert decision.allowed is expected_allowed
-    assert decision.mode is expected_mode
-    assert decision.remaining_daily == daily_remaining
-    assert decision.remaining_minute == minute_remaining
+def test_percentage_thresholds_scale_with_actual_limit(limit: int, remaining: int) -> None:
+    """M4.1 §6: thresholds are PERCENTAGES of the actual provider limit.
+    21% of any limit lands in the CONSERVE band."""
+    decision = _decide(daily_remaining=remaining, daily_limit=limit, priority=Priority.P2)
+    assert decision.mode is DegradationMode.CONSERVE
+    assert decision.allowed is True
 
 
-def test_decide_denies_p3_in_conserve_with_reserve_reason() -> None:
-    decision = decide(
-        daily_remaining=15,
-        daily_limit=100,
-        minute_remaining=5,
-        minute_limit=10,
-        reserve=5,
-        thresholds=(10, 25, 50),
-        priority=Priority.P3,
-    )
-    assert decision.kind is QuotaDecisionKind.DENIED_LOW_PRIORITY_PAUSED
-    assert decision.reason == "conserve_p3_paused"
+def test_critical_reachable_and_pauses_p2_preserves_p1() -> None:
+    """Effective reserve is clamped into the CRITICAL band so CRITICAL
+    stays reachable; CRITICAL pauses P2/P3 but preserves P0/P1."""
+    # remaining 45 / limit 500 → 9% → CRITICAL.
+    p2 = _decide(daily_remaining=45, daily_limit=500, priority=Priority.P2)
+    assert p2.mode is DegradationMode.CRITICAL
+    assert p2.allowed is False
+    assert p2.kind is QuotaDecisionKind.DENIED_LOW_PRIORITY_PAUSED
+
+    p1 = _decide(daily_remaining=45, daily_limit=500, priority=Priority.P1)
+    assert p1.allowed is True
+
+    p3 = _decide(daily_remaining=45, daily_limit=500, priority=Priority.P3)
+    assert p3.allowed is False
 
 
-def test_decide_denies_reserve_only_with_reserve_only_reason() -> None:
-    decision = decide(
-        daily_remaining=1,
-        daily_limit=100,
-        minute_remaining=5,
-        minute_limit=10,
-        reserve=5,
-        thresholds=(10, 25, 50),
-        priority=Priority.P2,
-    )
-    assert decision.kind is QuotaDecisionKind.DENIED_RESERVE_ONLY
-    assert decision.reason == "reserve_only"
+def test_reserve_protects_only_p0() -> None:
+    p0 = _decide(daily_remaining=8, priority=Priority.P0)
+    assert p0.mode is DegradationMode.RESERVE_ONLY
+    assert p0.allowed is True
+
+    p2 = _decide(daily_remaining=8, priority=Priority.P2)
+    assert p2.allowed is False
+    assert p2.kind is QuotaDecisionKind.DENIED_RESERVE_ONLY
 
 
-def test_decide_no_remaining_denies_p0() -> None:
-    decision = decide(
-        daily_remaining=90,
-        daily_limit=100,
-        minute_remaining=0,
-        minute_limit=10,
-        reserve=5,
-        thresholds=(10, 25, 50),
+def test_conserve_pauses_p3() -> None:
+    # remaining 20 / limit 100 → 20% → CONSERVE band (<=25).
+    p3 = _decide(daily_remaining=20, priority=Priority.P3)
+    assert p3.mode is DegradationMode.CONSERVE
+    assert p3.allowed is False
+    p2 = _decide(daily_remaining=20, priority=Priority.P2)
+    assert p2.allowed is True
+
+
+def test_estimated_cost_can_deny_daily_budget() -> None:
+    decision = _decide(
+        daily_remaining=3,
         priority=Priority.P0,
+        estimated_cost=5,
     )
+    assert decision.allowed is False
     assert decision.kind is QuotaDecisionKind.DENIED_NO_REMAINING
 
 
-def test_parse_provider_headers_api_football() -> None:
-    from sports_intelligence.collectors.quota import parse_provider_headers
-
-    parsed = parse_provider_headers(
-        {
-            "x-ratelimit-requests-remaining": "42",
-            "x-ratelimit-requests-limit": "100",
-        }
+def test_minute_budget_exhausted_denies_p0() -> None:
+    decision = _decide(
+        daily_remaining=90,
+        minute_remaining=0,
+        priority=Priority.P0,
     )
-    assert parsed.daily_remaining == 42
-    assert parsed.daily_limit == 100
+    assert decision.allowed is False
+    assert decision.kind is QuotaDecisionKind.DENIED_NO_REMAINING
 
 
-def test_parse_provider_headers_the_odds_api() -> None:
-    from sports_intelligence.collectors.quota import parse_provider_headers
-
-    parsed = parse_provider_headers({"x-requests-remaining": "200", "x-requests-limit": "500"})
-    assert parsed.daily_remaining == 200
-    assert parsed.daily_limit == 500
+def test_effective_reserve_clamps_to_critical_band() -> None:
+    assert effective_reserve(daily_limit=100, reserve=20, critical_pct=10) == 10
+    assert effective_reserve(daily_limit=500, reserve=20, critical_pct=10) == 20
+    assert effective_reserve(daily_limit=7500, reserve=20, critical_pct=10) == 20
 
 
-def test_parse_provider_headers_empty() -> None:
-    from sports_intelligence.collectors.quota import parse_provider_headers
+def test_parse_headers_api_football_daily_and_minute() -> None:
+    obs = parse_quota_headers(
+        "api_football",
+        {
+            "x-ratelimit-requests-limit": "100",
+            "x-ratelimit-requests-remaining": "42",
+            "x-ratelimit-limit": "300",
+            "x-ratelimit-remaining": "297",
+        },
+    )
+    assert obs.daily_limit == 100
+    assert obs.daily_remaining == 42
+    assert obs.minute_limit == 300
+    assert obs.minute_remaining == 297
+    assert obs.last_call_cost is None
 
-    parsed = parse_provider_headers({})
-    assert parsed.daily_remaining is None
-    assert parsed.daily_limit is None
+
+def test_parse_headers_the_odds_api_uses_cost_not_minute() -> None:
+    """M4.1 §7: x-requests-last is the COST of the last call, never a
+    per-minute budget."""
+    obs = parse_quota_headers(
+        "theoddsapi",
+        {
+            "x-requests-remaining": "492",
+            "x-requests-used": "8",
+            "x-requests-last": "5",
+        },
+    )
+    assert obs.daily_remaining == 492
+    assert obs.last_call_cost == 5
+    assert obs.minute_remaining is None
+    assert obs.daily_limit is None
+
+
+def test_parse_headers_empty() -> None:
+    obs = parse_quota_headers("api_football", {})
+    assert obs.daily_remaining is None
+    assert obs.daily_limit is None

@@ -63,8 +63,10 @@ def test_beat_schedule_morning_at_09_00_warsaw_when_enabled() -> None:
     schedule = application.conf.beat_schedule
     assert "discovery.morning" in schedule
     entry = schedule["discovery.morning"]
-    assert entry["task"] == "sports.discover_fixtures"
-    assert entry["options"]["queue"] == "sports_io"
+    # Beat targets the argument-free scheduler wrapper (M4.1 §1).
+    assert entry["task"] == "sports.schedule_discovery"
+    assert entry["args"] == ["morning"]
+    assert entry["options"]["queue"] == "control"
     morning = entry["schedule"]
     assert 9 in morning.hour
     assert 0 in morning.minute
@@ -78,8 +80,9 @@ def test_beat_schedule_refresh_at_13_00_when_enabled() -> None:
     )
     application = create_celery_app(settings)
     refresh = application.conf.beat_schedule["discovery.refresh"]
-    assert refresh["task"] == "sports.discover_fixtures"
-    assert refresh["options"]["queue"] == "sports_io"
+    assert refresh["task"] == "sports.schedule_discovery"
+    assert refresh["args"] == ["refresh"]
+    assert refresh["options"]["queue"] == "control"
     assert 13 in refresh["schedule"].hour
     assert 0 in refresh["schedule"].minute
 

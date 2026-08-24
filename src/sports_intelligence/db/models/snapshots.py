@@ -204,6 +204,11 @@ class LineupSnapshot(Base):
     confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     formation: Mapped[str | None] = mapped_column(String(16), nullable=True)
     players_jsonb: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    # NOT_YET_PUBLISHED / CONFIRMED / UNSUPPORTED / PROVIDER_ERROR —
+    # absence of a lineup is never an empty confirmed lineup.
+    publication_state: Mapped[str] = mapped_column(
+        String(24), nullable=False, server_default=text("'NOT_YET_PUBLISHED'")
+    )
 
 
 class OddsSnapshotSet(Base):
@@ -298,6 +303,8 @@ class ExternalApiRequest(Base):
     priority: Mapped[str] = mapped_column(String(2), nullable=False)
     degradation_mode: Mapped[str] = mapped_column(String(16), nullable=False)
     error_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    estimated_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    actual_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class QuotaBucket(Base):
@@ -323,3 +330,35 @@ class QuotaBucket(Base):
     limit_value: Mapped[int] = mapped_column(Integer, nullable=False)
     remaining_value: Mapped[int] = mapped_column(Integer, nullable=False)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class OddsEventMapping(Base):
+    """Deterministic mapping: provider event id ↔ internal fixture.
+
+    Resolved strictly (teams + kickoff, ambiguity → error, never guess)
+    and persisted for reuse so subsequent odds polls skip resolution.
+    """
+
+    __tablename__ = "odds_event_mappings"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "provider_event_id",
+            name="uq_odds_event_mappings_provider_event",
+        ),
+        Index("ix_odds_event_mappings_fixture", "fixture_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    sport_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider_event_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    fixture_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fixtures.id", ondelete="CASCADE"), nullable=False
+    )
+    home_team_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    away_team_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    commence_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    mapped_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )

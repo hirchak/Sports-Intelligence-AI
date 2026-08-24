@@ -959,3 +959,60 @@ button-based menus and a Back button on every screen.
 
 **Next action**
 - Independent review of M4 (diff `main..build/m4`); merge + tag `v0.5-m4` after PASS; M5 only with explicit user approval.
+
+---
+
+### 2026-08-24 — ox-alpha (OpenCode)
+
+**Milestone:** M4.1
+**Task:** Corrective implementation after independent M4 review **FAIL** (14 required fixes)
+
+**Completed**
+- 1. Scheduled discovery: `sports.schedule_discovery(slot)` wrapper (morning/refresh distinct jobs, full immutable tuple, config-version safety, FAILED on enqueue error); Beat rewired to wrapper.
+- 2. No fake data in real paths: extended `SportsDataProvider` protocol with typed category methods; real `ApiFootballProvider` adapters (standings/team stats/injuries/lineups/completed fixtures); collectors resolve external ids via `provider_entity_ids`; sentinel MockTransport regression tests.
+- 3. Team-specific persistence: one fixture request → one snapshot PER team (never merged); team_id-aware freshness.
+- 4. Lineup windows: `lineup_poll_due` state machine (NOT_YET_PUBLISHED/CONFIRMED/UNSUPPORTED/PROVIDER_ERROR), no started-fixture polling, per-window refresh (T-120 unconfirmed → T-60 due → confirmed stops), Warsaw calendar-day→UTC planner boundaries, phase propagated into CollectorContext.
+- 5. Coalescing: lock is a budget boundary (no fetch-anyway, LockContendedError), winner double-check, waiters reuse winner's REAL persisted snapshot id, freshness hit returns real id, evidence committed before snapshot persist (payload_id FK), 10-caller concurrency test (1 call/1 snapshot/1 ledger/same UUID).
+- 6. Quota: pct-of-actual-limit thresholds (100/500/7500), CONSERVE=P3, CRITICAL=P2/P3, RESERVE_ONLY=P0, effective_reserve keeps CRITICAL reachable, atomic Redis reservation with estimated cost, concurrent reservation test (10 workers → 4 allowed).
+- 7. Provider-specific headers: API-Football daily+minute; Odds remaining/used/last=cost.
+- 8. Ledger telemetry: started_at before request, duration incl HTTP, status/error class/headers/cost, failures visible.
+- 9. The Odds API: sport_key per league, strict event resolution (no-match/ambiguity = error), persisted odds_event_mappings, correct URL path (never internal UUID).
+- 10. Evidence linkage: content-dedup raw payloads + observation rows; snapshots carry payload_id.
+- 11. job_attempts: sequential numbering (1,2,3…), real hostname:pid, loud failure on uniqueness exhaustion.
+- 12. Scanner dispatches `sports.collect` jobs with job/attempt state; exception-safe cleanup (redis/providers/engine).
+- 13. Form inputs from deterministic completed-result history (W/D/L, no LLM/settlement).
+- 14. Status API: real degradation mode, both-team freshness, publication-aware lineup availability, Priority enum, zero external calls on reads.
+
+**Files changed**
+- src: collectors/{framework,locks,quota,ids,sports_collectors,odds_collector,pre_match_scan}.py; providers/{base,dto,errors}.py; providers/sports/{api_football,mock}.py; providers/odds/{base,mock,parse,factory}.py; workers/tasks/{scheduling,collect,pre_match,sports}.py; workers/{celery_app,utils}.py; pipelines/discover_fixtures.py; api/routes/status.py; db/models/{snapshots,__init__}.py; db/migrations/versions/0005_*.py (new); core/league_config.py
+- tests: unit/{test_scheduled_discovery,test_api_football_categories,test_odds_mapping}.py (new); collectors/{test_framework,test_quota,test_sports_collectors}.py (rewritten); integration/test_m4_collectors.py (rewritten + new M4.1 tests); test_celery_app.py; test_provider_protocols.py
+- docs: CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, AI_WORKLOG
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (242)
+- integration suite (`sports_intel_test` + redis db15) → PASS (41)
+- `uv run ruff check .` / `ruff format --check .` → PASS
+- `uv run mypy src` → PASS (86 files, strict)
+- `docker compose config -q` (+telegram profile) → PASS
+- secret scan → clean
+
+**Live integrations verified**
+- none this session (MOCK-only by design; live Odds API only with credentials).
+
+**Mocked only**
+- FormInputs completed-history (real provider path contract-tested);
+- The Odds API network path (contract-tested against documented v4 shape).
+
+**Known issues**
+- Pre-match scan enqueues per (collector, lock-key, phase); odds batch fan-out across fixtures is a future optimization.
+- No live smoke for real API-Football category endpoints (bounded live smoke deferred; contract tests cover normalization).
+
+**Spec / ADR deviations**
+- none new; implements reviewer-fixed semantics for spec 11 (pct thresholds), 14 (no-data), 7 (windows).
+
+**Git**
+- branch: build/m4
+- commit: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent re-review of M4.1 (diff `main..build/m4`); merge + tag `v0.5-m4` after PASS; M5 only with explicit user approval.

@@ -250,3 +250,115 @@ def _canonical_for_outcome(
 def _raw_ref(payload: Mapping[str, object]) -> str | None:
     event_id = payload.get("id")
     return event_id if isinstance(event_id, str) else None
+
+
+_ODDS_HEADER_NAMES = (
+    "x-requests-remaining",
+    "x-requests-used",
+    "x-requests-last",
+)
+
+
+def parse_event_odds_payload(
+    payload: Mapping[str, object],
+    *,
+    provider: str,
+    rate_headers: dict[str, str] | None = None,
+) -> OddsProviderResult:
+    """Parse a single-event odds response WITHOUT market whitelist
+    (the request itself already scoped markets)."""
+    event_id = payload.get("id")
+    if not isinstance(event_id, str) or not event_id:
+        raise ProviderResponseError("the-odds-api odds payload missing event id")
+    bookmakers_raw = payload.get("bookmakers")
+    if not isinstance(bookmakers_raw, list):
+        raise ProviderResponseError("odds payload is missing the bookmakers list")
+
+    captured_at = _parse_last_update(payload.get("last_update"))
+    prices: list[OddsSelectionPrice] = []
+    home_team = payload.get("home_team")
+    away_team = payload.get("away_team")
+    seen: set[tuple[str, str, str, str]] = set()
+
+    for bookmaker_raw in bookmakers_raw:
+        if not isinstance(bookmaker_raw, Mapping):
+            raise ProviderResponseError("bookmaker entry is not an object")
+        bookmaker_key = bookmaker_raw.get("key") or bookmaker_raw.get("title")
+        bookmaker = _str(bookmaker_key, label="bookmaker")
+        markets_raw = bookmaker_raw.get("markets")
+        if not isinstance(markets_raw, list):
+            continue
+
+        for market_raw in markets_raw:
+            if not isinstance(market_raw, Mapping):
+                continue
+            provider_key = market_raw.get("key")
+            if not isinstance(provider_key, str):
+                continue
+
+            outcomes_raw = market_raw.get("outcomes")
+            if not isinstance(outcomes_raw, list):
+                continue
+
+            for outcome_raw in outcomes_raw:
+                if not isinstance(outcome_raw, Mapping):
+                    continue
+                if provider_key in _PROVIDER_TO_CANONICAL:
+                    canonical: str | None = _PROVIDER_TO_CANONICAL[provider_key]
+                elif provider_key == "totals":
+                    canonical = _total_market_for(
+                        outcome_raw.get("point"),
+                        (Decimal("1.5"), Decimal("2.5")),
+                    )
+                else:
+                    canonical = None
+                if canonical is None:
+                    # Unknown non-totals market or untracked line — skip.
+                    continue
+                name = _str(outcome_raw.get("name"), label="outcome")
+                try:
+                    selection = _canonical_selection(canonical, name, home_team, away_team)
+                except ProviderResponseError:
+                    continue
+                decimal_odds = _as_decimal(outcome_raw.get("price"), label="decimal odds")
+                line = (
+                    _as_decimal(outcome_raw.get("point"), label="totals point")
+                    if canonical.startswith("ou_")
+                    else None
+                )
+                dedupe_key = (
+                    bookmaker,
+                    canonical,
+                    selection,
+                    str(line) if line is not None else "",
+                )
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                prices.append(
+                    OddsSelectionPrice(
+                        bookmaker=bookmaker,
+                        market=canonical,
+                        selection=selection,
+                        line=line,
+                        decimal_odds=decimal_odds,
+                    )
+                )
+
+    headers = {k: v for k, v in (rate_headers or {}).items() if k in _ODDS_HEADER_NAMES}
+    return OddsProviderResult(
+        provider=provider,
+        fixture_id=event_id,
+        captured_at=captured_at,
+        prices=tuple(prices),
+        raw_payload_ref=_raw_ref(payload),
+        raw_payload=dict(payload),
+        rate_headers=headers,
+    )
+
+
+def _safe_decimal(value: object) -> Decimal:
+    try:
+        return Decimal(str(value))
+    except Exception:  # noqa: BLE001
+        return Decimal("0")

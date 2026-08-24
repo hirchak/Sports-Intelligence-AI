@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from pydantic import BaseModel
@@ -11,8 +11,10 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from sports_intelligence.collectors.quota import QuotaManager  # noqa: E402
 from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.league_config import LeagueConfig, LeagueConfigEntry
+from sports_intelligence.core.phases import Priority
 from sports_intelligence.db.models import Job
 from sports_intelligence.db.repositories.discovery import (
     get_or_create_team_id,
@@ -44,11 +46,15 @@ class FixtureDiscoveryService:
         session_factory: async_sessionmaker[AsyncSession],
         league_config: LeagueConfig,
         app_timezone: str = "Europe/Warsaw",
+        quota: QuotaManager | None = None,
+        priority: Priority = Priority.P1,
     ) -> None:
         self._provider = provider
         self._session_factory = session_factory
         self._league_config = league_config
         self._app_timezone = app_timezone
+        self._quota = quota
+        self._priority = priority
 
     async def discover(self, fixture_date: date) -> DiscoverySummary:
         provider_name = self._provider.capabilities.provider
@@ -67,9 +73,48 @@ class FixtureDiscoveryService:
                 raw_payload_stored=False,
             )
 
-        result = await self._provider.get_fixtures_by_date(
-            fixture_date, timezone_name=self._app_timezone
-        )
+        # Quota policy gates EVERY provider call (M4.1 §1): scheduled and
+        # manual discovery both pass through the reservation + ledger.
+        if self._quota is not None:
+            decision = await self._quota.reserve(
+                provider=provider_name,
+                priority=self._priority,
+                estimated_cost=1,
+            )
+            if decision.denied:
+                from sports_intelligence.collectors.quota import QuotaUnavailableError
+
+                raise QuotaUnavailableError(
+                    f"quota denied for discovery ({decision.reason})", decision=decision
+                )
+
+        started_at = datetime.now(UTC)
+        try:
+            result = await self._provider.get_fixtures_by_date(
+                fixture_date, timezone_name=self._app_timezone
+            )
+        except Exception as exc:
+            if self._quota is not None:
+                await self._quota.record_failure(
+                    provider=provider_name,
+                    endpoint_category="fixtures_by_date",
+                    started_at=started_at,
+                    exc=exc,
+                    priority=self._priority,
+                    estimated_cost=1,
+                )
+            raise
+        finished_at = datetime.now(UTC)
+        if self._quota is not None:
+            await self._quota.record_success(
+                provider=provider_name,
+                endpoint_category="fixtures_by_date",
+                started_at=started_at,
+                finished_at=finished_at,
+                headers=result.metadata.rate_headers,
+                priority=self._priority,
+                estimated_cost=1,
+            )
         eligible = [
             fixture for fixture in result.fixtures if fixture.provider_league_id in enabled_by_id
         ]
