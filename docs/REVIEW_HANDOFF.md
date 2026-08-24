@@ -13,6 +13,8 @@ Update it before every milestone review.
 **Development phase:** LOCAL DEVELOPMENT ONLY  
 **Milestone:** M4.1 — corrective implementation after M4 review **FAIL**  
 **Review target branch:** `build/m4` (NOT merged to main)  
+**Review target commit:** `2fa0316` — M4.1 corrective fixes after M4
+review FAIL  
 **Previous accepted state:** `main` = `7d23c9d` (M3 accepted via PR #5)  
 **Review scope:** diff `main..build/m4` (M4 + M4.1)
 
