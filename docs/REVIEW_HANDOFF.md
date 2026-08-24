@@ -11,8 +11,10 @@ Update it before every milestone review.
 
 **Ready for review:** YES  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M4 — Automated Match Data Collection + Odds + Quota/Freshness
-(branch `build/m4`, NOT merged to main)  
+**Milestone:** M4 — Automated Match Data Collection + Odds + Quota/Freshness  
+**Review target branch:** `build/m4` (NOT merged to main)  
+**Review target commit:** `d0ea666` — M4: automated collection, odds,
+quota/freshness  
 **Previous accepted state:** `main` = `7d23c9d` (M3 accepted via PR #5)  
 **Review scope:** diff `main..build/m4`
 
