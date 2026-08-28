@@ -255,11 +255,23 @@ class ApiFootballProvider:
             raise ProviderTransportError("api-football transport failure") from exc
 
         if response.status_code in (401, 403):
-            raise ProviderAuthError(f"api-football auth failed (status {response.status_code})")
+            raise ProviderAuthError(
+                f"api-football auth failed (status {response.status_code})",
+                status_code=response.status_code,
+                quota_headers=_rate_headers(response.headers),
+            )
         if response.status_code == 429:
-            raise ProviderRateLimitError("api-football rate limit reached")
+            raise ProviderRateLimitError(
+                "api-football rate limit reached",
+                status_code=429,
+                quota_headers=_rate_headers(response.headers),
+            )
         if response.status_code >= 500:
-            raise ProviderServerError(f"api-football server error (status {response.status_code})")
+            raise ProviderServerError(
+                f"api-football server error (status {response.status_code})",
+                status_code=response.status_code,
+                quota_headers=_rate_headers(response.headers),
+            )
         return response
 
     @staticmethod

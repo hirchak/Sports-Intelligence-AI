@@ -7,14 +7,26 @@ class ProviderError(Exception):
     `status_code` carries the HTTP status when the failure originates
     from a response (None for transport/timeout failures). The request
     ledger persists this value as telemetry.
+
+    `quota_headers` carries SAFE provider rate-limit headers observed on
+    the failing response (auth headers / API keys are never included).
     """
 
     status_code: int | None = None
+    quota_headers: dict[str, str] | None = None
 
-    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        quota_headers: dict[str, str] | None = None,
+    ) -> None:
         super().__init__(message)
         if status_code is not None:
             self.status_code = status_code
+        if quota_headers is not None:
+            self.quota_headers = quota_headers
 
 
 class ProviderConfigError(ProviderError):

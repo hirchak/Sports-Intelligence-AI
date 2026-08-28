@@ -26,6 +26,12 @@ logger = logging.getLogger(__name__)
 
 _ODDS_HEADER_NAMES = ("x-requests-remaining", "x-requests-used", "x-requests-last")
 
+
+def _odds_rate_headers(headers: httpx.Headers) -> dict[str, str]:
+    lowered = {k.lower(): v for k, v in headers.items()}
+    return {name: lowered[name] for name in _ODDS_HEADER_NAMES if name in lowered}
+
+
 _SILENCED_HTTPX_LOGGERS: set[str] = set()
 
 
@@ -85,6 +91,15 @@ class TheOddsApiProvider:
     def estimate_cost(self, *, markets: Sequence[str], regions: Sequence[str]) -> int:
         """The Odds API credits ≈ regions × markets requested."""
         return max(1, len(set(regions)) * len(set(markets)))
+
+    def request_markets(self, markets: Sequence[str]) -> Sequence[str]:
+        """Provider-owned translation (M4.3 §2): guarantee the outgoing
+        request can retrieve exact O/U 1.5 AND 2.5 lines by adding
+        `alternate_totals` whenever `totals` is requested."""
+        keys = list(markets)
+        if "totals" in keys and "alternate_totals" not in keys:
+            keys.append("alternate_totals")
+        return keys
 
     async def resolve_event(
         self,
@@ -256,15 +271,21 @@ class TheOddsApiProvider:
             raise ProviderAuthError(
                 f"the-odds-api auth failed (status {response.status_code})",
                 status_code=response.status_code,
+                quota_headers=_odds_rate_headers(response.headers),
             )
         if response.status_code == 429:
-            raise ProviderRateLimitError("the-odds-api rate limit reached", status_code=429)
+            raise ProviderRateLimitError(
+                "the-odds-api rate limit reached",
+                status_code=429,
+                quota_headers=_odds_rate_headers(response.headers),
+            )
         if response.status_code == 404:
             raise EventNotFoundError(f"the-odds-api path not found: {path}")
         if response.status_code >= 500:
             raise ProviderServerError(
                 f"the-odds-api server error (status {response.status_code})",
                 status_code=response.status_code,
+                quota_headers=_odds_rate_headers(response.headers),
             )
         return response
 
@@ -277,13 +298,35 @@ __all__ = [
 
 
 def build_odds_provider(settings: Any) -> Any:
+    """Wire the configured odds provider (M4.3 §1).
+
+    - APP_ENV=mock + empty/mock → MockOddsProvider allowed;
+    - APP_ENV=sandbox/live_local + empty → returns None (odds capability
+      DISABLED — never a silent mock);
+    - APP_ENV=sandbox/live_local + mock → requires the explicit
+      `odds_allow_mock_override` flag, otherwise ProviderConfigError.
+    """
     from sports_intelligence.providers.errors import ProviderConfigError
     from sports_intelligence.providers.odds.mock import MockOddsProvider
 
     name = (settings.odds_provider or "").strip().lower()
-    if name == "" or name == "mock":
-        return MockOddsProvider()
+    if name == "":
+        if settings.app_env == "mock":
+            return MockOddsProvider()
+        return None
+    if name == "mock":
+        if settings.app_env == "mock":
+            return MockOddsProvider()
+        if settings.odds_allow_mock_override:
+            return MockOddsProvider()
+        raise ProviderConfigError(
+            "ODDS_PROVIDER=mock in a non-mock environment requires "
+            "ODDS_ALLOW_MOCK_OVERRIDE=true (intentional mock); refusing "
+            "to silently persist mock odds as a real local run"
+        )
     if name in ("the_odds_api", "theoddsapi"):
+        if not settings.odds_api_key:
+            raise ProviderConfigError("ODDS_PROVIDER=the_odds_api requires ODDS_API_KEY")
         return TheOddsApiProvider(
             api_key=settings.odds_api_key,
             base_url=settings.odds_provider_base_url,

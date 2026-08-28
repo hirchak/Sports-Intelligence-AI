@@ -32,6 +32,7 @@ from sports_intelligence.core.time import local_today
 from sports_intelligence.db.session import create_engine, create_session_factory
 from sports_intelligence.pipelines.discover_fixtures import (
     create_or_get_job,
+    transition_job_status_if,
     update_job_status,
 )
 from sports_intelligence.workers.celery_app import celery_app
@@ -78,7 +79,19 @@ async def _run_schedule(slot: str) -> dict[str, object]:
             await session.commit()
             job_id = str(job.id)
 
-        if created:
+        # M4.3 §7: a stranded FAILED scheduled job is re-enqueued under
+        # the SAME uuid via CAS (FAILED → PENDING); RUNNING/SUCCEEDED
+        # are never downgraded.
+        enqueue_needed = created
+        if not created:
+            async with factory() as session:
+                requeued = await transition_job_status_if(
+                    session, job_id, JobStatus.FAILED, JobStatus.PENDING
+                )
+                await session.commit()
+            enqueue_needed = requeued
+
+        if enqueue_needed:
             try:
                 from sports_intelligence.workers.tasks.sports import discover_fixtures_task
 

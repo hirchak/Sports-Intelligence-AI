@@ -84,6 +84,12 @@ class MockOddsProvider:
         # The Odds API credits ≈ regions × markets; mirror that in MOCK.
         return max(1, len(set(regions)) * len(set(markets)))
 
+    def request_markets(self, markets: Sequence[str]) -> Sequence[str]:
+        keys = list(markets)
+        if "totals" in keys and "alternate_totals" not in keys:
+            keys.append("alternate_totals")
+        return keys
+
     async def fetch_event_odds(
         self,
         *,

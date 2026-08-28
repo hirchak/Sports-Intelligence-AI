@@ -115,11 +115,16 @@ def parse_quota_headers(provider: str, headers: dict[str, str] | None) -> QuotaO
         )
 
     if provider in ("theoddsapi", "the_odds_api"):
+        # M4.3 §6: the daily allowance is inferred from the official
+        # reset semantics — x-requests-used + x-requests-remaining.
         # x-requests-last is the CREDIT COST of the last call — never a
-        # per-minute budget.
+        # per-minute budget. used=8 + remaining=492 → limit 500.
+        used = _int_header(headers, "x-requests-used")
+        remaining = _int_header(headers, "x-requests-remaining")
+        inferred_limit = used + remaining if (used is not None and remaining is not None) else None
         return QuotaObservation(
-            daily_remaining=_int_header(headers, "x-requests-remaining"),
-            daily_limit=None,
+            daily_remaining=remaining,
+            daily_limit=inferred_limit,
             minute_remaining=None,
             minute_limit=None,
             last_call_cost=_int_header(headers, "x-requests-last"),
@@ -281,6 +286,11 @@ class _ObservedBuckets:
     daily_limit: int | None
     minute_remaining: int | None
     minute_limit: int | None
+    # Observation generation: the observed_at of the authoritative
+    # bucket. Reservations are keyed to this generation so a NEWER
+    # observation always starts a fresh reservation counter (M4.3 §5).
+    daily_generation: str | None = None
+    minute_generation: str | None = None
 
 
 class QuotaManager:
@@ -343,6 +353,7 @@ class QuotaManager:
                 QuotaBucket.remaining_value,
                 QuotaBucket.limit_value,
                 QuotaBucket.window,
+                QuotaBucket.observed_at,
             )
             .where(QuotaBucket.provider == provider)
             .order_by(QuotaBucket.observed_at.desc())
@@ -351,20 +362,26 @@ class QuotaManager:
         rows = (await session.execute(stmt)).all()
         daily_remaining: int | None = None
         daily_limit: int | None = None
+        daily_generation: str | None = None
         minute_remaining: int | None = None
         minute_limit: int | None = None
-        for remaining, limit, window in rows:
+        minute_generation: str | None = None
+        for remaining, limit, window, observed_at in rows:
             if window == "daily" and daily_remaining is None:
                 daily_remaining = int(remaining)
                 daily_limit = int(limit)
+                daily_generation = str(observed_at)
             elif window == "minute" and minute_remaining is None:
                 minute_remaining = int(remaining)
                 minute_limit = int(limit)
+                minute_generation = str(observed_at)
         return _ObservedBuckets(
             daily_remaining=daily_remaining,
             daily_limit=daily_limit,
             minute_remaining=minute_remaining,
             minute_limit=minute_limit,
+            daily_generation=daily_generation,
+            minute_generation=minute_generation,
         )
 
     async def observe(self, provider: str) -> tuple[int | None, int | None, DegradationMode]:
@@ -424,8 +441,15 @@ class QuotaManager:
             return base_decision
 
         now = self._clock()
-        day_key = f"quota:{provider}:daily:{now:%Y%m%d}"
-        minute_key = f"quota:{provider}:minute:{now:%Y%m%d%H%M}"
+        # M4.3 §5: reservation counters are keyed to the OBSERVATION
+        # GENERATION (the observed_at of the authoritative bucket), not
+        # midnight. A newer observation always starts a fresh counter —
+        # reservations are "since this observation", never subtracted
+        # twice against a moving baseline.
+        day_generation = buckets.daily_generation or f"init:{now:%Y%m%d}"
+        minute_generation = buckets.minute_generation or f"init:{now:%Y%m%d%H%M}"
+        day_key = f"quota:{provider}:daily:{day_generation}"
+        minute_key = f"quota:{provider}:minute:{minute_generation}"
 
         daily_limit = buckets.daily_limit or self._settings.quota_provider_daily_limit_default
         # Baseline = latest observed remaining; reservations since that

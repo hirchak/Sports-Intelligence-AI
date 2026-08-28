@@ -17,7 +17,7 @@ Rules:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 _MIN_BUCKET_SECONDS = 300
 
@@ -52,13 +52,17 @@ def refresh_opportunity_suffix(
     now: datetime,
     windows_minutes: list[int],
     ttl_seconds: int,
+    latest_captured_at: datetime | None = None,
 ) -> str:
     """Deterministic suffix for a collector job's idempotency key.
 
     - `lineups` → the active T-window id (`t120` / `t60` / `t20`) or
       `no_window`;
-    - everything else → `b<epoch bucket>` where the bucket is tied to
-      the category TTL so expired snapshots always open a new bucket.
+    - everything else → `due:<epoch>` where `due` is the ACTUAL refresh
+      due opportunity: `latest_captured_at + effective TTL` while the
+      snapshot is fresh, or `now` once it has gone stale (M4.3 §4). A
+      snapshot that became stale is eligible on the NEXT scanner run —
+      never suppressed by an unrelated global bucket boundary.
     """
     if collector_name == "lineups":
         if kickoff_at is None:
@@ -67,9 +71,18 @@ def refresh_opportunity_suffix(
             kickoff_at=kickoff_at, now=now, windows_minutes=windows_minutes
         )
         return window or "no_window"
-    bucket_seconds = max(int(ttl_seconds) // 2, _MIN_BUCKET_SECONDS)
-    bucket = int(_aware(now).timestamp() // bucket_seconds)
-    return f"b{bucket}"
+    moment = _aware(now)
+    if latest_captured_at is None:
+        # No snapshot yet: a single stable opportunity until a collector
+        # persists one — repeated scans dedupe (M4.3 §7 retry keeps the
+        # same uuid); once a snapshot exists the due generation governs.
+        return "due:missing"
+    captured = _aware(latest_captured_at)
+    due = captured + timedelta(seconds=max(ttl_seconds, 1))
+    if moment > due:
+        # Snapshot went stale: eligible on the next scanner run.
+        due = moment
+    return f"due:{int(due.timestamp())}"
 
 
 def _aware(value: datetime) -> datetime:

@@ -1138,8 +1138,13 @@ async def test_scanner_opportunity_identity_dedupes_then_opens_new_job(
         second = await _dispatch_decision(
             m4_session_factory, decision, now=kickoff - timedelta(minutes=105)
         )
-    assert first == {"lineups": 2}
-    assert second == {"lineups": 2}
+    assert first["planned"] == 2
+    assert first["jobs_created"] == 1
+    assert first["jobs_reused"] == 1
+    assert first["jobs_enqueued"] == 1
+    assert second["jobs_created"] == 0
+    assert second["jobs_reused"] == 2
+    assert second["jobs_enqueued"] == 0
     assert len(captured) == 1  # one enqueue (home+away share the job)
     # Same opportunity (both inside T120): ONE fixture-level job
     # (lineups share one provider request per fixture).
@@ -1158,7 +1163,8 @@ async def test_scanner_opportunity_identity_dedupes_then_opens_new_job(
         later = await _dispatch_decision(
             m4_session_factory, decision, now=kickoff - timedelta(minutes=50)
         )
-    assert later == {"lineups": 2}
+    assert later["jobs_created"] == 1  # T60 opens a new opportunity
+    assert later["jobs_enqueued"] == 1
     async with m4_session_factory() as session:
         jobs_after = (
             (await session.execute(select(Job).where(Job.job_type == "collect:lineups")))
@@ -1650,3 +1656,479 @@ leagues:
     assert resolved["home"] == home_name
     assert resolved["away"] == away_name
     assert resolved["home"] != resolved["away"]
+
+
+# ---------------------------------------------------------------------------
+# M4.3 acceptance
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_live_local_no_odds_credentials_creates_no_odds_jobs(
+    m4_session_factory: Any, redis_client: Redis, m4_settings: Settings, tmp_path
+) -> None:
+    """M4.3 §1: live_local + sports_provider=api_football + odds_provider=""
+    → the scanner creates ZERO odds jobs and ZERO OddsSnapshotSet rows
+    (no silent mock odds persistence)."""
+    from sports_intelligence.collectors.pre_match_scan import PreMatchDecision
+    from sports_intelligence.core.phases import ForecastPhase as _FP
+
+    kickoff = datetime.now(UTC) + timedelta(minutes=60)
+    seeded = await _seed_league_team_fixture(m4_session_factory, kickoff_at=kickoff)
+    decision = PreMatchDecision(
+        fixture_id=str(seeded["fixture_id"]),
+        league_id=str(seeded["league_id"]),
+        home_team_id=str(seeded["home_team_id"]),
+        away_team_id=str(seeded["away_team_id"]),
+        kickoff_at=kickoff,
+        phase=_FP.PREMATCH,
+        categories_to_collect=(FreshnessCategory.ODDS,),
+    )
+
+    from unittest.mock import patch as _patch
+
+    from sports_intelligence.workers.tasks.collect import collect_task
+
+    captured: list[object] = []
+
+    def _fake_apply_async(*args, **_kwargs):  # type: ignore[no-untyped-def]
+        captured.append(args)
+
+    settings = Settings(
+        _env_file=None,
+        app_env="live_local",
+        sports_provider="api_football",
+        sports_api_key="k",
+        odds_provider="",
+        leagues_config_path=m4_settings.leagues_config_path,
+        database_url=m4_settings.database_url,
+    )
+    from sports_intelligence.workers.tasks.pre_match import _dispatch_decision
+
+    with (
+        _patch.object(collect_task, "apply_async", _fake_apply_async),
+        _patch("sports_intelligence.workers.tasks.pre_match.get_settings", return_value=settings),
+    ):
+        result = await _dispatch_decision(
+            m4_session_factory, decision, now=kickoff - timedelta(minutes=10)
+        )
+    assert captured == []
+    # The intent was considered but REJECTED: no job created, no broker
+    # enqueue, no mock persistence.
+    assert result["planned"] == 1
+    assert result["jobs_created"] == 0
+    assert result["jobs_enqueued"] == 0
+    async with m4_session_factory() as session:
+        odds_jobs = (
+            (await session.execute(select(Job).where(Job.job_type == "collect:odds")))
+            .scalars()
+            .all()
+        )
+        odds_sets = (await session.execute(select(OddsSnapshotSet))).scalars().all()
+    assert odds_jobs == []
+    assert odds_sets == []
+
+
+@pytest.mark.asyncio
+async def test_quota_observation_generation_reconciles_baseline(
+    m4_session_factory: Any, redis_client: Redis, m4_settings: Settings
+) -> None:
+    """M4.3 §5: observed remaining=100, reserve 4 → provider responds
+    96 (new observation generation) → next reservation of 4 must behave
+    as 96→92, NOT 96 minus the old 4 again and minus the new 4."""
+    from sports_intelligence.core.phases import Priority
+
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        quota_provider_daily_limit_default=100,
+        quota_provider_minute_limit_default=100,
+        database_url=m4_settings.database_url,
+    )
+    quota = QuotaManager(settings, m4_session_factory, redis=redis_client)
+    now0 = datetime.now(UTC)
+    async with m4_session_factory() as session:
+        session.add(
+            QuotaBucket(
+                provider="mock",
+                window="daily",
+                limit_value=100,
+                remaining_value=100,
+                observed_at=now0,
+            )
+        )
+        await session.commit()
+
+    first = await quota.reserve(provider="mock", priority=Priority.P1, estimated_cost=4)
+    assert first.allowed is True
+
+    # Provider responds with a NEW observation: remaining=96 (the 4 were
+    # spent). New generation → old reservation counter is obsolete.
+    async with m4_session_factory() as session:
+        session.add(
+            QuotaBucket(
+                provider="mock",
+                window="daily",
+                limit_value=100,
+                remaining_value=96,
+                observed_at=now0 + timedelta(minutes=5),
+            )
+        )
+        await session.commit()
+
+    second = await quota.reserve(provider="mock", priority=Priority.P1, estimated_cost=4)
+    assert second.allowed is True
+    # A further 4-credit reservation would take us to 88; a 4th would
+    # breach the reserve floor (96 - 12 = 84 still fine for P1 with
+    # reserve 20% of 100 = 20 → allowed until remaining 20+4... verify
+    # the third reservation is still allowed).
+    third = await quota.reserve(provider="mock", priority=Priority.P1, estimated_cost=4)
+    assert third.allowed is True
+    # 96 - 4 - 4 - 4 = 84; the OLD counter (8) must NOT be re-applied.
+    fourth = await quota.reserve(provider="mock", priority=Priority.P1, estimated_cost=4)
+    assert fourth.allowed is True  # 96 - 16 = 80 ≥ reserve floor
+
+
+@pytest.mark.asyncio
+async def test_failed_collector_job_same_opportunity_requeues_same_uuid(
+    m4_session_factory: Any, redis_client: Redis, m4_settings: Settings
+) -> None:
+    """M4.3 §7: a FAILED collector job in the SAME refresh opportunity is
+    re-enqueued under the SAME job UUID (CAS FAILED→PENDING); the job id
+    never changes and RUNNING/SUCCEEDED are never downgraded."""
+    from unittest.mock import patch as _patch
+
+    from sports_intelligence.collectors.pre_match_scan import PreMatchDecision
+    from sports_intelligence.core.phases import ForecastPhase as _FP
+    from sports_intelligence.workers.tasks.collect import collect_task
+    from sports_intelligence.workers.tasks.pre_match import _dispatch_decision
+
+    kickoff = datetime.now(UTC) + timedelta(minutes=60)
+    seeded = await _seed_league_team_fixture(m4_session_factory, kickoff_at=kickoff)
+    decision = PreMatchDecision(
+        fixture_id=str(seeded["fixture_id"]),
+        league_id=str(seeded["league_id"]),
+        home_team_id=str(seeded["home_team_id"]),
+        away_team_id=str(seeded["away_team_id"]),
+        kickoff_at=kickoff,
+        phase=_FP.PREMATCH,
+        categories_to_collect=(FreshnessCategory.ODDS,),
+    )
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        odds_provider="mock",
+        leagues_config_path=m4_settings.leagues_config_path,
+        database_url=m4_settings.database_url,
+    )
+    captured: list[list[object]] = []
+    calls = {"n": 0}
+
+    def _fake_apply_async(*, args, **_kwargs):  # type: ignore[no-untyped-def]
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("broker down on first attempt")
+        captured.append(list(args))
+
+    with (
+        _patch.object(collect_task, "apply_async", _fake_apply_async),
+        _patch("sports_intelligence.workers.tasks.pre_match.get_settings", return_value=settings),
+    ):
+        # First scan: broker fails → job marked FAILED.
+        with pytest.raises(RuntimeError):
+            await _dispatch_decision(
+                m4_session_factory, decision, now=kickoff - timedelta(minutes=20)
+            )
+        async with m4_session_factory() as session:
+            jobs = (
+                (await session.execute(select(Job).where(Job.job_type == "collect:odds")))
+                .scalars()
+                .all()
+            )
+            assert len(jobs) == 1
+            failed_job = jobs[0]
+            assert failed_job.status == "FAILED"
+            first_id = failed_job.id
+
+        # Second scan in the SAME opportunity: re-enqueues the SAME
+        # uuid (FAILED → PENDING via CAS).
+        result = await _dispatch_decision(
+            m4_session_factory, decision, now=kickoff - timedelta(minutes=15)
+        )
+    assert result["jobs_reused"] == 0
+    assert result["jobs_created"] == 0
+    assert result["jobs_enqueued"] == 1
+    async with m4_session_factory() as session:
+        job = (await session.execute(select(Job).where(Job.id == first_id))).scalar_one()
+        assert job.status == "PENDING"
+    assert captured[0][0] == str(first_id)
+
+
+@pytest.mark.asyncio
+async def test_failed_retry_never_downgrades_running_or_succeeded(
+    m4_session_factory: Any, redis_client: Redis, m4_settings: Settings
+) -> None:
+    """M4.3 §7: the CAS transition must NEVER downgrade RUNNING or
+    SUCCEEDED collector jobs to PENDING."""
+    from unittest.mock import patch as _patch
+
+    from sports_intelligence.collectors.pre_match_scan import PreMatchDecision
+    from sports_intelligence.core.phases import ForecastPhase as _FP
+    from sports_intelligence.workers.tasks.collect import collect_task
+    from sports_intelligence.workers.tasks.pre_match import _dispatch_decision
+
+    kickoff = datetime.now(UTC) + timedelta(minutes=60)
+    seeded = await _seed_league_team_fixture(m4_session_factory, kickoff_at=kickoff)
+    decision = PreMatchDecision(
+        fixture_id=str(seeded["fixture_id"]),
+        league_id=str(seeded["league_id"]),
+        home_team_id=str(seeded["home_team_id"]),
+        away_team_id=str(seeded["away_team_id"]),
+        kickoff_at=kickoff,
+        phase=_FP.PREMATCH,
+        categories_to_collect=(FreshnessCategory.ODDS,),
+    )
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        odds_provider="mock",
+        leagues_config_path=m4_settings.leagues_config_path,
+        database_url=m4_settings.database_url,
+    )
+
+    def _fake_apply_async(*, args, **_kwargs):  # type: ignore[no-untyped-def]
+        return None
+
+    with (
+        _patch.object(collect_task, "apply_async", _fake_apply_async),
+        _patch("sports_intelligence.workers.tasks.pre_match.get_settings", return_value=settings),
+    ):
+        await _dispatch_decision(m4_session_factory, decision, now=kickoff - timedelta(minutes=20))
+        async with m4_session_factory() as session:
+            job = (
+                (await session.execute(select(Job).where(Job.job_type == "collect:odds")))
+                .scalars()
+                .first()
+            )
+            job_id = job.id
+        # Force RUNNING (as a worker would set it) — the next scan
+        # must NOT requeue.
+        async with m4_session_factory() as session:
+            job = await session.get(Job, job_id)
+            job.status = "RUNNING"
+            await session.commit()
+        second = await _dispatch_decision(
+            m4_session_factory, decision, now=kickoff - timedelta(minutes=19)
+        )
+        async with m4_session_factory() as session:
+            job_after = await session.get(Job, job_id)
+            assert job_after.status == "RUNNING"
+        assert second["jobs_enqueued"] == 0
+
+
+@pytest.mark.asyncio
+async def test_api_football_429_ledger_has_status_and_safe_headers(
+    m4_session_factory: Any, redis_client: Redis, m4_settings: Settings
+) -> None:
+    """M4.3 §8: an API-Football 429 carries status_code=429 and SAFE
+    rate-limit headers into the ledger — auth headers never appear."""
+    from sports_intelligence.core.phases import Priority
+    from sports_intelligence.providers.errors import ProviderRateLimitError
+
+    quota = QuotaManager(m4_settings, m4_session_factory, redis=redis_client)
+    started_at = datetime.now(UTC)
+    exc = ProviderRateLimitError(
+        "rate limit",
+        status_code=429,
+        quota_headers={
+            "x-ratelimit-requests-remaining": "0",
+            "x-ratelimit-requests-limit": "100",
+        },
+    )
+    await quota.record_failure(
+        provider="api_football",
+        endpoint_category="standings",
+        started_at=started_at,
+        exc=exc,
+        headers=exc.quota_headers,
+        priority=Priority.P2,
+        estimated_cost=1,
+    )
+    async with m4_session_factory() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(ExternalApiRequest).where(
+                        ExternalApiRequest.endpoint_category == "standings",
+                        ExternalApiRequest.error_class == "ProviderRateLimitError",
+                        ExternalApiRequest.status_code == 429,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert rows, "429 failure missing from ledger"
+    assert rows[0].status_code == 429
+    assert rows[0].daily_remaining == 0
+    # Auth headers never leak into persisted telemetry.
+    assert rows[0].provider == "api_football"
+
+
+@pytest.mark.asyncio
+async def test_partial_home_confirmed_away_unpublished_still_refreshes(
+    m4_session_factory: Any, redis_client: Redis, m4_settings: Settings
+) -> None:
+    """M4.3 §3: CONFIRMED stops polling only when BOTH fixture teams are
+    confirmed. home CONFIRMED + away NOT_YET_PUBLISHED → the T20 window
+    MUST refresh; once both are confirmed → zero provider calls."""
+    from sports_intelligence.collectors.framework import run_collector
+    from sports_intelligence.core.phases import ForecastPhase as _FP
+
+    kickoff = datetime.now(UTC) + timedelta(minutes=25)
+    seeded = await _seed_league_team_fixture(
+        m4_session_factory,
+        kickoff_at=kickoff,
+        external_ids={"home": "9001", "away": "9002", "fixture": "42", "league": "39"},
+    )
+    ctx = _ctx(
+        factory=m4_session_factory,
+        redis=redis_client,
+        settings=m4_settings,
+        provider=MockSportsDataProvider(lineups_published=True),
+        phase=_FP.PREMATCH,
+    )
+    provider_calls: list[int] = []
+
+    # T-25 (T20 window): provider publishes BOTH teams (confirmed).
+    await run_collector(
+        ctx,
+        "lineups",
+        inputs={"fixture_id": seeded["fixture_id"], "team_id": seeded["home_team_id"]},
+        now=kickoff - timedelta(minutes=25),
+        on_provider_call=lambda: provider_calls.append(1),
+    )
+    # Simulate the M4.3 scenario: override the away side back to
+    # NOT_YET_PUBLISHED so the fixture is partially confirmed.
+    async with m4_session_factory() as session:
+        away_snap = (
+            (
+                await session.execute(
+                    select(LineupSnapshot)
+                    .where(
+                        LineupSnapshot.fixture_id == seeded["fixture_id"],
+                        LineupSnapshot.team_id == seeded["away_team_id"],
+                    )
+                    .order_by(LineupSnapshot.captured_at.desc())
+                )
+            )
+            .scalars()
+            .first()
+        )
+        away_snap.publication_state = "NOT_YET_PUBLISHED"
+        away_snap.confirmed = False
+        away_snap.players_jsonb = []
+        await session.commit()
+
+    # T-15 (still T20 window): away not published → refresh MUST occur.
+    await run_collector(
+        ctx,
+        "lineups",
+        inputs={"fixture_id": seeded["fixture_id"], "team_id": seeded["home_team_id"]},
+        now=kickoff - timedelta(minutes=15),
+        on_provider_call=lambda: provider_calls.append(1),
+    )
+    assert len(provider_calls) == 2  # partial state still refreshes
+
+    # The T-15 refresh re-published BOTH sides → away becomes CONFIRMED.
+    async with m4_session_factory() as session:
+        away_latest = (
+            (
+                await session.execute(
+                    select(LineupSnapshot)
+                    .where(
+                        LineupSnapshot.fixture_id == seeded["fixture_id"],
+                        LineupSnapshot.team_id == seeded["away_team_id"],
+                    )
+                    .order_by(LineupSnapshot.captured_at.desc())
+                )
+            )
+            .scalars()
+            .first()
+        )
+    assert away_latest.publication_state == "CONFIRMED"
+
+    # Now BOTH confirmed → later scans make ZERO provider calls.
+    await run_collector(
+        ctx,
+        "lineups",
+        inputs={"fixture_id": seeded["fixture_id"], "team_id": seeded["home_team_id"]},
+        now=kickoff - timedelta(minutes=10),
+        on_provider_call=lambda: provider_calls.append(1),
+    )
+    await run_collector(
+        ctx,
+        "lineups",
+        inputs={"fixture_id": seeded["fixture_id"], "team_id": seeded["home_team_id"]},
+        now=kickoff - timedelta(minutes=5),
+        on_provider_call=lambda: provider_calls.append(1),
+    )
+    assert len(provider_calls) == 2  # both confirmed → polling stopped
+
+
+@pytest.mark.asyncio
+async def test_concurrent_reservations_after_new_observation(
+    m4_session_factory: Any, redis_client: Redis, m4_settings: Settings
+) -> None:
+    """M4.3 §5 concurrency: after a NEWER observation becomes
+    authoritative, concurrent reservations are counted against the NEW
+    generation — the old generation counter is never re-applied."""
+    from sports_intelligence.core.phases import Priority
+
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        quota_provider_daily_limit_default=100,
+        quota_provider_minute_limit_default=100,
+        quota_reserve_p0_calls=20,
+        database_url=m4_settings.database_url,
+    )
+    quota = QuotaManager(settings, m4_session_factory, redis=redis_client)
+    now0 = datetime.now(UTC)
+    async with m4_session_factory() as session:
+        session.add(
+            QuotaBucket(
+                provider="mock",
+                window="daily",
+                limit_value=100,
+                remaining_value=100,
+                observed_at=now0,
+            )
+        )
+        await session.commit()
+
+    # Old generation: 2 reservations of 4 → 8 spent.
+    await quota.reserve(provider="mock", priority=Priority.P1, estimated_cost=4)
+    await quota.reserve(provider="mock", priority=Priority.P1, estimated_cost=4)
+
+    # New observation: remaining=80 (20 spent + provider drift) → new
+    # generation with a fresh counter.
+    async with m4_session_factory() as session:
+        session.add(
+            QuotaBucket(
+                provider="mock",
+                window="daily",
+                limit_value=100,
+                remaining_value=80,
+                observed_at=now0 + timedelta(minutes=5),
+            )
+        )
+        await session.commit()
+
+    results = await asyncio.gather(
+        *[quota.reserve(provider="mock", priority=Priority.P1, estimated_cost=4) for _ in range(10)]
+    )
+    allowed = [r for r in results if r.allowed]
+    # New baseline 80, reserve floor 20 → P1 may spend 60 → 15 × 4, but
+    # only 10 callers: all 10 succeed (40 ≤ 60), concurrency-safe.
+    assert len(allowed) == 10

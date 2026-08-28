@@ -13,6 +13,7 @@ import asyncio
 import json
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 from redis.asyncio import Redis
 
@@ -85,7 +86,15 @@ async def _run_collect_job(
         redis = Redis.from_url(settings.redis_url)
         sports_provider = build_sports_provider(settings)
         odds_provider = build_odds_provider(settings)
-        provider = odds_provider if collector_name == "odds" else sports_provider
+        if collector_name == "odds":
+            if odds_provider is None:
+                raise RuntimeError(
+                    "odds collector job refused: odds capability is "
+                    "DISABLED in this environment (no provider configured)"
+                )
+            provider: Any = odds_provider
+        else:
+            provider = sports_provider
         quota = QuotaManager(settings, factory, redis=redis)
         locks = CoalesceLockManager(redis, settings)
         ctx = CollectorContext(
@@ -102,14 +111,15 @@ async def _run_collect_job(
                 else ForecastPhase.MORNING
             ),
         )
-        # M4.2 §8: odds cost is provider-estimated credits (markets ×
-        # regions), reserved BEFORE the network call — never the generic
-        # per-request count of 1.
+        # M4.2 §8 / M4.3 §2: odds cost is provider-estimated credits (ACTUAL
+        # provider market set × regions), reserved BEFORE the network call
+        # — never the generic per-request count of 1.
         effective_cost = estimated_cost
         if collector_name == "odds" and hasattr(provider, "estimate_cost"):
+            actual_markets = provider.request_markets(settings.odds_provider_markets)
             effective_cost = max(
                 provider.estimate_cost(
-                    markets=settings.odds_provider_markets,
+                    markets=actual_markets,
                     regions=settings.odds_provider_regions,
                 ),
                 1,

@@ -1,7 +1,7 @@
 # Current Task
 
-**Status:** COMPLETE (M4.2) — awaiting independent review
-**Milestone:** M4.2 — focused corrective implementation after M4.1 review **FAIL**
+**Status:** COMPLETE (M4.3) — awaiting independent review
+**Milestone:** M4.3 — focused correctness pass after M4.2 review **FAIL**
 **Owner/agent:** ox-alpha (OpenCode)
 **Started at:** 2026-08-24
 **Last updated:** 2026-08-24
@@ -10,88 +10,84 @@
 
 # Task
 
-Independent review of M4.1 returned **FAIL** (runtime/contract blockers).
-M4.2 on `build/m4` implements the focused fixes WITHOUT redesigning the
-correct M4.1 components:
+Independent review of M4.2 returned **FAIL** (focused correctness
+blockers). M4.3 on `build/m4` implements the fixes WITHOUT redesigning
+working M4 components:
 
-1. **Collector job refresh identity**: replaced the permanent
-   `collect:{name}:{lock_hash}:{phase}` key with deterministic
-   refresh-opportunity identity — lineups use explicit T-window ids
-   (`t120`/`t60`/`t20`), TTL categories use deterministic time buckets
-   tied to the category TTL. Repeated scans inside one opportunity
-   dedupe; a later window/expired-TTL opens a NEW job (proven by test).
-2. **Lineup policy wired into real execution**: `lineup_poll_due()` is
-   now the LineupCollector `refresh_due` override used by the framework
-   (fast check + winner double-check); `decide_categories` no longer
-   uses the `max(window)+60` approximation (PREMATCH starts exactly at
-   the outermost window); NOT_YET_PUBLISHED at T-120 permits T-60,
-   CONFIRMED stops polling, started fixtures are never polled; the
-   generic 24h lineup TTL never overrides window logic.
-3. **Fixture-level team snapshots**: availability/lineup persists BOTH
-   fixture teams from ONE observation, driven by actual
-   `fixture.home_team_id`/`away_team_id`; a side the provider did not
-   cover is never CONFIRMED (conservative NOT_YET_PUBLISHED/UNKNOWN);
-   empty responses persist explicit state for both sides; published
-   refs contain BOTH team refs; synchronized home+away test: exactly 1
-   provider call, 2 separated snapshots, each waiter gets its own UUID.
-4. **Odds events contract**: `resolve_event` accepts the actual
-   top-level JSON array from GET /v4/sports/{sport}/events;
-   contract-faithful array fixtures; no-match/ambiguity remain hard
-   errors.
-5. **Odds markets**: real double-chance names (`Arsenal or Draw` …)
-   normalized to canonical selections; `alternate_totals` supplies exact
-   O/U 1.5/2.5 lines when the featured totals market omits them;
-   canonical `ou_15`/`ou_25` preserved.
-6. **No-vig completeness**: no-vig is derived ONLY on a complete
-   expected selection set (1X2, double-chance, two-sided O/U, BTTS);
-   incomplete markets never normalized.
-7. **Odds fixture mapping**: home/away names loaded EXPLICITLY by id
-   (no unordered SQL IN); reversed-row-order regression test.
-8. **Odds quota cost**: `sports.collect` calls
-   `OddsProvider.estimate_cost(markets, regions)` and reserves that cost
-   BEFORE the network call (4 markets × 1 region → 4, not 1);
-   `actual_cost` reconciled from `x-requests-last`.
-9. **Quota reservation baseline**: Redis reservation is based on the
-   provider's LATEST OBSERVED remaining minus reservations since that
-   observation (not a fresh counter vs the full limit); tested at
-   limit=100/observed=4 with concurrent P0/P1; P0 reserve preserved.
-10. **Fail closed**: discovery fails closed when quota protection cannot
-    initialize for REAL providers (MOCK stays keyless); Redis client
-    closed in finally.
-11. **API-Football /teams/statistics**: parser matches the actual v3
-    contract (response = single object); contract-faithful fixture;
-    bounded live smoke allowed only with a local SPORTS_API_KEY.
-12. **Status API**: both-team category state is fresh only when BOTH
-    snapshots exist and are fresh; one fresh + one missing → unknown;
-    PREMATCH freshness semantics applied when the fixture is inside the
-    pre-match horizon.
+1. **No silent MOCK odds in non-mock environments**: `build_odds_provider`
+   returns MockOddsProvider ONLY in APP_ENV=mock (or with the explicit
+   `ODDS_ALLOW_MOCK_OVERRIDE` flag); in sandbox/live_local with an empty
+   ODDS_PROVIDER the odds capability is DISABLED (provider is None);
+   ODDS_PROVIDER=mock in a non-mock env without the override is REJECTED
+   (ProviderConfigError). The pre-match planner skips odds when the
+   capability is disabled; `sports.collect` refuses odds jobs when
+   disabled (fail closed). Regression test: live_local +
+   sports_provider=api_football + odds_provider="" → zero odds jobs and
+   zero OddsSnapshotSet rows.
+2. **Provider market translation**: the provider owns the translation
+   from internal market requirements to actual HTTP market keys.
+   `OddsProvider.request_markets()` guarantees the outgoing `markets=`
+   parameter contains `h2h, double_chance, totals, alternate_totals,
+   btts` (alternate_totals needed for exact O/U 1.5/2.5 lines). Cost
+   estimation uses the ACTUAL provider market set (5 markets × 1 region
+   → 5 credits). Contract test asserts alternate_totals is in the
+   outgoing query.
+3. **Fixture-level lineup refresh**: CONFIRMED stops polling only when
+   BOTH actual fixture teams have confirmed latest lineups. Scenario
+   test: home CONFIRMED + away NOT_YET_PUBLISHED → next window still
+   refreshes; both CONFIRMED → zero provider calls.
+4. **TTL refresh-opportunity identity**: opportunity = actual due
+   generation — `latest_captured_at + effective TTL` while fresh, `now`
+   once stale (never an unrelated global bucket); no snapshot yet →
+   stable `due:missing` opportunity. Counterexample regression: job
+   created while fresh, time advances past TTL inside the old bucket →
+   new opportunity created.
+5. **Quota observation generations**: reservation counters are keyed to
+   the observation GENERATION (observed_at of the authoritative bucket).
+   A newer observation starts a fresh counter — reservations are
+   "since this observation", never re-subtracted against a moving
+   baseline. Regression: observed 100 → reserve 4 → new observation 96 →
+   reserve 4 behaves as 96→92 (not 96−4−4). Concurrency-safe.
+6. **The Odds API quota limit**: limit inferred from
+   `x-requests-used + x-requests-remaining` (used=8, remaining=492 →
+   limit 500); degradation percentages operate on the actual 500-credit
+   allowance; `x-requests-last` remains the actual last-call cost.
+7. **FAILED job requeue**: collector jobs reuse the SAME job UUID within
+   the same refresh opportunity but are re-enqueued after FAILED via CAS
+   (FAILED → PENDING); RUNNING/SUCCEEDED are never downgraded. Applied
+   to scheduled discovery too (stranded-FAILED re-enqueue).
+8. **Failure telemetry**: API-Football 401/403/429/5xx and The Odds API
+   429/5xx carry `status_code` AND safe quota headers
+   (`ProviderError.quota_headers` — never auth headers/API keys); the
+   framework passes them to `record_failure`; ledger test for 429.
+9. **Scanner observability**: counters distinguish `planned /
+   jobs_created / jobs_reused / jobs_enqueued` (reused jobs are never
+   reported as newly enqueued); Redis cleanup is finally-safe on
+   enqueue errors.
 
-# Acceptance tests (M4.2) — run
+# Acceptance tests (M4.3) — run
 
-- repeated collector-job refresh opportunity (dedupe then new job on
-  T60) — integration;
-- T120→T60→T20 runtime flow through the framework (not just pure
-  function) — integration;
-- synchronized home+away lineup collection: 1 provider call, 2
-  snapshots, correct per-team refs — integration;
-- contract-faithful The Odds API top-level array events + no-match +
-  ambiguity;
-- odds real double-chance + alternate totals contract fixtures;
-- incomplete-market no-vig never normalized — unit;
-- odds estimated-cost reservation (4 markets × 1 region) — integration;
-- partially-depleted quota concurrency (observed remaining 4, P0/P1) —
-  integration;
-- real-provider quota-init failure → job FAILED + zero provider calls —
-  integration;
-- status one-team-missing → unknown, not fresh — integration;
-- reversed-row-order odds mapping — integration;
-- full suite, migrations + alembic check, Ruff/format, strict mypy
-  (87 files), Compose, secret scan.
+- live_local + no odds credentials → zero odds jobs + zero mock
+  persistence (integration);
+- outgoing The Odds API query contains alternate_totals (contract test);
+- 5 provider markets × 1 region estimated-cost test (unit);
+- partial home-confirmed / away-unpublished → later window still
+  refreshes; both confirmed → stops (integration);
+- TTL stale-inside-old-bucket regression (unit);
+- quota observation-generation regression (integration);
+- Odds headers used=8, remaining=492 → limit 500 (unit);
+- concurrent reservations after a new observation (integration);
+- FAILED collector same-opportunity retry (same uuid) (integration);
+- broker retry does not downgrade RUNNING/SUCCEEDED (integration);
+- API-Football 429 ledger has status 429 and safe rate headers
+  (integration);
+- full unit + integration suite; migrations + alembic check;
+  Ruff/format; strict mypy (87 files); Compose; secret scan.
 
 # Verification (actually run)
 
-- `uv run pytest -q -m "not integration"` → **254 passed**
-- integration suite (`sports_intel_test` + Redis db15) → **49 passed**
+- `uv run pytest -q -m "not integration"` → **262 passed**
+- integration suite (`sports_intel_test` + Redis db15) → **56 passed**
 - `uv run ruff check .` / `ruff format --check .` → clean
 - `uv run mypy src` → **no issues in 87 source files** (strict)
 - `docker compose config -q` (+telegram profile) → OK
@@ -99,17 +95,16 @@ correct M4.1 components:
 
 # Known limitations
 
-- The Odds API live path is contract-tested; live verification only if
-  credentials configured (never blocks acceptance).
-- One bounded /teams/statistics live smoke is allowed only when a local
-  SPORTS_API_KEY exists; not run here (no key).
-- Odds batch (league-level) endpoint remains a future optimization;
-  event-specific calls happen only after strict resolution.
+- Live The Odds API / API-Football smokes require local credentials
+  (not run; contract tests cover normalization and failure telemetry).
+- Local integration runs need a one-time Redis flush (added to
+  `make test-integration`) because quota reservation counters live in
+  Redis; CI uses fresh containers.
 
 ---
 
 # Completion
 
 - Status: COMPLETE on `build/m4`. No merge to main; M5 not started.
-- Review verdict to record: M4 → FAIL; M4.1 → FAIL; M4.2 awaiting
-  independent review.
+- Review verdict to record: M4 → FAIL; M4.1 → FAIL; M4.2 → FAIL; M4.3
+  awaiting independent review.

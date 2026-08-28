@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     leagues_config_path: str = "config/leagues.yaml"
     odds_provider: str = ""
     odds_api_key: str = ""
+    # Explicit intentional mock override for non-mock environments.
+    # MOCK odds are NEVER used silently when credentials are missing.
+    odds_allow_mock_override: bool = False
     search_provider: str = ""
     search_api_key: str = ""
 
@@ -148,6 +151,22 @@ class Settings(BaseSettings):
     @property
     def is_mock_mode(self) -> bool:
         return self.app_env == "mock"
+
+    @property
+    def odds_capability_enabled(self) -> bool:
+        """Odds collection is enabled only when a REAL provider is
+        configured (or MOCK is explicitly permitted).
+
+        APP_ENV=mock + empty/mock → mock allowed.
+        APP_ENV=sandbox/live_local + empty → DISABLED (never silent mock).
+        APP_ENV=sandbox/live_local + mock → only with explicit override.
+        """
+        name = (self.odds_provider or "").strip().lower()
+        if self.app_env == "mock":
+            return name in ("", "mock") or name in ("the_odds_api", "theoddsapi")
+        if self.odds_allow_mock_override and name == "mock":
+            return True
+        return name in ("the_odds_api", "theoddsapi") and bool(self.odds_api_key)
 
 
 @lru_cache(maxsize=1)

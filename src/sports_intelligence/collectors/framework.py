@@ -311,6 +311,7 @@ async def run_collector(
                 endpoint_category=name,
                 started_at=started_at,
                 exc=exc,
+                headers=getattr(exc, "quota_headers", None),
                 priority=collector.priority,
                 estimated_cost=estimated_cost,
                 fixture_id=inputs.get("fixture_id"),

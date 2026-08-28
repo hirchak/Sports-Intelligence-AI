@@ -161,7 +161,12 @@ class OddsCollector:
     ) -> CollectorResult:
         provider = self._require_odds_provider(ctx)
         fixture_uuid = _uuid.UUID(str(fixture_id))
-        markets: Sequence[str] = ctx.settings.odds_provider_markets
+        # M4.3 §2: the provider owns the translation from the configured
+        # (internal) market set to the ACTUAL provider keys sent over
+        # HTTP (e.g. totals + alternate_totals for exact O/U lines).
+        request_markets: Sequence[str] = provider.request_markets(
+            ctx.settings.odds_provider_markets
+        )
         regions: Sequence[str] = ctx.settings.odds_provider_regions
 
         async with ctx.session_factory() as session:
@@ -176,7 +181,7 @@ class OddsCollector:
         result = await provider.fetch_event_odds(
             sport_key=sport_key,
             event_id=event_id,
-            markets=markets,
+            markets=request_markets,
             regions=regions,
         )
         # Decimal values stringified: framework publishes results via

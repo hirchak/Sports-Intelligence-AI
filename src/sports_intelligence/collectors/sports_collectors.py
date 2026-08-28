@@ -506,33 +506,61 @@ class LineupCollector(_ResolverMixin):
         captured_at: datetime | None,
         now: datetime,
     ) -> bool:
-        """State/window policy (M4.2 §2): never the generic 24h TTL.
+        """State/window policy (M4.2 §2 / M4.3 §3): never the generic
+        24h TTL.
 
-        A NOT_YET_PUBLISHED snapshot at T-120 permits the T-60 window;
-        NOT_YET_PUBLISHED at T-60 permits T-20; CONFIRMED stops normal
-        polling; already-started fixtures are never polled.
+        Refresh eligibility is FIXTURE-LEVEL: CONFIRMED stops normal
+        polling only when BOTH actual fixture teams have confirmed
+        latest lineups. A partial state (home CONFIRMED, away
+        NOT_YET_PUBLISHED) still permits the next window refresh. The
+        requesting team_id in the payload never suppresses a needed
+        later window.
         """
         fixture_id = inputs.get("fixture_id")
-        team_id = inputs.get("team_id")
-        if fixture_id is None or team_id is None:
+        if fixture_id is None:
             return True
         async with ctx.session_factory() as session:
-            kickoff = (
-                await session.execute(
-                    select(FixtureModel.kickoff_at).where(FixtureModel.id == fixture_id)
+            fixture = await session.get(FixtureModel, fixture_id)
+            if fixture is None:
+                return True
+            kickoff = fixture.kickoff_at
+            states: list[str | None] = []
+            captured_list: list[datetime] = []
+            for side in (fixture.home_team_id, fixture.away_team_id):
+                state = await self._latest_publication_state(
+                    session, fixture_id=fixture_id, team_id=side
                 )
-            ).scalar_one_or_none()
-            state = await self._latest_publication_state(
-                session, fixture_id=fixture_id, team_id=team_id
-            )
+                states.append(state)
+                snap = (
+                    await session.execute(
+                        select(LineupSnapshot.captured_at)
+                        .where(
+                            LineupSnapshot.fixture_id == fixture_id,
+                            LineupSnapshot.team_id == side,
+                        )
+                        .order_by(LineupSnapshot.captured_at.desc())
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if snap is not None:
+                    captured_list.append(snap)
         if kickoff is None:
             return True
+        # Fixture-level aggregation: confirmed ONLY when both sides are.
+        if states and all(s == "CONFIRMED" for s in states):
+            fixture_state = "CONFIRMED"
+        elif states:
+            # Any non-confirmed side keeps the fixture non-confirmed.
+            fixture_state = "NOT_YET_PUBLISHED"
+        else:
+            fixture_state = None
+        fixture_captured = max(captured_list) if captured_list else captured_at
         return lineup_poll_due(
             kickoff_at=kickoff,
             now=now,
             windows_minutes=ctx.settings.lineup_window_t_minutes,
-            latest_state=state,
-            latest_captured_at=captured_at,
+            latest_state=fixture_state,
+            latest_captured_at=fixture_captured,
         )
 
     async def fetch(

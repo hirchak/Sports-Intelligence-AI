@@ -31,6 +31,18 @@ class OddsProvider(Protocol):
         """Return the provider event id for exactly one matching event."""
         ...
 
+    def request_markets(self, markets: Sequence[str]) -> Sequence[str]:
+        """Provider-owned translation of requested markets into the
+        ACTUAL provider market keys sent over HTTP (M4.3 §2).
+
+        Internal product markets are 1X2 / Double Chance / O/U 1.5 /
+        O/U 2.5 / BTTS. The Odds API needs `totals` AND
+        `alternate_totals` to retrieve both exact O/U lines; this method
+        guarantees the outgoing `markets=` parameter carries the
+        sufficient set.
+        """
+        ...
+
     async def fetch_event_odds(
         self,
         *,

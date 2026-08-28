@@ -2,8 +2,8 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M4.2 — focused corrective implementation after
-M4.1 review **FAIL** — awaiting independent re-review on `build/m4`
+**Current milestone:** M4.3 — focused correctness pass after M4.2 review
+**FAIL** — awaiting independent re-review on `build/m4`
 (M3 accepted via PR #5; `main` = `7d23c9d`)  
 **Last updated:** 2026-08-24 (ox-alpha via OpenCode)  
 **Last known good commit:** see section 11
@@ -15,8 +15,8 @@ M4.1 review **FAIL** — awaiting independent re-review on `build/m4`
 M3 (Telegram base UI) passed independent final review and was merged to
 `main` via PR #5 (`7d23c9d`).
 
-M4 review → **FAIL**; M4.1 corrective implementation → **FAIL**
-(runtime/contract blockers). M4.2 — the focused corrective pass — is on
+M4 review → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL** (focused
+correctness blockers). M4.3 — the focused correctness pass — is on
 `build/m4` and awaits independent re-review. Do not merge before
 acceptance; do not start M5.
 

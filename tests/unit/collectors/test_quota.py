@@ -131,7 +131,8 @@ def test_parse_headers_api_football_daily_and_minute() -> None:
 
 
 def test_parse_headers_the_odds_api_uses_cost_not_minute() -> None:
-    """M4.1 §7: x-requests-last is the COST of the last call, never a
+    """M4.3 §6: x-requests-last is the COST of the last call; the daily
+    limit is INFERRED from used + remaining (8 + 492 → 500), never a
     per-minute budget."""
     obs = parse_quota_headers(
         "theoddsapi",
@@ -142,9 +143,9 @@ def test_parse_headers_the_odds_api_uses_cost_not_minute() -> None:
         },
     )
     assert obs.daily_remaining == 492
+    assert obs.daily_limit == 500
     assert obs.last_call_cost == 5
     assert obs.minute_remaining is None
-    assert obs.daily_limit is None
 
 
 def test_parse_headers_empty() -> None:

@@ -1092,3 +1092,76 @@ button-based menus and a Back button on every screen.
 **Next action**
 - Independent re-review of M4.2; merge + tag `v0.5-m4` after PASS; M5
   only with explicit user approval.
+
+---
+
+### 2026-08-24 — ox-alpha (OpenCode)
+
+**Milestone:** M4.3
+**Task:** Focused correctness pass after M4.2 review **FAIL**
+
+**Completed**
+- 1. Odds capability gating: build_odds_provider returns None when
+  DISABLED in non-mock env (empty ODDS_PROVIDER); mock in non-mock
+  requires ODDS_ALLOW_MOCK_OVERRIDE else ProviderConfigError; scanner
+  skips odds when disabled (planned/created/enqueued counters);
+  sports.collect fails closed; regression live_local + no odds → zero
+  jobs + zero snapshots.
+- 2. Provider market translation: OddsProvider.request_markets()
+  guarantees outgoing markets= contains h2h, double_chance, totals,
+  alternate_totals, btts; cost estimation uses ACTUAL provider set
+  (5×1 → 5); outgoing-query contract test.
+- 3. Fixture-level lineup refresh: refresh_due aggregates both fixture
+  teams; CONFIRMED stops only when both confirmed; partial state still
+  refreshes; scenario integration test.
+- 4. TTL due-generation identity: captured+TTL while fresh, now when
+  stale, due:missing when no snapshot; stale-inside-old-bucket
+  counterexample regression.
+- 5. Quota observation generations: reservation counters keyed to
+  observed_at generation; newer observation → fresh counter; regression
+  100→4→96→4 behaves as 92; concurrent-after-new-observation test.
+- 6. Odds limit from used+remaining (8+492 → 500); degradation % on
+  actual allowance; x-requests-last = cost.
+- 7. FAILED collector/scheduled job requeue: same uuid, CAS
+  FAILED→PENDING only; never downgrade RUNNING/SUCCEEDED; tests.
+- 8. Failure telemetry: ProviderError.quota_headers (safe only);
+  API-Football + Odds 401/403/429/5xx carry status_code + headers;
+  framework record_failure passes them; 429 ledger test.
+- 9. Scanner observability: planned/jobs_created/jobs_reused/
+  jobs_enqueued counters; finally-safe Redis cleanup.
+
+**Files changed**
+- src: providers/odds/{factory,base,mock}.py; providers/errors.py;
+  providers/sports/api_football.py; collectors/{refresh,quota,
+  sports_collectors,framework}.py; workers/tasks/{pre_match,collect,
+  scheduling}.py; core/config.py
+- tests: unit/test_odds_gating.py (new); unit/collectors/test_refresh.py,
+  test_quota.py; integration/test_m4_collectors.py (+7 M4.3 tests)
+- docs: CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, AI_WORKLOG;
+  Makefile (Redis flush before integration)
+
+**Verification**
+- unit → PASS (262); integration → PASS (56)
+- ruff check/format → PASS; mypy src strict → PASS (87 files)
+- compose (+telegram) → PASS; secret scan → clean
+
+**Live integrations verified**
+- none (contract-tested; live smokes require local credentials).
+
+**Mocked only**
+- Odds + API-Football network paths (contract-tested, incl. failure
+  telemetry).
+
+**Known issues**
+- Local integration runs flush Redis first (reservation counters).
+
+**Spec / ADR deviations**
+- none new.
+
+**Git**
+- branch: build/m4
+- commit: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent re-review of M4.3; merge + tag `v0.5-m4` after PASS; M5
+  only with explicit user approval.
