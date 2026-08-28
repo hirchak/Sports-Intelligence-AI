@@ -547,7 +547,10 @@ class QuotaManager:
                 window=window,
                 limit_value=limit or self._settings.quota_provider_daily_limit_default,
                 remaining_value=int(remaining),
-                observed_at=started_at,
+                # M4.4 §4: quota headers come from the RESPONSE, so the
+                # observation generation is the response observation time
+                # (finished_at), never the request start.
+                observed_at=finished_at,
             )
 
         async with self._session_factory() as session:

@@ -1165,3 +1165,53 @@ button-based menus and a Back button on every screen.
 **Next action**
 - Independent re-review of M4.3; merge + tag `v0.5-m4` after PASS; M5
   only with explicit user approval.
+
+---
+
+### 2026-08-28 — ox-alpha (OpenCode)
+
+**Milestone:** M4.4
+**Task:** Focused correctness fixes (4 items) after M4.3 review **FAIL**
+
+**Completed**
+- 1. /teams/statistics v3 normalization: fixtures.{played,wins,draws,
+  loses}.{home,away,total} (loses→losses), goals.for/against.total.
+  {home,away,total} nested, clean_sheet/failed_to_score splits; missing
+  → None never zero; contract-faithful sentinel + full asserts.
+- 2. Season identity pinned: PreMatchDecision.season_id from fixture;
+  execute_plan passes exact season; exact Season resolver (league
+  verified, deterministic year, refuse missing/ambiguous) replaces
+  active=True LIMIT 1; lock/freshness/provider-season/snapshot all
+  pinned; two-season integration regression.
+- 3. Stable TTL opportunity: due:missing (no snapshot), fresh → no job
+  (scanner freshness check), stale → due:<captured+TTL> stable;
+  acceptance flow regression (T0+20/T0+31/T0+35/T0+40/T0+41).
+- 4. QuotaBucket.observed_at = response time (finished_at); overlap
+  ordering regression (later response authoritative).
+
+**Files changed**
+- src: providers/sports/api_football.py; collectors/{sports_collectors,
+  pre_match_scan,refresh,quota}.py; workers/tasks/pre_match.py
+- tests: unit/test_api_football_categories.py; unit/collectors/
+  test_refresh.py, test_framework.py; integration/test_m4_collectors.py
+- docs: CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, AI_WORKLOG
+
+**Verification**
+- unit → PASS (263); integration → PASS (59)
+- ruff/format → PASS; mypy strict (87) → PASS; compose → OK;
+  secrets clean; no schema migration.
+
+**Live integrations verified**
+- none (contract-tested; bounded live smoke allowed only with local
+  credentials — not run).
+
+**Known issues**
+- Local integration runs flush Redis first (reservation counters).
+
+**Git**
+- branch: build/m4
+- commit: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent re-review of M4.4; merge + tag `v0.5-m4` after PASS; M5
+  only with explicit user approval.

@@ -70,9 +70,16 @@ def _settings() -> Settings:
 class _FakeSession:
     """Session stub: latest_snapshot returns a configurable capture."""
 
-    def __init__(self, captured_at: datetime | None, snapshot_id: uuid.UUID | None) -> None:
+    def __init__(
+        self,
+        captured_at: datetime | None,
+        snapshot_id: uuid.UUID | None,
+        *,
+        league_id: uuid.UUID | None = None,
+    ) -> None:
         self._captured_at = captured_at
         self._snapshot_id = snapshot_id
+        self._league_id = league_id
         self.added: list[object] = []
 
     async def __aenter__(self) -> _FakeSession:
@@ -93,7 +100,16 @@ class _FakeSession:
         result.scalar_one_or_none = MagicMock(return_value=42)
         return result
 
-    async def get(self, *_args: object, **_kwargs: object) -> object:
+    async def get(self, _model: object, _key: object) -> object:
+        # The exact Season resolver needs a Season-like row bound to the
+        # expected league (M4.4 §2).
+        from sports_intelligence.db.models import Season
+
+        if isinstance(_model, type) and issubclass(_model, Season):
+            fake = MagicMock()
+            fake.league_id = self._league_id
+            fake.name = "2026-2027"
+            return fake
         return MagicMock()
 
     def add(self, _obj: object) -> None:
@@ -231,10 +247,13 @@ class _StubSportsProvider:
 
 
 def _context(
-    *, captured_at: datetime | None, snapshot_id: uuid.UUID | None = None
+    *,
+    captured_at: datetime | None,
+    snapshot_id: uuid.UUID | None = None,
+    league_id: uuid.UUID | None = None,
 ) -> CollectorContext:
     settings = _settings()
-    session = _FakeSession(captured_at, snapshot_id)
+    session = _FakeSession(captured_at, snapshot_id, league_id=league_id)
     return CollectorContext(
         provider=_StubSportsProvider(),
         quota=_allowed_quota(),
@@ -261,8 +280,14 @@ async def test_freshness_hit_returns_real_existing_snapshot_id() -> None:
     now = datetime.now(UTC)
     captured_at = now - timedelta(minutes=1)
     real_id = uuid.uuid4()
-    ctx = _context(captured_at=captured_at, snapshot_id=real_id)
-    ref = await run_collector(ctx, "standings", inputs={"league_id": uuid.uuid4()})
+    league_id = uuid.uuid4()
+    season_id = uuid.uuid4()
+    ctx = _context(captured_at=captured_at, snapshot_id=real_id, league_id=league_id)
+    ref = await run_collector(
+        ctx,
+        "standings",
+        inputs={"league_id": league_id, "season_id": season_id},
+    )
     assert ref.snapshot_id == real_id
     assert ref.captured_at == captured_at
 
@@ -272,13 +297,15 @@ async def test_stale_trigger_fetches_and_quota_reserved_first() -> None:
     """Stale snapshot → exactly one provider fetch; quota reservation
     happens BEFORE the provider call."""
     captured_at = datetime.now(UTC) - timedelta(hours=24)
-    ctx = _context(captured_at=captured_at)
+    league_id = uuid.uuid4()
+    season_id = uuid.uuid4()
+    ctx = _context(captured_at=captured_at, league_id=league_id)
 
     provider_calls: list[int] = []
     ref = await run_collector(
         ctx,
         "standings",
-        inputs={"league_id": uuid.uuid4()},
+        inputs={"league_id": league_id, "season_id": season_id},
         on_provider_call=lambda: provider_calls.append(1),
     )
     assert provider_calls == [1]
@@ -351,7 +378,8 @@ async def test_lock_contention_never_falls_back_to_fetch() -> None:
     )
     # Pre-hold the lock so run_collector cannot acquire it.
     league_id = uuid.uuid4()
-    lock_key = f"standings:{league_id}:no-season"
+    season_id = uuid.uuid4()
+    lock_key = f"standings:{league_id}:{season_id}"
     held = await locks.acquire(key=lock_key)
     assert held is not None
 
@@ -360,7 +388,7 @@ async def test_lock_contention_never_falls_back_to_fetch() -> None:
         await run_collector(
             ctx,
             "standings",
-            inputs={"league_id": league_id},
+            inputs={"league_id": league_id, "season_id": season_id},
             on_provider_call=lambda: provider_calls.append(1),
         )
     assert provider_calls == []
@@ -388,13 +416,15 @@ async def test_concurrent_callers_share_winner_result_via_published_refs() -> No
         redis=redis,
     )
     league_id = uuid.uuid4()
+    season_id = uuid.uuid4()
+    session._league_id = league_id
     provider_calls: list[int] = []
 
     async def _one() -> SnapshotRef:
         return await run_collector(
             ctx,
             "standings",
-            inputs={"league_id": league_id},
+            inputs={"league_id": league_id, "season_id": season_id},
             on_provider_call=lambda: provider_calls.append(1),
         )
 

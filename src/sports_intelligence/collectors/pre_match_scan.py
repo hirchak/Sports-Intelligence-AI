@@ -25,6 +25,7 @@ class PreMatchDecision:
     league_id: str
     home_team_id: str
     away_team_id: str
+    season_id: str | None
     kickoff_at: datetime
     phase: ForecastPhase
     categories_to_collect: tuple[FreshnessCategory, ...]
@@ -141,6 +142,7 @@ async def plan_for_date(
                 league_id=str(league.id),
                 home_team_id=str(home.id),
                 away_team_id=str(away.id),
+                season_id=str(fixture.season_id) if fixture.season_id is not None else None,
                 kickoff_at=fixture.kickoff_at,
                 phase=phase,
                 categories_to_collect=categories,
@@ -194,7 +196,7 @@ async def execute_plan(
             await enqueue_collector(
                 "standings",
                 league_id=decision.league_id,
-                season_id=None,
+                season_id=decision.season_id,
                 phase=phase,
             )
             counters["standings"] = counters.get("standings", 0) + 1
@@ -204,7 +206,7 @@ async def execute_plan(
                     "team_stats",
                     team_id=team_id,
                     league_id=decision.league_id,
-                    season_id=None,
+                    season_id=decision.season_id,
                     phase=phase,
                 )
             counters["team_stats"] = counters.get("team_stats", 0) + 2

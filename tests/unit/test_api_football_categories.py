@@ -100,9 +100,18 @@ SENTINEL_TEAM_STATS = {
     "response": {
         "team": {"id": SENTINEL_TEAM_HOME, "name": "Sentinel United"},
         "league": {"id": SENTINEL_LEAGUE, "season": SENTINEL_SEASON},
-        "fixtures": {"played": {"total": 10}, "wins": {"total": 9}},
-        "goals": {"for": {"total": 28}},
-        "clean_sheet": {"total": 4},
+        "fixtures": {
+            "played": {"home": 5, "away": 5, "total": 10},
+            "wins": {"home": 5, "away": 4, "total": 9},
+            "draws": {"home": 0, "away": 1, "total": 1},
+            "loses": {"home": 0, "away": 0, "total": 0},
+        },
+        "goals": {
+            "for": {"total": {"home": 15, "away": 13, "total": 28}},
+            "against": {"total": {"home": 2, "away": 3, "total": 5}},
+        },
+        "clean_sheet": {"home": 3, "away": 1, "total": 4},
+        "failed_to_score": {"home": 0, "away": 1, "total": 1},
         "form": "WWWWL",
     },
 }
@@ -213,9 +222,52 @@ async def test_team_statistics_adapter_returns_sentinel_metrics() -> None:
         provider_league_id=SENTINEL_LEAGUE,
         season=SENTINEL_SEASON,
     )
+    # M4.4 §1: every normalized metric from the contract-faithful shape.
     assert result.metrics["form"] == "WWWWL"
     assert result.metrics["played"] == 10
+    assert result.metrics["wins"] == 9
+    assert result.metrics["draws"] == 1
+    # API-Football spells the key `loses`; normalized to `losses`.
+    assert result.metrics["losses"] == 0
+    # goals.for.total.{home,away,total} nested extraction.
+    assert result.metrics["goals_for"] == 28
+    assert result.metrics["goals_against"] == 5
+    assert result.metrics["clean_sheets"] == 4
+    assert result.metrics["failed_to_score"] == 1
     await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_team_statistics_missing_values_remain_none() -> None:
+    """M4.4 §1: missing provider values stay None — never fabricated
+    zero."""
+    payload = {
+        "response": {
+            "team": {"id": SENTINEL_TEAM_HOME, "name": "Sentinel United"},
+            "league": {"id": SENTINEL_LEAGUE, "season": SENTINEL_SEASON},
+            "fixtures": {"played": {"home": 2, "away": 2, "total": 4}},
+            "goals": {},
+        }
+    }
+    from sports_intelligence.core.time import utc_now
+    from sports_intelligence.providers.sports.api_football import (
+        parse_team_statistics_response,
+    )
+
+    result = parse_team_statistics_response(
+        payload,
+        provider_team_id=SENTINEL_TEAM_HOME,
+        provider_league_id=SENTINEL_LEAGUE,
+        season=SENTINEL_SEASON,
+        retrieved_at=utc_now(),
+    )
+    assert result.metrics["played"] == 4
+    assert result.metrics["wins"] is None
+    assert result.metrics["losses"] is None
+    assert result.metrics["goals_for"] is None
+    assert result.metrics["goals_against"] is None
+    assert result.metrics["clean_sheets"] is None
+    assert result.metrics["failed_to_score"] is None
 
 
 @pytest.mark.asyncio

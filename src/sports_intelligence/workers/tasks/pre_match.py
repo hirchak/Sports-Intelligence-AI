@@ -193,9 +193,10 @@ async def _dispatch_decision(
             phase_value = str(inputs.get("phase", decision.phase.value))
 
             ttl = FreshnessPolicy(settings).ttl_for(collector.category, decision.phase)
-            # M4.3 §4: the refresh opportunity is the ACTUAL due
-            # generation (latest captured + effective TTL, or now once
-            # stale) — never an unrelated global bucket.
+            # M4.4 §3: the refresh opportunity is the actual due
+            # generation — captured + effective TTL (stable until a new
+            # snapshot persists); no snapshot yet → `due:missing`.
+            # A FRESH snapshot produces NO job at all.
             latest_captured_at: datetime | None = None
             if name != "lineups":
                 try:
@@ -210,6 +211,11 @@ async def _dispatch_decision(
                         extra={"name": name},
                     )
                     latest_captured_at = None
+                if latest_captured_at is not None and not FreshnessPolicy(settings).is_stale(
+                    collector.category, latest_captured_at, now or datetime.now(UTC), decision.phase
+                ):
+                    # Fresh snapshot: no collector job needed.
+                    return
             opportunity = refresh_opportunity_suffix(
                 collector_name=name,
                 kickoff_at=decision.kickoff_at,

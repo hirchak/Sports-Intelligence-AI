@@ -11,9 +11,10 @@ Update it before every milestone review.
 
 **Ready for review:** YES  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M4.3 — focused correctness pass after M4.2 review **FAIL**  
+**Milestone:** M4.4 — focused correctness fixes (4 items) after M4.3
+review **FAIL**  
 **Review target branch:** `build/m4` (NOT merged to main)  
-**Review target commit:** `77262f5` — M4.3 focused correctness pass  
+**Review target commit:** pending — recorded after commit  
 **Previous accepted state:** `main` = `7d23c9d` (M3 accepted via PR #5)  
 **Review scope:** diff `main..build/m4` (M4 + M4.1 + M4.2 + M4.3)
 
@@ -21,8 +22,60 @@ Update it before every milestone review.
 
 # Independent review history
 
-- M4 → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL** (focused correctness
-  blockers); M4.3 implemented on `build/m4`, awaiting independent review.
+- M4 → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL**; M4.3 → **FAIL**
+  (four focused correctness fixes); M4.4 implemented on `build/m4`,
+  awaiting independent review.
+
+# What changed in M4.4
+
+## 1. API-Football /teams/statistics normalization
+
+- Real v3 shape: `fixtures.{played,wins,draws,loses}.{home,away,total}`
+  (provider spells `loses`; normalized to `losses`);
+  `goals.for.total.{home,away,total}` / `goals.against.total.{...}`;
+  `clean_sheet.{home,away,total}`; `failed_to_score.{home,away,total}`.
+- Metrics: played/wins/draws/losses/goals_for/goals_against/
+  clean_sheets/failed_to_score/form; missing → None, never zero.
+- Contract-faithful SENTINEL_TEAM_STATS; every metric asserted +
+  missing-values test.
+
+## 2. Season identity pinned end-to-end
+
+- `PreMatchDecision.season_id` (from Fixture.season_id) flows through
+  `execute_plan()` into standings/team_stats inputs.
+- Exact Season resolver replaces the old `active=True LIMIT 1` helper:
+  fetches the exact Season row, verifies league ownership, parses the
+  year deterministically, refuses missing/mismatched identity.
+- Lock identity, freshness lookup, provider `season=` and persisted
+  snapshot `season_id` all use the exact season.
+- Two-season same-league regression: fixture on season B → provider
+  season=2026, snapshot pinned to B uuid, fresh A never satisfies B,
+  A/B lock keys distinct.
+
+## 3. Stable TTL refresh opportunity
+
+- no snapshot → `due:missing`; fresh → scanner creates NO job (cheap
+  freshness check before create_or_get_job); stale →
+  `due:<captured+TTL>` stable until a new snapshot.
+- Framework freshness remains the race-safe double-check.
+- Acceptance flow regression: T0+20 no job; T0+31 job A; broker fail →
+  A FAILED; T0+35 same uuid requeued; T0+40 RUNNING no duplicate;
+  T0+41 new snapshot → next scan no job.
+- Lineup windows unchanged.
+
+## 4. Quota observations at response time
+
+- `QuotaBucket.observed_at` = `finished_at` (response observation
+  moment), never request start.
+- Overlap/order regression: later response becomes the authoritative
+  generation.
+
+# Verification
+
+- unit → **263 passed**; integration → **59 passed** (isolated
+  `sports_intel_test` + Redis db15, incl. alembic check)
+- ruff/format clean; strict mypy clean (87 files); compose OK;
+  secrets clean; no schema migration needed.
 
 ---
 

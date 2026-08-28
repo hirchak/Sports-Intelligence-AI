@@ -1124,6 +1124,7 @@ async def test_scanner_opportunity_identity_dedupes_then_opens_new_job(
         league_id=str(seeded["league_id"]),
         home_team_id=str(seeded["home_team_id"]),
         away_team_id=str(seeded["away_team_id"]),
+        season_id=str(seeded.get("season_id")) if seeded.get("season_id") else None,
         kickoff_at=kickoff,
         phase=ForecastPhase.PREMATCH,
         categories_to_collect=(FreshnessCategory.LINEUPS,),
@@ -1680,6 +1681,7 @@ async def test_live_local_no_odds_credentials_creates_no_odds_jobs(
         league_id=str(seeded["league_id"]),
         home_team_id=str(seeded["home_team_id"]),
         away_team_id=str(seeded["away_team_id"]),
+        season_id=str(seeded.get("season_id")) if seeded.get("season_id") else None,
         kickoff_at=kickoff,
         phase=_FP.PREMATCH,
         categories_to_collect=(FreshnessCategory.ODDS,),
@@ -1810,6 +1812,7 @@ async def test_failed_collector_job_same_opportunity_requeues_same_uuid(
         league_id=str(seeded["league_id"]),
         home_team_id=str(seeded["home_team_id"]),
         away_team_id=str(seeded["away_team_id"]),
+        season_id=str(seeded.get("season_id")) if seeded.get("season_id") else None,
         kickoff_at=kickoff,
         phase=_FP.PREMATCH,
         categories_to_collect=(FreshnessCategory.ODDS,),
@@ -1884,6 +1887,7 @@ async def test_failed_retry_never_downgrades_running_or_succeeded(
         league_id=str(seeded["league_id"]),
         home_team_id=str(seeded["home_team_id"]),
         away_team_id=str(seeded["away_team_id"]),
+        season_id=str(seeded.get("season_id")) if seeded.get("season_id") else None,
         kickoff_at=kickoff,
         phase=_FP.PREMATCH,
         categories_to_collect=(FreshnessCategory.ODDS,),
@@ -2132,3 +2136,333 @@ async def test_concurrent_reservations_after_new_observation(
     # New baseline 80, reserve floor 20 → P1 may spend 60 → 15 × 4, but
     # only 10 callers: all 10 succeed (40 ≤ 60), concurrency-safe.
     assert len(allowed) == 10
+
+
+@pytest.mark.asyncio
+async def test_season_identity_pinned_end_to_end_two_seasons(
+    m4_session_factory: Any, redis_client: Redis, m4_settings: Settings
+) -> None:
+    """M4.4 §2: season identity flows fixture.season_id → provider season
+    param → snapshot season_id. A fresh season-A snapshot never satisfies
+    season-B freshness; A/B lock identities never collide."""
+    from sports_intelligence.collectors.framework import run_collector
+    from sports_intelligence.core.phases import ForecastPhase as _FP
+    from sports_intelligence.providers.sports.mock import MockSportsDataProvider
+
+    # Same league, TWO seasons; fixture belongs to B (2026).
+    async with m4_session_factory() as session:
+        league = League(
+            slug=f"season-pin-{uuid.uuid4().hex[:8]}",
+            name="Season Pin",
+            country="Test",
+            enabled=True,
+        )
+        session.add(league)
+        await session.flush()
+        season_a = Season(league_id=league.id, name="2025-2026", active=True)
+        season_b = Season(league_id=league.id, name="2026-2027", active=True)
+        session.add_all([season_a, season_b])
+        await session.flush()
+        home = Team(name="SHome", country="T")
+        away = Team(name="SAway", country="T")
+        session.add(home)
+        session.add(away)
+        await session.flush()
+        kickoff = datetime.now(UTC) + timedelta(days=1)
+        fixture = Fixture(
+            league_id=league.id,
+            season_id=season_b.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            kickoff_at=kickoff,
+            status="NS",
+        )
+        session.add(fixture)
+        await session.flush()
+        session.add_all(
+            [
+                ProviderEntityId(
+                    provider="mock",
+                    entity_type="league",
+                    external_id="39",
+                    internal_entity_id=league.id,
+                ),
+                ProviderEntityId(
+                    provider="mock",
+                    entity_type="team",
+                    external_id="9001",
+                    internal_entity_id=home.id,
+                ),
+                ProviderEntityId(
+                    provider="mock",
+                    entity_type="team",
+                    external_id="9002",
+                    internal_entity_id=away.id,
+                ),
+                ProviderEntityId(
+                    provider="mock",
+                    entity_type="fixture",
+                    external_id="42",
+                    internal_entity_id=fixture.id,
+                ),
+            ]
+        )
+        await session.commit()
+        league_id, season_a_id, season_b_id = (league.id, season_a.id, season_b.id)
+
+    captured_seasons: list[int | None] = []
+
+    class _SeasonSpyProvider(MockSportsDataProvider):
+        async def get_standings(self, *, provider_league_id, season):
+            captured_seasons.append(season)
+            return await super().get_standings(provider_league_id=provider_league_id, season=season)
+
+    ctx = _ctx(
+        factory=m4_session_factory,
+        redis=redis_client,
+        settings=m4_settings,
+        provider=_SeasonSpyProvider(),
+        phase=_FP.MORNING,
+    )
+
+    # 1. A FRESH season-A snapshot must NOT satisfy season-B freshness.
+    async with m4_session_factory() as session:
+        session.add(
+            StandingSnapshot(
+                provider="mock",
+                league_id=league_id,
+                season_id=season_a_id,
+                captured_at=datetime.now(UTC),
+                source_fingerprint="manual:season-a",
+                rows_jsonb=[],
+                updated_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+    # 2. Collect for season B → provider receives 2026 (NOT the active
+    # season-A year 2025); snapshot pinned to season B uuid.
+    ref_b = await run_collector(
+        ctx,
+        "standings",
+        inputs={"league_id": league_id, "season_id": season_b_id},
+    )
+    assert captured_seasons == [2026]
+    async with m4_session_factory() as session:
+        snap_b = (
+            (
+                await session.execute(
+                    select(StandingSnapshot).where(StandingSnapshot.id == ref_b.snapshot_id)
+                )
+            )
+            .scalars()
+            .one()
+        )
+    assert snap_b.season_id == season_b_id
+
+    # 3. Season-B snapshot is now fresh → subsequent collect reuses it
+    # (still only one provider call).
+    ref_b2 = await run_collector(
+        ctx,
+        "standings",
+        inputs={"league_id": league_id, "season_id": season_b_id},
+    )
+    assert captured_seasons == [2026]
+    assert ref_b2.snapshot_id == ref_b.snapshot_id
+
+    # 3. Lock identities do not collide across seasons.
+    from sports_intelligence.collectors.sports_collectors import StandingsCollector
+
+    collector = StandingsCollector()
+    key_a = collector.lock_key(league_id=league_id, season_id=season_a_id)
+    key_b = collector.lock_key(league_id=league_id, season_id=season_b_id)
+    assert key_a != key_b
+
+
+@pytest.mark.asyncio
+@pytest.mark.asyncio
+async def test_ttl_opportunity_stable_fresh_skips_failed_requeues_same_uuid(
+    m4_session_factory: Any, redis_client: Redis, m4_settings: Settings
+) -> None:
+    """M4.4 §3 acceptance flow for a TTL collector (odds, 30 min TTL):
+
+    T0+20 fresh → NO job; T0+31 stale → job A; broker fails → A FAILED;
+    T0+35 → same stale generation → SAME uuid A requeued; T0+40 A
+    RUNNING → no duplicate; successful snapshot at T0+41 → next scan
+    fresh → no job.
+    """
+    from unittest.mock import patch as _patch
+
+    from sports_intelligence.collectors.pre_match_scan import PreMatchDecision
+    from sports_intelligence.core.phases import ForecastPhase as _FP
+    from sports_intelligence.workers.tasks.collect import collect_task
+    from sports_intelligence.workers.tasks.pre_match import _dispatch_decision
+
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        odds_provider="mock",
+        freshness_odds_seconds=30 * 60,
+        leagues_config_path=m4_settings.leagues_config_path,
+        database_url=m4_settings.database_url,
+    )
+    kickoff = datetime.now(UTC) + timedelta(hours=5)
+    seeded = await _seed_league_team_fixture(m4_session_factory, kickoff_at=kickoff)
+    decision = PreMatchDecision(
+        fixture_id=str(seeded["fixture_id"]),
+        league_id=str(seeded["league_id"]),
+        home_team_id=str(seeded["home_team_id"]),
+        away_team_id=str(seeded["away_team_id"]),
+        season_id=str(seeded.get("season_id")) if seeded.get("season_id") else None,
+        kickoff_at=kickoff,
+        phase=_FP.MORNING,
+        categories_to_collect=(FreshnessCategory.ODDS,),
+    )
+
+    t0 = datetime.now(UTC)
+
+    async def _scan(at: datetime, *, fail_broker: bool = False):
+        calls = {"n": 0, "args": []}
+
+        def _fake_apply_async(*, args, **_kwargs):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            calls["args"].append(list(args))
+            if fail_broker and calls["n"] == 1:
+                raise RuntimeError("broker down")
+
+        with (
+            _patch.object(collect_task, "apply_async", _fake_apply_async),
+            _patch(
+                "sports_intelligence.workers.tasks.pre_match.get_settings",
+                return_value=settings,
+            ),
+        ):
+            result = await _dispatch_decision(m4_session_factory, decision, now=at)
+        return result, calls
+
+    # T0+20: fresh snapshot → NO job.
+    async with m4_session_factory() as session:
+        session.add(
+            OddsSnapshotSet(
+                provider="mock-odds",
+                fixture_id=seeded["fixture_id"],
+                captured_at=t0,
+                market_whitelist_jsonb=["h2h"],
+            )
+        )
+        await session.commit()
+    result_fresh, calls_fresh = await _scan(t0 + timedelta(minutes=20))
+    assert result_fresh["planned"] == 1
+    assert result_fresh["jobs_created"] == 0
+    assert calls_fresh["n"] == 0
+
+    # T0+31: stale → job A created (broker fails → A FAILED).
+    with pytest.raises(RuntimeError):
+        await _scan(t0 + timedelta(minutes=31), fail_broker=True)
+    async with m4_session_factory() as session:
+        jobs = (
+            (await session.execute(select(Job).where(Job.job_type == "collect:odds")))
+            .scalars()
+            .all()
+        )
+    assert len(jobs) == 1
+    job_a = jobs[0]
+    assert job_a.status == "FAILED"
+    job_id_a = str(job_a.id)
+
+    # T0+35: same stale generation → SAME uuid A requeued.
+    result_35, calls_35 = await _scan(t0 + timedelta(minutes=35))
+    assert result_35["jobs_created"] == 0
+    assert result_35["jobs_enqueued"] == 1
+    assert calls_35["args"][0][0] == job_id_a
+    async with m4_session_factory() as session:
+        job_a2 = await session.get(Job, uuid.UUID(job_id_a))
+        assert job_a2.status == "PENDING"
+
+    # T0+40: A RUNNING → no duplicate job.
+    async with m4_session_factory() as session:
+        job_running = await session.get(Job, uuid.UUID(job_id_a))
+        job_running.status = "RUNNING"
+        await session.commit()
+    result_40, calls_40 = await _scan(t0 + timedelta(minutes=40))
+    assert result_40["jobs_enqueued"] == 0
+    assert result_40["jobs_created"] == 0
+    assert calls_40["n"] == 0
+
+    # Successful snapshot at T0+41 → next scan fresh → no job.
+    async with m4_session_factory() as session:
+        session.add(
+            OddsSnapshotSet(
+                provider="mock-odds",
+                fixture_id=seeded["fixture_id"],
+                captured_at=t0 + timedelta(minutes=41),
+                market_whitelist_jsonb=["h2h"],
+            )
+        )
+        await session.commit()
+    result_42, calls_42 = await _scan(t0 + timedelta(minutes=42))
+    assert result_42["jobs_created"] == 0
+    assert calls_42["n"] == 0
+
+
+@pytest.mark.asyncio
+async def test_quota_observation_uses_response_time_generation(
+    m4_session_factory: Any, redis_client: Redis, m4_settings: Settings
+) -> None:
+    """M4.4 §4: QuotaBucket.observed_at derives from the RESPONSE
+    observation time (finished_at), never the request start. Two
+    overlapping requests: the LATER response becomes the authoritative
+    bucket/generation."""
+    from sports_intelligence.core.phases import Priority
+
+    quota = QuotaManager(m4_settings, m4_session_factory, redis=redis_client)
+    seeded = await _seed_league_team_fixture(
+        m4_session_factory, kickoff_at=datetime.now(UTC) + timedelta(days=1)
+    )
+
+    # Request A starts first but its RESPONSE arrives LAST.
+    started_a = datetime.now(UTC)
+    finished_a = started_a + timedelta(seconds=2)
+    await quota.record_success(
+        provider="api_football",
+        endpoint_category="standings",
+        started_at=started_a,
+        finished_at=finished_a,
+        headers={"x-ratelimit-requests-remaining": "42", "x-ratelimit-requests-limit": "100"},
+        priority=Priority.P2,
+        fixture_id=seeded["fixture_id"],
+        league_id=seeded["league_id"],
+    )
+    # Request B starts later but its RESPONSE arrives EARLIER.
+    started_b = started_a + timedelta(seconds=1)
+    finished_b = started_a + timedelta(seconds=1.5)
+    await quota.record_success(
+        provider="api_football",
+        endpoint_category="team_stats",
+        started_at=started_b,
+        finished_at=finished_b,
+        headers={"x-ratelimit-requests-remaining": "50", "x-ratelimit-requests-limit": "100"},
+        priority=Priority.P2,
+        fixture_id=seeded["fixture_id"],
+        league_id=seeded["league_id"],
+    )
+
+    async with m4_session_factory() as session:
+        buckets = (
+            (
+                await session.execute(
+                    select(QuotaBucket)
+                    .where(QuotaBucket.provider == "api_football", QuotaBucket.window == "daily")
+                    .order_by(QuotaBucket.observed_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(buckets) >= 2
+    authoritative = buckets[0]
+    # The authoritative bucket is the one with the LATER response time:
+    # request A's response (remaining=42, finished_a) — NOT B (remaining
+    # 50) whose response arrived earlier, even though B started later.
+    assert authoritative.observed_at == finished_a
+    assert authoritative.remaining_value == 42

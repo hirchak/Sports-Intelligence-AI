@@ -94,24 +94,22 @@ def test_ttl_opportunity_stable_while_fresh_changes_when_stale() -> None:
     assert suffix_a == suffix_b == f"due:{int((captured + timedelta(seconds=1800)).timestamp())}"
 
 
-def test_stale_inside_old_bucket_opens_new_opportunity() -> None:
-    """Counterexample regression (M4.3 §4): a job created while the
-    snapshot is still fresh; time advances just past the TTL but inside
-    the old global bucket — the scanner must create a NEW refresh
-    opportunity, not be suppressed by an unrelated bucket boundary."""
+def test_stale_opportunity_stable_until_new_snapshot() -> None:
+    """M4.4 §3: the stale generation is `captured_at + effective TTL`
+    and STAYS UNCHANGED across scanner runs (fresh → no job; stale →
+    stable due identity so FAILED retries reuse the same uuid)."""
     ttl_seconds = 1800
     captured = KICKOFF - timedelta(minutes=40)  # captured at T-40
-    # Scan inside the same old bucket but BEFORE stale → same due.
+    # While fresh (captured+25min < TTL) the due is captured+TTL.
     fresh_suffix = refresh_opportunity_suffix(
         collector_name="odds",
         kickoff_at=KICKOFF,
-        now=captured + timedelta(minutes=25),  # captured+25min < captured+30min TTL
+        now=captured + timedelta(minutes=25),
         windows_minutes=WINDOWS,
         ttl_seconds=ttl_seconds,
         latest_captured_at=captured,
     )
-    # Snapshot is stale now (captured+31min > TTL); still INSIDE the old
-    # global bucket boundary → due must advance to now.
+    # Stale (captured+31min > TTL): the identity does NOT change.
     stale_suffix = refresh_opportunity_suffix(
         collector_name="odds",
         kickoff_at=KICKOFF,
@@ -120,8 +118,27 @@ def test_stale_inside_old_bucket_opens_new_opportunity() -> None:
         ttl_seconds=ttl_seconds,
         latest_captured_at=captured,
     )
-    assert fresh_suffix != stale_suffix
-    assert stale_suffix == f"due:{int((captured + timedelta(minutes=31)).timestamp())}"
+    stale_suffix_2 = refresh_opportunity_suffix(
+        collector_name="odds",
+        kickoff_at=KICKOFF,
+        now=captured + timedelta(minutes=35),
+        windows_minutes=WINDOWS,
+        ttl_seconds=ttl_seconds,
+        latest_captured_at=captured,
+    )
+    assert fresh_suffix == stale_suffix == stale_suffix_2
+    assert stale_suffix == f"due:{int((captured + timedelta(seconds=1800)).timestamp())}"
+    # A NEW successful snapshot creates a new generation.
+    new_captured = captured + timedelta(minutes=41)
+    new_suffix = refresh_opportunity_suffix(
+        collector_name="odds",
+        kickoff_at=KICKOFF,
+        now=new_captured + timedelta(minutes=1),
+        windows_minutes=WINDOWS,
+        ttl_seconds=ttl_seconds,
+        latest_captured_at=new_captured,
+    )
+    assert new_suffix != stale_suffix
 
 
 def test_lineup_poll_due_t120_unconfirmed_permits_t60() -> None:

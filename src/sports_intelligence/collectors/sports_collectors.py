@@ -30,7 +30,10 @@ from sports_intelligence.collectors.framework import (
     SnapshotRef,
     register,
 )
-from sports_intelligence.collectors.ids import resolve_external_id
+from sports_intelligence.collectors.ids import (
+    ExternalIdResolutionError,
+    resolve_external_id,
+)
 from sports_intelligence.core.phases import FreshnessCategory, Priority
 from sports_intelligence.db.models import (
     AvailabilitySnapshot,
@@ -114,21 +117,47 @@ class _ResolverMixin:
             session, provider=ctx.provider_name(), entity_type="league", internal_id=league_id
         )
 
-    async def _season_number(self, session: AsyncSession, league_id: uuid.UUID) -> int | None:
+    async def _season_year_for(
+        self,
+        session: AsyncSession,
+        *,
+        season_id: uuid.UUID | None,
+        league_id: uuid.UUID,
+    ) -> int:
+        """Resolve the provider season year from the EXACT Season row
+        (M4.4 §2) — never an arbitrary `active` season.
+
+        Fetches the exact Season, verifies it belongs to the expected
+        league, and parses the year deterministically. Missing or
+        mismatched identity is a hard error, never a guess.
+        """
         from sports_intelligence.db.models import Season
 
-        stmt = (
-            select(Season.name)
-            .where(Season.league_id == league_id, Season.active == True)  # noqa: E712
-            .limit(1)
-        )
-        value = (await session.execute(stmt)).scalar_one_or_none()
-        if value is None:
-            return None
+        if season_id is None:
+            raise ExternalIdResolutionError(
+                f"season identity required for league {league_id}; refusing to guess"
+            )
+        season = await session.get(Season, season_id)
+        if season is None:
+            raise ExternalIdResolutionError(
+                f"season {season_id} not found; refusing to guess a season"
+            )
+        if season.league_id != league_id:
+            raise ExternalIdResolutionError(
+                f"season {season_id} belongs to league {season.league_id}, "
+                f"not {league_id}; refusing to use it"
+            )
+        name = str(season.name)
+        year_token = name.split("/")[0].split("-")[0].strip()
         try:
-            return int(str(value).split("/")[0])
-        except ValueError:
-            return None
+            year = int(year_token)
+        except ValueError as exc:
+            raise ExternalIdResolutionError(
+                f"season name {name!r} has no deterministic year; refusing to guess"
+            ) from exc
+        if not (1990 <= year <= 2100):
+            raise ExternalIdResolutionError(f"season year {year} out of range for {name!r}")
+        return year
 
 
 class StandingsCollector(_ResolverMixin):
@@ -162,11 +191,16 @@ class StandingsCollector(_ResolverMixin):
         return (row[0], row[1]) if row else (None, None)
 
     async def fetch(
-        self, ctx: CollectorContext, *, league_id: uuid.UUID, **_: object
+        self,
+        ctx: CollectorContext,
+        *,
+        league_id: uuid.UUID,
+        season_id: uuid.UUID | None = None,
+        **_: object,
     ) -> CollectorResult:
         async with ctx.session_factory() as session:
             external_league = await self._external_league_id(session, ctx, league_id)
-            season = await self._season_number(session, league_id)
+            season = await self._season_year_for(session, season_id=season_id, league_id=league_id)
         result = await self._sports_provider(ctx).get_standings(
             provider_league_id=external_league, season=season
         )
@@ -253,12 +287,13 @@ class TeamStatisticsCollector(_ResolverMixin):
         *,
         team_id: uuid.UUID,
         league_id: uuid.UUID,
+        season_id: uuid.UUID | None = None,
         **_: object,
     ) -> CollectorResult:
         async with ctx.session_factory() as session:
             external_team = await self._external_team_id(session, ctx, team_id)
             external_league = await self._external_league_id(session, ctx, league_id)
-            season = await self._season_number(session, league_id)
+            season = await self._season_year_for(session, season_id=season_id, league_id=league_id)
         result = await self._sports_provider(ctx).get_team_statistics(
             provider_team_id=external_team,
             provider_league_id=external_league,

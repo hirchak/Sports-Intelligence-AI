@@ -470,10 +470,19 @@ def parse_team_statistics_response(
     retrieved_at: datetime,
     rate_headers: dict[str, str] | None = None,
 ) -> ProviderTeamStatisticsResult:
-    """Parse GET /teams/statistics (actual v3 contract).
+    """Parse GET /teams/statistics (actual v3 contract, M4.4 §1).
 
-    The v3 `response` block is a SINGLE team-statistics object, not a
-    list (unlike /fixtures etc.).
+    The v3 `response` block is a SINGLE team-statistics object with:
+
+    - `fixtures.{played,wins,draws,loses}.{home,away,total}` (note
+      `loses`, NOT `losses`);
+    - `goals.for.total.{home,away,total}` and
+      `goals.against.total.{home,away,total}` — the nested `total`
+      object holds home/away/total;
+    - `clean_sheet.{home,away,total}` and
+      `failed_to_score.{home,away,total}`.
+
+    Missing provider values remain None — never fabricated zero.
     """
     raw = payload.get("response")
     if not isinstance(raw, dict):
@@ -489,15 +498,34 @@ def parse_team_statistics_response(
         )
     league = raw.get("league") or {}
 
-    def _total(block: object, key: str) -> int | None:
+    def _split_total(block: object, key: str) -> int | None:
+        """Extract the `total` from a `{home, away, total}` split.
+
+        Two shapes occur in the v3 contract:
+        - `fixtures.played = {home, away, total}` (key is the metric);
+        - `clean_sheet = {home, away, total}` (flat, key == "total").
+        """
         if not isinstance(block, dict):
             return None
-        if key == "total" and "total" in block:
-            return _int_or_none(block["total"])
+        if key == "total":
+            return _int_or_none(block.get("total"))
         nested = block.get(key)
-        if isinstance(nested, dict):
-            return _int_or_none(nested.get("total"))
-        return None
+        if not isinstance(nested, dict):
+            return None
+        return _int_or_none(nested.get("total"))
+
+    def _goals_total(block: object, side: str) -> int | None:
+        """Extract goals.{for,against}.{side}.total where the `side`
+        block is `{"total": {"home": .., "away": .., "total": ..}}`."""
+        if not isinstance(block, dict):
+            return None
+        side_block = block.get(side)
+        if not isinstance(side_block, dict):
+            return None
+        total_split = side_block.get("total")
+        if not isinstance(total_split, dict):
+            return None
+        return _int_or_none(total_split.get("total"))
 
     fixtures = raw.get("fixtures") or {}
     goals = raw.get("goals") or {}
@@ -505,14 +533,15 @@ def parse_team_statistics_response(
     failed_to_score = raw.get("failed_to_score") or {}
     metrics: dict[str, Any] = {
         "form": raw.get("form"),
-        "played": _total(fixtures, "played"),
-        "wins": _total(fixtures, "wins"),
-        "draws": _total(fixtures, "draws"),
-        "losses": _total(fixtures, "losses"),
-        "goals_for": _total(goals, "for"),
-        "goals_against": _total(goals, "against"),
-        "clean_sheets": _total(clean_sheets, "total"),
-        "failed_to_score": _total(failed_to_score, "total"),
+        "played": _split_total(fixtures, "played"),
+        "wins": _split_total(fixtures, "wins"),
+        "draws": _split_total(fixtures, "draws"),
+        # API-Football spells the key `loses`; we normalize to `losses`.
+        "losses": _split_total(fixtures, "loses"),
+        "goals_for": _goals_total(goals, "for"),
+        "goals_against": _goals_total(goals, "against"),
+        "clean_sheets": _split_total(clean_sheets, "total"),
+        "failed_to_score": _split_total(failed_to_score, "total"),
     }
     return ProviderTeamStatisticsResult(
         provider="api_football",

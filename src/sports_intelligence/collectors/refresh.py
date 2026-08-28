@@ -71,17 +71,18 @@ def refresh_opportunity_suffix(
             kickoff_at=kickoff_at, now=now, windows_minutes=windows_minutes
         )
         return window or "no_window"
-    moment = _aware(now)
     if latest_captured_at is None:
         # No snapshot yet: a single stable opportunity until a collector
         # persists one — repeated scans dedupe (M4.3 §7 retry keeps the
         # same uuid); once a snapshot exists the due generation governs.
         return "due:missing"
     captured = _aware(latest_captured_at)
+    # M4.4 §3: the due generation is `captured_at + effective TTL` and
+    # stays UNCHANGED until a new successful snapshot is persisted —
+    # even once the snapshot has gone stale. The scanner skips fresh
+    # snapshots entirely (no job), so a stale snapshot's identity is
+    # stable across scanner runs → FAILED retries reuse the same uuid.
     due = captured + timedelta(seconds=max(ttl_seconds, 1))
-    if moment > due:
-        # Snapshot went stale: eligible on the next scanner run.
-        due = moment
     return f"due:{int(due.timestamp())}"
 
 
