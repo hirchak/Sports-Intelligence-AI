@@ -1315,7 +1315,7 @@ button-based menus and a Back button on every screen.
 
 **Git**
 - branch: build/m4
-- commit: [pending commit]
+- commit: c82e726
 
 **Next action**
 - Commit and push to origin/build/m4.

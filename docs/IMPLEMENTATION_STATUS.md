@@ -554,7 +554,7 @@ Branch:
 - `build/m4` (M4 work); `main` = `7d23c9d` (M3 accepted via PR #5)
 
 Commit:
-- M4 commit recorded in `docs/REVIEW_HANDOFF.md` after commit
+- `c82e726` (M4.4 focused correctness fixes & acceptance verification)
 
 Working tree:
 - clean after the M4 commit
