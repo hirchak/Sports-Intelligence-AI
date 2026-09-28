@@ -1263,7 +1263,7 @@ button-based menus and a Back button on every screen.
 
 **Git**
 - branch: build/m4
-- commit: pending commit for M4.4 verification fix
+- commit: 63b23f2
 
 **Next action**
 - Commit M4.4 verification fixes, update remote HEAD.
