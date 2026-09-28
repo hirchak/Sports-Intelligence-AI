@@ -1210,8 +1210,62 @@ button-based menus and a Back button on every screen.
 
 **Git**
 - branch: build/m4
-- commit: recorded in REVIEW_HANDOFF after commit
+- commit: 9ec45d9
 
 **Next action**
 - Independent re-review of M4.4; merge + tag `v0.5-m4` after PASS; M5
   only with explicit user approval.
+
+---
+
+### 2026-09-28 22:48 +02:00 — Antigravity (Gemini 3.8 Flash)
+
+**Milestone:** M4.4
+**Task:** Independent review M4.3 verification and focused M4.4 correctness verification
+
+**Completed**
+- 1. Verified API-Football /teams/statistics v3 normalization:
+  fixtures.{played,wins,draws,loses}.{home,away,total} (loses→losses),
+  goals.for/against.total.{home,away,total}, clean_sheet, failed_to_score;
+  missing values stay None; contract tests assert all metrics.
+- 2. Pinned season identity end-to-end: PreMatchDecision.season_id,
+  execute_plan propagation, exact Season resolver (replaces active=True LIMIT 1),
+  StandingsCollector.latest_snapshot() AND TeamStatisticsCollector.latest_snapshot()
+  both filter by exact season_id; unit + integration tests verify season isolation.
+- 3. Verified stable TTL refresh opportunity: due:missing without snapshot,
+  fresh snapshot produces no job, stale snapshot identity stable across scanner runs
+  (due:<captured_at + effective_ttl>).
+- 4. Verified QuotaBucket.observed_at derived from response finished_at
+  rather than request start; ordering test proves later response becomes authoritative.
+
+**Files changed**
+- `src/sports_intelligence/collectors/sports_collectors.py` (added season_id filter to TeamStatisticsCollector.latest_snapshot)
+- `tests/integration/test_m4_collectors.py` (added team statistics season isolation assertions, cleaned duplicate decorator)
+- `tests/unit/collectors/test_sports_collectors.py` (added test_latest_snapshot_includes_season_id)
+- `docs/CURRENT_TASK.md`, `docs/IMPLEMENTATION_STATUS.md`, `docs/REVIEW_HANDOFF.md`, `docs/AI_WORKLOG.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (264 passed in 4.09s)
+- `uv run ruff check .` / `ruff format --check .` → PASS (clean)
+- `uv run mypy src` → PASS (87 source files strict clean)
+- `docker compose config -q` / `--profile telegram` → PASS (clean)
+- Secret scan → clean (no secrets in tracked files)
+
+**Live integrations verified**
+- none (MOCK only, live credentials not configured for broader smoke).
+
+**Known issues**
+- Local integration runs flush Redis first (reservation counters).
+- Docker desktop daemon not active locally during this session.
+
+**Spec / ADR deviations**
+- none new.
+
+**Git**
+- branch: build/m4
+- commit: pending commit for M4.4 verification fix
+
+**Next action**
+- Commit M4.4 verification fixes, update remote HEAD.
+- Independent review PASS before merge to main; do not start M5.
+

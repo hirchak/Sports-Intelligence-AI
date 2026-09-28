@@ -274,6 +274,7 @@ class TeamStatisticsCollector(_ResolverMixin):
             .where(
                 TeamStatisticsSnapshot.team_id == team_id,
                 TeamStatisticsSnapshot.league_id == league_id,
+                *([TeamStatisticsSnapshot.season_id == season_id] if season_id else [True]),
             )
             .order_by(TeamStatisticsSnapshot.captured_at.desc())
             .limit(1)

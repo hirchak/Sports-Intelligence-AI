@@ -56,6 +56,7 @@ from sports_intelligence.db.models import (
     Season,
     StandingSnapshot,
     Team,
+    TeamStatisticsSnapshot,
 )
 from sports_intelligence.db.session import create_engine, create_session_factory
 from sports_intelligence.providers.odds.mock import MockOddsProvider
@@ -2225,7 +2226,16 @@ async def test_season_identity_pinned_end_to_end_two_seasons(
         phase=_FP.MORNING,
     )
 
-    # 1. A FRESH season-A snapshot must NOT satisfy season-B freshness.
+    # 1. A FRESH season-A snapshot must NOT satisfy season-B freshness
+    # for standings or team statistics.
+    from sports_intelligence.collectors.sports_collectors import (
+        StandingsCollector,
+        TeamStatisticsCollector,
+    )
+
+    collector = StandingsCollector()
+    ts_collector = TeamStatisticsCollector()
+
     async with m4_session_factory() as session:
         session.add(
             StandingSnapshot(
@@ -2238,7 +2248,29 @@ async def test_season_identity_pinned_end_to_end_two_seasons(
                 updated_at=datetime.now(UTC),
             )
         )
+        session.add(
+            TeamStatisticsSnapshot(
+                provider="mock",
+                team_id=home.id,
+                league_id=league_id,
+                season_id=season_a_id,
+                captured_at=datetime.now(UTC),
+                source_fingerprint="manual:season-a-ts",
+                metrics_jsonb={"played": 10},
+                updated_at=datetime.now(UTC),
+            )
+        )
         await session.commit()
+
+    async with m4_session_factory() as session:
+        st_cap, _ = await collector.latest_snapshot(
+            session, league_id=league_id, season_id=season_b_id
+        )
+        assert st_cap is None
+        ts_cap, _ = await ts_collector.latest_snapshot(
+            session, team_id=home.id, league_id=league_id, season_id=season_b_id
+        )
+        assert ts_cap is None
 
     # 2. Collect for season B → provider receives 2026 (NOT the active
     # season-A year 2025); snapshot pinned to season B uuid.
@@ -2270,16 +2302,16 @@ async def test_season_identity_pinned_end_to_end_two_seasons(
     assert captured_seasons == [2026]
     assert ref_b2.snapshot_id == ref_b.snapshot_id
 
-    # 3. Lock identities do not collide across seasons.
-    from sports_intelligence.collectors.sports_collectors import StandingsCollector
-
-    collector = StandingsCollector()
+    # 4. Lock identities do not collide across seasons for standings & team_stats.
     key_a = collector.lock_key(league_id=league_id, season_id=season_a_id)
     key_b = collector.lock_key(league_id=league_id, season_id=season_b_id)
     assert key_a != key_b
 
+    ts_key_a = ts_collector.lock_key(team_id=home.id, league_id=league_id, season_id=season_a_id)
+    ts_key_b = ts_collector.lock_key(team_id=home.id, league_id=league_id, season_id=season_b_id)
+    assert ts_key_a != ts_key_b
 
-@pytest.mark.asyncio
+
 @pytest.mark.asyncio
 async def test_ttl_opportunity_stable_fresh_skips_failed_requeues_same_uuid(
     m4_session_factory: Any, redis_client: Redis, m4_settings: Settings

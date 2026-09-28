@@ -445,4 +445,36 @@ def test_lineup_poll_due_outside_all_windows() -> None:
     )
 
 
-_ = timedelta
+@pytest.mark.asyncio
+async def test_latest_snapshot_includes_season_id() -> None:
+    """M4.4 §2: StandingCollector and TeamStatisticsCollector latest_snapshot()
+    must include exact season_id in freshness identity when provided."""
+    executed_stmts: list[object] = []
+    session = MagicMock()
+
+    async def fake_execute(stmt: object) -> MagicMock:
+        executed_stmts.append(stmt)
+        result = MagicMock()
+        result.first.return_value = (datetime.now(UTC), uuid.uuid4())
+        return result
+
+    session.execute = fake_execute
+
+    league_id = uuid.uuid4()
+    season_id = uuid.uuid4()
+    team_id = uuid.uuid4()
+
+    sc = StandingsCollector()
+    await sc.latest_snapshot(session, league_id=league_id, season_id=season_id)
+    assert len(executed_stmts) == 1
+    compiled_sc = str(executed_stmts[0].compile(compile_kwargs={"literal_binds": True}))  # type: ignore[attr-defined]
+    assert league_id.hex in compiled_sc
+    assert season_id.hex in compiled_sc
+
+    tc = TeamStatisticsCollector()
+    await tc.latest_snapshot(session, team_id=team_id, league_id=league_id, season_id=season_id)
+    assert len(executed_stmts) == 2
+    compiled_tc = str(executed_stmts[1].compile(compile_kwargs={"literal_binds": True}))  # type: ignore[attr-defined]
+    assert team_id.hex in compiled_tc
+    assert league_id.hex in compiled_tc
+    assert season_id.hex in compiled_tc

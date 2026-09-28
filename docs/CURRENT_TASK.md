@@ -35,7 +35,7 @@ items — working M4/M4.1/M4.2/M4.3 components are NOT redesigned.
      exact Season resolver: fetches the exact Season, verifies it
      belongs to the expected league, parses the year deterministically,
      refuses missing/mismatched/ambiguous identity;
-   - standings/team_stats lock identity, freshness lookup, provider
+   - standings/team_stats lock identity, freshness lookup (`StandingsCollector.latest_snapshot` and `TeamStatisticsCollector.latest_snapshot` both filter by exact season_id), provider
      `season=` parameter and persisted snapshot `season_id` all use the
      exact season;
    - Integration regression: same league with season A=2025 and B=2026;
@@ -63,7 +63,7 @@ items — working M4/M4.1/M4.2/M4.3 components are NOT redesigned.
 
 # Verification (actually run)
 
-- `uv run pytest -q -m "not integration"` → **263 passed**
+- `uv run pytest -q -m "not integration"` → **264 passed**
 - integration suite (`sports_intel_test` + Redis db15) → **59 passed**
   (incl. new M4.4 tests: two-season isolation, TTL stable opportunity
   acceptance flow, response-time observation ordering, season pinning)

@@ -366,30 +366,62 @@ All review items implemented:
   `/v1/system/status`; strictly read-only.
 - **Database-first UX proven by test**: GET fixtures/detail/status flow
   writes zero `external_api_requests` rows.
-- **Tests**: 233 unit + 38 integration green (new: framework quota-order/
-  stale/concurrency, locks, sports-collector semantics, odds normalizer
-  contract, TheOddsApiProvider 401/429/5xx/timeout/transport/key-leak,
-  beat schedule semantics incl. disabled-by-default and toggles, M4
-  integration file); Ruff/format clean; strict mypy clean (82 files);
-  compose validation OK.
+- **Tests**: 264 unit + 59 integration green; Ruff/format clean;
+  strict mypy clean (87 files); compose validation OK.
 
----# 3. In progress
+## M4.1 — Corrective fixes (M4 review: FAIL)
 
-None. M4 implemented on `build/m4`; the branch awaits independent review.
+- Sentinel regression: ApiFootballProvider never returns mock data.
+- Two team snapshots from one provider response (availability/lineups).
+- Pre-match planner selects only future fixtures.
+- Redis coalesce locks publish real snapshot refs to waiting tasks.
+
+## M4.2 — Corrective fixes (M4.1 review: FAIL)
+
+- ForecastPhase MORNING vs PREMATCH driven by kickoff vs now.
+- Availability writes home and away snapshots with UNKNOWN fallback.
+- Sequential job attempts per job.
+- Standings/team_stats shared across fixtures.
+
+## M4.3 — Corrective fixes (M4.2 review: FAIL)
+
+- Odds capability gating (no silent mock in sandbox/live).
+- OddsProvider.request_markets() maps alternate_totals.
+- Fixture-level lineup refresh aggregates both teams.
+- Due generation identity: captured + TTL while fresh.
+- Quota generation keyed to observation generation.
+- The Odds API daily limit inferred from used + remaining.
+- FAILED job requeue with same job UUID.
+- Provider failure telemetry in ledger.
+
+## M4.4 — Focused correctness fixes (M4.3 review: FAIL)
+
+- API-Football /teams/statistics v3 normalization (loses→losses, goals
+  totals, clean_sheet, failed_to_score; missing values stay None).
+- Season identity pinned end-to-end: PreMatchDecision.season_id, exact
+  Season resolver, `StandingsCollector.latest_snapshot` and
+  `TeamStatisticsCollector.latest_snapshot` filter by season_id.
+- Stable TTL refresh opportunity: due:missing without snapshot, scanner
+  skips fresh snapshots, stale identity stable across scanner runs.
+- QuotaBucket.observed_at derived from response finished_at.
 
 ---
 
-# 4. Acceptance tests passed (actually run, M4 state)
+# 3. In progress
 
-- `uv run pytest -q -m "not integration"` → **233 passed**
+None. M4.4 implemented on `build/m4`; awaiting independent re-review.
+
+---
+
+# 4. Acceptance tests passed (actually run, M4.4 state)
+
+- `uv run pytest -q -m "not integration"` → **264 passed**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
-  **38 passed** (M2/M2.4 regressions, schema-drift `alembic check`,
-  migration cycle + new M4 file: collectors persist/reuse, standings
-  shared across fixtures = single ledger row per league, odds history
-  immutable, quota ledger persisted, job_attempts recorded, status API,
-  DB-first UX zero-provider-calls, pre-match planner idempotent)
+  **59 passed** (M2/M2.4 regressions, schema-drift `alembic check`,
+  migration cycle, M4 collectors, two-season isolation, TTL stable
+  opportunity flow, quota observation ordering, season pinning)
 - `uv run ruff check .` / `ruff format --check .` → clean
-- `uv run mypy src` → **no issues in 82 source files** (strict)
+- `uv run mypy src` → **no issues in 87 source files** (strict)
 - `docker compose config -q` and `docker compose --profile telegram
   config -q` (+dev) → OK
 - Secret scan: clean (no secrets in tracked files; token/user IDs only
