@@ -47,8 +47,11 @@ review **FAIL**
   fetches the exact Season row, verifies league ownership, parses the
   year deterministically, refuses missing/mismatched identity.
 - Lock identity, freshness lookup (`StandingsCollector.latest_snapshot` and
-  `TeamStatisticsCollector.latest_snapshot` both filter by exact season_id),
-  provider `season=` and persisted snapshot `season_id` all use the exact season.
+  `TeamStatisticsCollector.latest_snapshot` both filter by exact season_id,
+  returning (None, None) when season_id is None), provider `season=` and
+  persisted snapshot `season_id` all use the exact season.
+- Fixed `TeamStatisticsCollector.persist()` to omit invalid `source_fingerprint`
+  argument matching `TeamStatisticsSnapshot` schema.
 - Two-season same-league regression: fixture on season B → provider
   season=2026, snapshot pinned to B uuid, fresh A never satisfies B,
   A/B lock keys distinct.
@@ -73,7 +76,7 @@ review **FAIL**
 
 # Verification
 
-- unit → **264 passed**; integration → **59 passed** (isolated
+- unit → **265 passed**; integration → **59 passed** (isolated
   `sports_intel_test` + Redis db15, incl. alembic check)
 - ruff/format clean; strict mypy clean (87 files); compose OK;
   secrets clean; no schema migration needed.

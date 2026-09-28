@@ -478,3 +478,37 @@ async def test_latest_snapshot_includes_season_id() -> None:
     assert team_id.hex in compiled_tc
     assert league_id.hex in compiled_tc
     assert season_id.hex in compiled_tc
+
+    # M4.4 §2: missing season identity MUST NOT execute a broad query or match any season
+    snap_sc, id_sc = await sc.latest_snapshot(session, league_id=league_id, season_id=None)
+    assert snap_sc is None and id_sc is None
+    snap_tc, id_tc = await tc.latest_snapshot(
+        session, team_id=team_id, league_id=league_id, season_id=None
+    )
+    assert snap_tc is None and id_tc is None
+    # Still only the 2 previous queries:
+    assert len(executed_stmts) == 2
+
+    # Lock keys differ across seasons and none:
+    sid_a = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    sid_b = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    assert (
+        len(
+            {
+                sc.lock_key(league_id=league_id, season_id=sid_a),
+                sc.lock_key(league_id=league_id, season_id=sid_b),
+                sc.lock_key(league_id=league_id, season_id=None),
+            }
+        )
+        == 3
+    )
+    assert (
+        len(
+            {
+                tc.lock_key(team_id=team_id, league_id=league_id, season_id=sid_a),
+                tc.lock_key(team_id=team_id, league_id=league_id, season_id=sid_b),
+                tc.lock_key(team_id=team_id, league_id=league_id, season_id=None),
+            }
+        )
+        == 3
+    )

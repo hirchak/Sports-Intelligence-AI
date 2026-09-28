@@ -189,6 +189,15 @@ async def _dispatch_decision(
                 logger.info("odds collector skipped: odds capability disabled in this environment")
                 return
 
+            # M4.4 §2: standings and team_stats require exact season identity.
+            if name in ("standings", "team_stats") and not inputs.get("season_id"):
+                logger.warning(
+                    "%s collector skipped: fixture %s has no season_id; refusing to guess season",
+                    name,
+                    decision.fixture_id,
+                )
+                return
+
             lock_key = collector.lock_key(**{k: v for k, v in inputs.items() if k != "phase"})
             phase_value = str(inputs.get("phase", decision.phase.value))
 

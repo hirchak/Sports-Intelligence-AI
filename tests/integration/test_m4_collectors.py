@@ -2255,7 +2255,6 @@ async def test_season_identity_pinned_end_to_end_two_seasons(
                 league_id=league_id,
                 season_id=season_a_id,
                 captured_at=datetime.now(UTC),
-                source_fingerprint="manual:season-a-ts",
                 metrics_jsonb={"played": 10},
                 updated_at=datetime.now(UTC),
             )
@@ -2302,14 +2301,53 @@ async def test_season_identity_pinned_end_to_end_two_seasons(
     assert captured_seasons == [2026]
     assert ref_b2.snapshot_id == ref_b.snapshot_id
 
-    # 4. Lock identities do not collide across seasons for standings & team_stats.
+    # 4. Lock identities and collector job keys do not collide across seasons.
+    import hashlib
+
     key_a = collector.lock_key(league_id=league_id, season_id=season_a_id)
     key_b = collector.lock_key(league_id=league_id, season_id=season_b_id)
-    assert key_a != key_b
+    key_none = collector.lock_key(league_id=league_id, season_id=None)
+    assert len({key_a, key_b, key_none}) == 3
+
+    job_key_a = (
+        f"collect:standings:{hashlib.sha1(key_a.encode()).hexdigest()[:20]}:MORNING:due:missing"
+    )
+    job_key_b = (
+        f"collect:standings:{hashlib.sha1(key_b.encode()).hexdigest()[:20]}:MORNING:due:missing"
+    )
+    assert job_key_a != job_key_b
 
     ts_key_a = ts_collector.lock_key(team_id=home.id, league_id=league_id, season_id=season_a_id)
     ts_key_b = ts_collector.lock_key(team_id=home.id, league_id=league_id, season_id=season_b_id)
-    assert ts_key_a != ts_key_b
+    ts_key_none = ts_collector.lock_key(team_id=home.id, league_id=league_id, season_id=None)
+    assert len({ts_key_a, ts_key_b, ts_key_none}) == 3
+
+    # 5. Missing season cannot accidentally hit a snapshot from another season.
+    async with m4_session_factory() as session:
+        st_cap_none, _ = await collector.latest_snapshot(
+            session, league_id=league_id, season_id=None
+        )
+        assert st_cap_none is None
+        ts_cap_none, _ = await ts_collector.latest_snapshot(
+            session, team_id=home.id, league_id=league_id, season_id=None
+        )
+        assert ts_cap_none is None
+
+    # 6. Team statistics snapshot for season B persists with season B UUID.
+    ref_ts_b = await run_collector(
+        ctx,
+        "team_stats",
+        inputs={"team_id": home.id, "league_id": league_id, "season_id": season_b_id},
+    )
+    async with m4_session_factory() as session:
+        ts_snap_b = (
+            await session.execute(
+                select(TeamStatisticsSnapshot).where(
+                    TeamStatisticsSnapshot.id == ref_ts_b.snapshot_id
+                )
+            )
+        ).scalar_one()
+    assert ts_snap_b.season_id == season_b_id
 
 
 @pytest.mark.asyncio

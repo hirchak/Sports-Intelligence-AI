@@ -44,3 +44,71 @@ def test_decide_categories_prematch_starts_at_outermost_window() -> None:
     assert FreshnessCategory.LINEUPS in categories
     assert FreshnessCategory.AVAILABILITY in categories
     assert FreshnessCategory.ODDS in categories
+
+
+def test_execute_plan_skips_standings_and_team_stats_without_season() -> None:
+    """M4.4 §2: automated plan skips standings and team_stats when season_id is None."""
+    import asyncio
+    from unittest.mock import MagicMock
+
+    from sports_intelligence.collectors.pre_match_scan import PreMatchDecision, execute_plan
+
+    enqueued: list[tuple[str, dict[str, object]]] = []
+
+    async def fake_enqueue(name: str, **kwargs: object) -> None:
+        enqueued.append((name, kwargs))
+
+    decision_without_season = PreMatchDecision(
+        fixture_id="fix-1",
+        league_id="lg-1",
+        home_team_id="tm-1",
+        away_team_id="tm-2",
+        season_id=None,
+        kickoff_at=datetime.now(UTC),
+        phase=ForecastPhase.PREMATCH,
+        categories_to_collect=(
+            FreshnessCategory.STANDINGS,
+            FreshnessCategory.TEAM_STATISTICS,
+            FreshnessCategory.AVAILABILITY,
+        ),
+    )
+
+    ctx = MagicMock()
+    settings = _settings()
+    counters = asyncio.run(
+        execute_plan(
+            settings, ctx, decisions=[decision_without_season], enqueue_collector=fake_enqueue
+        )
+    )
+    assert "standings" not in counters
+    assert "team_stats" not in counters
+    assert "availability" in counters
+    names = [name for name, _ in enqueued]
+    assert "standings" not in names
+    assert "team_stats" not in names
+    assert "availability" in names
+
+    # With season_id, all are enqueued:
+    enqueued.clear()
+    decision_with_season = PreMatchDecision(
+        fixture_id="fix-2",
+        league_id="lg-1",
+        home_team_id="tm-1",
+        away_team_id="tm-2",
+        season_id="sea-1",
+        kickoff_at=datetime.now(UTC),
+        phase=ForecastPhase.PREMATCH,
+        categories_to_collect=(
+            FreshnessCategory.STANDINGS,
+            FreshnessCategory.TEAM_STATISTICS,
+            FreshnessCategory.AVAILABILITY,
+        ),
+    )
+    counters2 = asyncio.run(
+        execute_plan(
+            settings, ctx, decisions=[decision_with_season], enqueue_collector=fake_enqueue
+        )
+    )
+    assert counters2["standings"] == 1
+    assert counters2["team_stats"] == 2
+    assert counters2["availability"] == 2

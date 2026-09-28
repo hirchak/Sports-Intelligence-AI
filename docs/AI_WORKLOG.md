@@ -1269,3 +1269,57 @@ button-based menus and a Back button on every screen.
 - Commit M4.4 verification fixes, update remote HEAD.
 - Independent review PASS before merge to main; do not start M5.
 
+---
+
+### 2026-09-28 23:10 +02:00 — Antigravity (Gemini 3.8 Flash)
+
+**Milestone:** M4.4
+**Task:** Full local acceptance suite execution and bugfixes for TeamStatisticsSnapshot & exact season freshness
+
+**Completed**
+- Discovered and fixed runtime TypeError in `TeamStatisticsCollector.persist()` by removing nonexistent `source_fingerprint` kwarg on `TeamStatisticsSnapshot` creation.
+- Eliminated cross-season fallback in `StandingsCollector.latest_snapshot()` and `TeamStatisticsCollector.latest_snapshot()` by returning `(None, None)` immediately when `season_id is None`.
+- Added defensive skips in `pre_match_scan.execute_plan()` and `tasks/pre_match.py` when `season_id` is missing for standings or team statistics.
+- Added and updated tests verifying two-season isolation, unique lock and job keys, season_id persistence, and execute_plan skipping.
+- Executed the full acceptance suite locally with live Docker service containers (sports-intel-sports-postgres-1 on 5433, sports-intel-sports-redis-1 on 6380): unit suite (265 passed), integration suite against isolated sports_intel_test (59 passed), ruff lint/format (clean), mypy strict (clean), alembic check (clean), compose validation (clean).
+
+**Files changed**
+- `src/sports_intelligence/collectors/pre_match_scan.py`
+- `src/sports_intelligence/collectors/sports_collectors.py`
+- `src/sports_intelligence/workers/tasks/pre_match.py`
+- `tests/integration/test_m4_collectors.py`
+- `tests/unit/collectors/test_pre_match_scan.py`
+- `tests/unit/collectors/test_sports_collectors.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Verification**
+- `~/.local/bin/uv run pytest -q -m "not integration"` → PASS (265 passed)
+- `docker exec sports-intel-sports-redis-1 redis-cli -n 15 FLUSHDB && TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" TEST_REDIS_URL="redis://localhost:6380/15" ~/.local/bin/uv run pytest -q -m integration` → PASS (59 passed)
+- `~/.local/bin/uv run ruff check .` / `ruff format --check .` → PASS (clean)
+- `~/.local/bin/uv run mypy src` → PASS (clean in 87 source files)
+- `~/.local/bin/uv run alembic check` → PASS (No new upgrade operations detected)
+- `docker compose config -q` / `--profile telegram` → PASS (clean)
+- Secret scan → clean (no credentials committed)
+
+**Live integrations verified**
+- none (MOCK only, live credentials not configured).
+
+**Known issues**
+- Local integration runs flush Redis db 15 first for isolation.
+
+**Spec / ADR deviations**
+- none.
+
+**Git**
+- branch: build/m4
+- commit: [pending commit]
+
+**Next action**
+- Commit and push to origin/build/m4.
+- Verify CI run status.
+- Final independent review handoff.
+
+

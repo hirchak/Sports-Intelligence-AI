@@ -178,11 +178,15 @@ class StandingsCollector(_ResolverMixin):
         season_id: uuid.UUID | None = None,
         **_: object,
     ) -> tuple[datetime | None, uuid.UUID | None]:
+        if season_id is None:
+            # Standings are strictly per-season. A missing season identity
+            # cannot match any season's snapshot.
+            return None, None
         stmt = (
             select(StandingSnapshot.captured_at, StandingSnapshot.id)
             .where(
                 StandingSnapshot.league_id == league_id,
-                *([StandingSnapshot.season_id == season_id] if season_id else [True]),
+                StandingSnapshot.season_id == season_id,
             )
             .order_by(StandingSnapshot.captured_at.desc())
             .limit(1)
@@ -269,12 +273,16 @@ class TeamStatisticsCollector(_ResolverMixin):
         season_id: uuid.UUID | None = None,
         **_: object,
     ) -> tuple[datetime | None, uuid.UUID | None]:
+        if season_id is None:
+            # Team statistics are strictly per-season. A missing season
+            # identity cannot match any season's snapshot.
+            return None, None
         stmt = (
             select(TeamStatisticsSnapshot.captured_at, TeamStatisticsSnapshot.id)
             .where(
                 TeamStatisticsSnapshot.team_id == team_id,
                 TeamStatisticsSnapshot.league_id == league_id,
-                *([TeamStatisticsSnapshot.season_id == season_id] if season_id else [True]),
+                TeamStatisticsSnapshot.season_id == season_id,
             )
             .order_by(TeamStatisticsSnapshot.captured_at.desc())
             .limit(1)
@@ -327,7 +335,6 @@ class TeamStatisticsCollector(_ResolverMixin):
             league_id=league_id,
             season_id=season_id,
             captured_at=captured_at,
-            source_fingerprint=source_fingerprint,
             payload_id=payload_id,
             metrics_jsonb=dict(metrics),
             updated_at=datetime.now(UTC),

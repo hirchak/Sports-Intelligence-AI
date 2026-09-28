@@ -2,9 +2,9 @@
 
 **Status:** COMPLETE (M4.4) — awaiting independent review
 **Milestone:** M4.4 — focused correctness fixes (4 items) after M4.3 review **FAIL**
-**Owner/agent:** ox-alpha (OpenCode)
-**Started at:** 2026-08-28
-**Last updated:** 2026-08-28
+**Owner/agent:** Antigravity (Gemini 3.8 Flash)
+**Started at:** 2026-09-28
+**Last updated:** 2026-09-28
 
 ---
 
@@ -63,12 +63,14 @@ items — working M4/M4.1/M4.2/M4.3 components are NOT redesigned.
 
 # Verification (actually run)
 
-- `uv run pytest -q -m "not integration"` → **264 passed**
+- `uv run pytest -q -m "not integration"` → **265 passed**
 - integration suite (`sports_intel_test` + Redis db15) → **59 passed**
   (incl. new M4.4 tests: two-season isolation, TTL stable opportunity
-  acceptance flow, response-time observation ordering, season pinning)
+  acceptance flow, response-time observation ordering, season pinning,
+  and TeamStatisticsSnapshot kwargs & season_id persistence)
 - `uv run ruff check .` / `ruff format --check .` → clean
 - `uv run mypy src` → **no issues in 87 source files** (strict)
+- `uv run alembic check` → clean (No new upgrade operations detected)
 - `docker compose config -q` (+telegram profile) → OK
 - Secret scan → clean
 

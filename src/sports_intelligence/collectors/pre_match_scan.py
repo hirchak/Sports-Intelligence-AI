@@ -14,9 +14,12 @@ from sports_intelligence.collectors.framework import (
 from sports_intelligence.collectors.freshness import FreshnessPolicy
 from sports_intelligence.core.config import Settings
 from sports_intelligence.core.league_config import load_league_config
+from sports_intelligence.core.logging import get_logger
 from sports_intelligence.core.phases import ForecastPhase, FreshnessCategory
 from sports_intelligence.core.time import utc_window_for_local_day
 from sports_intelligence.db.models import Fixture, League, Team
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -193,23 +196,36 @@ async def execute_plan(
         # Standings / team_stats are per-league / per-team; the
         # framework + Redis lock layer deduplicates across fixtures.
         if FreshnessCategory.STANDINGS in decision.categories_to_collect:
-            await enqueue_collector(
-                "standings",
-                league_id=decision.league_id,
-                season_id=decision.season_id,
-                phase=phase,
-            )
-            counters["standings"] = counters.get("standings", 0) + 1
-        if FreshnessCategory.TEAM_STATISTICS in decision.categories_to_collect:
-            for team_id in (decision.home_team_id, decision.away_team_id):
+            if decision.season_id is None:
+                logger.warning(
+                    "standings skipped for fixture %s: missing season_id; refusing to guess season",
+                    decision.fixture_id,
+                )
+            else:
                 await enqueue_collector(
-                    "team_stats",
-                    team_id=team_id,
+                    "standings",
                     league_id=decision.league_id,
                     season_id=decision.season_id,
                     phase=phase,
                 )
-            counters["team_stats"] = counters.get("team_stats", 0) + 2
+                counters["standings"] = counters.get("standings", 0) + 1
+        if FreshnessCategory.TEAM_STATISTICS in decision.categories_to_collect:
+            if decision.season_id is None:
+                logger.warning(
+                    "team_stats skipped for fixture %s: missing season_id; "
+                    "refusing to guess season",
+                    decision.fixture_id,
+                )
+            else:
+                for team_id in (decision.home_team_id, decision.away_team_id):
+                    await enqueue_collector(
+                        "team_stats",
+                        team_id=team_id,
+                        league_id=decision.league_id,
+                        season_id=decision.season_id,
+                        phase=phase,
+                    )
+                counters["team_stats"] = counters.get("team_stats", 0) + 2
         if FreshnessCategory.AVAILABILITY in decision.categories_to_collect:
             for team_id in (decision.home_team_id, decision.away_team_id):
                 await enqueue_collector(

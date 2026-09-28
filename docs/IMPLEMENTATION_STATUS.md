@@ -5,7 +5,7 @@
 **Current milestone:** M4.4 — focused correctness fixes after M4.3
 review **FAIL** — awaiting independent re-review on `build/m4`
 (M3 accepted via PR #5; `main` = `7d23c9d`)  
-**Last updated:** 2026-08-24 (ox-alpha via OpenCode)  
+**Last updated:** 2026-09-28 (Antigravity via Gemini 3.8 Flash)  
 **Last known good commit:** see section 11
 
 ---
@@ -400,7 +400,10 @@ All review items implemented:
   totals, clean_sheet, failed_to_score; missing values stay None).
 - Season identity pinned end-to-end: PreMatchDecision.season_id, exact
   Season resolver, `StandingsCollector.latest_snapshot` and
-  `TeamStatisticsCollector.latest_snapshot` filter by season_id.
+  `TeamStatisticsCollector.latest_snapshot` filter by season_id (missing
+  season strictly returns (None, None) preventing cross-season fallback).
+- Fixed `TeamStatisticsCollector.persist()` to omit invalid `source_fingerprint`
+  argument matching `TeamStatisticsSnapshot` schema.
 - Stable TTL refresh opportunity: due:missing without snapshot, scanner
   skips fresh snapshots, stale identity stable across scanner runs.
 - QuotaBucket.observed_at derived from response finished_at.
@@ -415,13 +418,15 @@ None. M4.4 implemented on `build/m4`; awaiting independent re-review.
 
 # 4. Acceptance tests passed (actually run, M4.4 state)
 
-- `uv run pytest -q -m "not integration"` → **264 passed**
+- `uv run pytest -q -m "not integration"` → **265 passed**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
   **59 passed** (M2/M2.4 regressions, schema-drift `alembic check`,
   migration cycle, M4 collectors, two-season isolation, TTL stable
-  opportunity flow, quota observation ordering, season pinning)
+  opportunity flow, quota observation ordering, season pinning,
+  and team stats persistence/season isolation)
 - `uv run ruff check .` / `ruff format --check .` → clean
 - `uv run mypy src` → **no issues in 87 source files** (strict)
+- `uv run alembic check` → clean (No new upgrade operations detected)
 - `docker compose config -q` and `docker compose --profile telegram
   config -q` (+dev) → OK
 - Secret scan: clean (no secrets in tracked files; token/user IDs only
