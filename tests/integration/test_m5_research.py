@@ -1031,9 +1031,20 @@ async def test_partial_provider_failure_persists_provider_error(
     m5_session_factory: Any,
     redis_client: Redis,
     m5_settings: Settings,
+    service_client: TestClient,
 ) -> None:
+    from sports_intelligence.collectors.framework import resolve
     from sports_intelligence.providers.errors import ProviderServerError
     from sports_intelligence.providers.search.base import SearchProvider, SearchResponse
+
+    t0 = datetime(2026, 9, 29, 10, 0, 0, tzinfo=UTC)
+    t1 = t0 + timedelta(seconds=5)
+    t2 = t0 + timedelta(seconds=10)
+    t3 = t0 + timedelta(seconds=15)
+    clock_time = t0
+
+    def clock():
+        return clock_time
 
     class MockSearchPartialIntegration(SearchProvider):
         name = "mock"
@@ -1042,8 +1053,10 @@ async def test_partial_provider_failure_persists_provider_error(
             self.calls = 0
 
         async def search(self, query: str, **kwargs) -> SearchResponse:
+            nonlocal clock_time
             self.calls += 1
             if self.calls == 1:
+                clock_time = t1
                 return SearchResponse(
                     query=query,
                     results=[
@@ -1052,17 +1065,18 @@ async def test_partial_provider_failure_persists_provider_error(
                             domain="mock",
                             title="mock",
                             published_at=None,
-                            retrieved_at=datetime.now(UTC),
+                            retrieved_at=t1,
                             content="mock",
                             score=1.0,
                             provider_metadata={},
                         )
                     ],
-                    retrieved_at=datetime.now(UTC),
+                    retrieved_at=t1,
                     cost_estimate=1,
                     raw_payload={},
                 )
-            raise ProviderServerError("Failed on second call")
+            clock_time = t3
+            raise ProviderServerError("Failed on second call at T3")
 
     seeded = await _seed_fixture(m5_session_factory)
     fid = seeded["fixture_id"]
@@ -1071,11 +1085,18 @@ async def test_partial_provider_failure_persists_provider_error(
         factory=m5_session_factory, redis=redis_client, settings=m5_settings, provider=provider
     )
 
-    await run_collector(
-        ctx,
-        "research",
-        inputs={"fixture_id": str(fid), "phase": ForecastPhase.MORNING.value},
-    )
+    collector = resolve("research")
+    orig_clock = getattr(collector, "_clock", None)
+    collector._clock = clock
+    try:
+        await run_collector(
+            ctx,
+            "research",
+            inputs={"fixture_id": str(fid), "phase": ForecastPhase.MORNING.value},
+        )
+    finally:
+        if orig_clock is not None:
+            collector._clock = orig_clock
 
     async with m5_session_factory() as session:
         run = (
@@ -1083,4 +1104,278 @@ async def test_partial_provider_failure_persists_provider_error(
         ).scalar_one()
         assert run.status == ResearchState.PROVIDER_ERROR.value
         assert run.documents_count == 1
+        assert run.captured_at == t3
         assert "details" in run.details_jsonb or "partial_failure" in run.details_jsonb
+
+        doc = (
+            await session.execute(select(ResearchDocument).where(ResearchDocument.run_id == run.id))
+        ).scalar_one()
+        assert doc.retrieved_at == t1
+
+    # Historical point-in-time check: as_of between T1 and T3
+    # must NOT reveal the later PROVIDER_ERROR run
+    resp_t2 = service_client.get(
+        f"/v1/fixtures/{fid}/research",
+        params={"as_of": t2.isoformat()},
+    )
+    assert resp_t2.status_code == 200
+    data_t2 = resp_t2.json()
+    assert data_t2["status"] == ResearchState.NO_USEFUL_RESULTS.value
+    assert data_t2["documents_count"] == 0
+
+    # Historical query at T3 reveals the run and its document
+    resp_t3 = service_client.get(
+        f"/v1/fixtures/{fid}/research",
+        params={"as_of": t3.isoformat()},
+    )
+    assert resp_t3.status_code == 200
+    data_t3 = resp_t3.json()
+    assert data_t3["status"] == ResearchState.PROVIDER_ERROR.value
+    assert data_t3["documents_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_fixture_status_research_disabled_when_capability_disabled(
+    service_client: TestClient,
+    m5_session_factory: Any,
+    m5_settings: Settings,
+) -> None:
+    """M5.3 §5: GET /v1/fixtures/{id}/status reports research freshness as 'disabled'
+    when research capability is disabled and no run exists."""
+    seeded = await _seed_fixture(m5_session_factory)
+    fid = seeded["fixture_id"]
+
+    # 1. With capability disabled
+    disabled_settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        search_provider="",
+        research_enabled=False,
+        database_url=m5_settings.database_url,
+        redis_url=m5_settings.redis_url,
+    )
+    service_client.app.state.settings = disabled_settings
+
+    res = service_client.get(f"/v1/fixtures/{fid}/status")
+    assert res.status_code == 200
+    body = res.json()
+    assert "research" in body["freshness"]
+    assert body["freshness"]["research"]["state"] == "disabled"
+    assert body["freshness"]["research"]["captured_at"] is None
+
+    # 2. Reset back to enabled: status becomes 'unknown' when no run exists
+    service_client.app.state.settings = m5_settings
+    res2 = service_client.get(f"/v1/fixtures/{fid}/status")
+    assert res2.status_code == 200
+    body2 = res2.json()
+    assert body2["freshness"]["research"]["state"] == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_provider_error_scanner_retry_job_lifecycle(
+    m5_session_factory: Any,
+    m5_settings: Settings,
+) -> None:
+    """M5.3 §1: Full lifecycle of PROVIDER_ERROR retry job identity:
+    - first error persists ResearchRun(PROVIDER_ERROR) and initial Job SUCCEEDED;
+    - scan before error retry due (15m) -> NO new job;
+    - scan after retry due -> NEW deterministic opportunity (error_due:<epoch>) / enqueued;
+    - duplicate scan inside same retry opportunity -> NO duplicate;
+    - second provider error -> opens a later error retry generation;
+    - successful retry -> normal 6h research TTL resumes.
+    """
+    from unittest.mock import patch as _patch
+
+    from sports_intelligence.collectors.pre_match_scan import PreMatchDecision
+    from sports_intelligence.core.job_status import JobStatus
+    from sports_intelligence.core.phases import FreshnessCategory
+    from sports_intelligence.db.models import Job
+    from sports_intelligence.workers.tasks.collect import collect_task
+    from sports_intelligence.workers.tasks.pre_match import _dispatch_decision
+
+    t0 = datetime(2026, 9, 29, 8, 0, 0, tzinfo=UTC)
+    kickoff = t0 + timedelta(hours=6)
+    seeded = await _seed_fixture(m5_session_factory, kickoff_at=kickoff)
+    fid = seeded["fixture_id"]
+
+    decision = PreMatchDecision(
+        fixture_id=str(fid),
+        league_id=str(seeded["league_id"]),
+        home_team_id=str(seeded["home_team_id"]),
+        away_team_id=str(seeded["away_team_id"]),
+        season_id=str(seeded.get("season_id", uuid.uuid4())),
+        kickoff_at=kickoff,
+        phase=ForecastPhase.MORNING,
+        categories_to_collect=(FreshnessCategory.RESEARCH,),
+    )
+
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        search_provider="mock",
+        research_enabled=True,
+        research_provider_error_retry_seconds=900,  # 15 min
+        database_url=m5_settings.database_url,
+        redis_url=m5_settings.redis_url,
+    )
+
+    enqueued_jobs: list[str] = []
+
+    def _fake_apply_async(*, args, **_kwargs):
+        enqueued_jobs.append(args[0])
+
+    with (
+        _patch.object(collect_task, "apply_async", _fake_apply_async),
+        _patch("sports_intelligence.workers.tasks.pre_match.get_settings", return_value=settings),
+    ):
+        # 1. First scan when no snapshot exists creates initial job with due:missing
+        res1 = await _dispatch_decision(m5_session_factory, decision, now=t0)
+        assert res1["jobs_created"] == 1
+        assert res1["jobs_enqueued"] == 1
+
+        async with m5_session_factory() as session:
+            job_rows = (
+                (await session.execute(select(Job).where(Job.job_type == "collect:research")))
+                .scalars()
+                .all()
+            )
+            assert len(job_rows) == 1
+            first_job = job_rows[0]
+            assert "due:missing" in first_job.idempotency_key
+
+            # Simulate the collector executed, failed with PROVIDER_ERROR at t0, and job SUCCEEDED
+            first_job.status = JobStatus.SUCCEEDED.value
+            run1 = ResearchRun(
+                id=uuid.uuid4(),
+                fixture_id=fid,
+                phase=ForecastPhase.MORNING.value,
+                status=ResearchState.PROVIDER_ERROR.value,
+                provider="mock",
+                queries_count=1,
+                documents_count=0,
+                claims_count=0,
+                conflicts_count=0,
+                captured_at=t0,
+                details_jsonb={"error": "provider down"},
+                created_at=t0,
+            )
+            session.add(run1)
+            await session.commit()
+
+        # 2. Scan before error retry due (at t0 + 5m, error_ttl is 15m) -> NO new job
+        res2 = await _dispatch_decision(m5_session_factory, decision, now=t0 + timedelta(minutes=5))
+        assert res2["jobs_created"] == 0
+        assert res2["jobs_enqueued"] == 0
+        assert res2["by_category"].get("research", {}).get("created", 0) == 0
+        # 3. Scan after error retry due (at t0 + 16m >= 15m) ->
+        # NEW deterministic opportunity / enqueue
+        res3 = await _dispatch_decision(
+            m5_session_factory, decision, now=t0 + timedelta(minutes=16)
+        )
+        assert res3["jobs_created"] == 1
+        assert res3["jobs_enqueued"] == 1
+        assert res3["by_category"]["research"]["enqueued"] == 1
+
+        expected_due_1 = int((t0 + timedelta(seconds=900)).timestamp())
+        async with m5_session_factory() as session:
+            job_rows = (
+                (
+                    await session.execute(
+                        select(Job)
+                        .where(Job.job_type == "collect:research")
+                        .order_by(Job.created_at.desc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(job_rows) == 2
+            second_job = job_rows[0]
+            assert f"error_due:{expected_due_1}" in second_job.idempotency_key
+
+        # 4. Duplicate scan inside same retry opportunity (at t0 + 17m) -> NO duplicate
+        res4 = await _dispatch_decision(
+            m5_session_factory, decision, now=t0 + timedelta(minutes=17)
+        )
+        assert res4["jobs_created"] == 0
+        assert res4["jobs_enqueued"] == 0
+        assert res4["by_category"]["research"]["reused"] == 1
+
+        # 5. Second provider error at t1 (t0 + 18m) opens another retry opportunity
+        t1 = t0 + timedelta(minutes=18)
+        async with m5_session_factory() as session:
+            # Second job completes with SUCCEEDED status (as normal Celery completion)
+            j2 = await session.get(Job, second_job.id)
+            if j2:
+                j2.status = JobStatus.SUCCEEDED.value
+            run2 = ResearchRun(
+                id=uuid.uuid4(),
+                fixture_id=fid,
+                phase=ForecastPhase.MORNING.value,
+                status=ResearchState.PROVIDER_ERROR.value,
+                provider="mock",
+                queries_count=1,
+                documents_count=0,
+                claims_count=0,
+                conflicts_count=0,
+                captured_at=t1,
+                details_jsonb={"error": "provider down again"},
+                created_at=t1,
+            )
+            session.add(run2)
+            await session.commit()
+
+        # Before second retry due (at t1 + 5m) -> NO new job
+        res5 = await _dispatch_decision(m5_session_factory, decision, now=t1 + timedelta(minutes=5))
+        assert res5["jobs_created"] == 0
+        assert res5["jobs_enqueued"] == 0
+
+        # After second retry due (at t1 + 16m) -> NEW opportunity
+        res6 = await _dispatch_decision(
+            m5_session_factory, decision, now=t1 + timedelta(minutes=16)
+        )
+        assert res6["jobs_created"] == 1
+        assert res6["jobs_enqueued"] == 1
+        expected_due_2 = int((t1 + timedelta(seconds=900)).timestamp())
+        async with m5_session_factory() as session:
+            job_rows = (
+                (
+                    await session.execute(
+                        select(Job)
+                        .where(Job.job_type == "collect:research")
+                        .order_by(Job.created_at.desc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(job_rows) == 3
+            assert f"error_due:{expected_due_2}" in job_rows[0].idempotency_key
+            j3 = job_rows[0]
+            j3.status = JobStatus.SUCCEEDED.value
+
+            # 6. Successful retry at t2 (t1 + 18m) -> normal 6h TTL resumes
+            t2 = t1 + timedelta(minutes=18)
+            run3 = ResearchRun(
+                id=uuid.uuid4(),
+                fixture_id=fid,
+                phase=ForecastPhase.MORNING.value,
+                status=ResearchState.AVAILABLE.value,
+                provider="mock",
+                queries_count=1,
+                documents_count=1,
+                claims_count=1,
+                conflicts_count=0,
+                captured_at=t2,
+                details_jsonb={},
+                created_at=t2,
+            )
+            session.add(run3)
+            await session.commit()
+
+        # Scan at t2 + 10m -> snapshot is fresh under normal 6h TTL -> NO job
+        res7 = await _dispatch_decision(
+            m5_session_factory, decision, now=t2 + timedelta(minutes=10)
+        )
+        assert res7["jobs_created"] == 0
+        assert res7["jobs_enqueued"] == 0

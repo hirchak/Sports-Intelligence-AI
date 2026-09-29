@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M5.2 — COMPLETE (Web Research correctness pass awaiting independent review)  
+**Current milestone:** M5.3 — COMPLETE (Web Research runtime correctness pass awaiting independent review)  
 **Last updated:** 2026-09-29 (Antigravity)  
 **Last known good commit:** 0d0cd4a631c067a29c21ce584e806a47c534dc82 (M4 accepted HEAD)
 
@@ -12,24 +12,23 @@
 
 M4 passed independent review (PASS / ACCEPTED, HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`).
 
-Milestone M5 independent review verdict: **FAIL**.
-Milestone M5.1 independent review verdict: **FAIL**.
-M5.2 correctness pass completed on branch `build/m5`, awaiting independent review.
+Milestone M5 independent review verdict: **FAIL** (HEAD `6c52b1f1df85163b0aeef1f3a16d223bd3296cff`).
+Milestone M5.1 independent review verdict: **FAIL** (HEAD `30dd97a4a948f906d6e690b9acbd14550c75dec8`).
+Milestone M5.2 independent review verdict: **FAIL** (HEAD `42f2277d8f7dde2f0b315c259f22c210da05cefb`).
+Milestone M5.3 runtime correctness pass completed on branch `build/m5`, awaiting independent review.
 
-M5.2 fixes (on top of accepted M5.1 work `30dd97a`):
-1. Retry orchestration moved to ResearchCollector — each HTTP attempt now gets its own quota reserve + ledger entry.
-2. `research_claim_extraction_enabled` added to Settings as a real config field (no more `getattr` fallback).
-3. API returns `DISABLED` state when capability is off and no run exists.
-4. `PROVIDER_ERROR` runs are immediately stale (`latest_snapshot()` returns `(None, None)` for them).
-5. Partial provider failure (some queries succeed, some fail) now correctly surfaces as `PROVIDER_ERROR` with diagnostics in `details_jsonb`.
-6. `?mode=` query parameter validated strictly as `Literal["latest_run", "accumulated"]`; invalid values → HTTP 422.
-
-**Review target HEAD:** `4f78e8402fc7d2e7b4f550d04b81e1ebf92399b4`
+M5.3 fixes (on top of accepted M5.2 work):
+1. **PROVIDER_ERROR retry job identity**: Replaced the `(None, None)` hack in `latest_snapshot()` with true `(captured_at, run_id)`; exposed state-aware `latest_run_info()` and `refresh_due()`; scanner generates deterministic `error_due:<epoch>` opportunity keys (`epoch = captured_at + error_retry_ttl`), preventing duplicate jobs inside an error opportunity while guaranteeing automatic retry once the error TTL expires.
+2. **Distinguish quota denial from provider failure**: Added `ResearchState.QUOTA_DENIED`; local quota exhaustion no longer raises fake provider error exceptions or logs false provider errors; quota denial before any queries performs 0 provider calls, 0 ledger rows, and sets `QUOTA_DENIED`; partial quota denial preserves retrieved documents and claims with status `QUOTA_DENIED`.
+3. **Research failure observation timestamp**: Every external attempt tracks its clock observation time; failures and partial failures record the exact post-failure observation timestamp on `ResearchRun.captured_at`; documents keep their own `retrieved_at`; historical `as_of` between document retrieval and failure does not reveal the later failed run.
+4. **Respect Retry-After for 429**: Implemented `compute_retry_delay()` respecting `Retry-After` header on `ProviderRateLimitError`, bounded by `research_max_retry_after_seconds` (default 30s); falls back to deterministic exponential backoff on invalid/negative/missing values; uses injectable sleeper/clock for offline testing.
+5. **Fixture status when research disabled**: Extended `CategoryState` with `"disabled"`; `GET /v1/fixtures/{fixture_id}/status` reports research freshness as `"disabled"` when research capability is disabled and no run exists.
 
 **Review verdicts:**
 - M5 → FAIL
 - M5.1 → FAIL  
-- M5.2 → awaiting independent review
+- M5.2 → FAIL
+- M5.3 → awaiting independent review
 
 Do NOT merge `build/m5` to `main`. Do NOT start M6.
 Development remains strictly LOCAL ONLY.
@@ -462,22 +461,37 @@ All review items implemented and independently verified:
 - **Historical view consistency**: Default Option B (`mode="latest_run"`) returns evidence strictly belonging to the latest run at or before `as_of` without mixing run statuses and documents; optional Option A (`mode="accumulated"`) returns historical accumulated claims.
 - **100% offline mock tests**: All automated tests run against mocks with zero real external search calls.
 
+## M5.2 — Corrective fixes (M5.1 review: FAIL)
+
+- **Retry orchestration in ResearchCollector**: Moved search retries from provider to collector level — each physical HTTP attempt now gets its own quota reserve and ledger entry.
+- **Configurable claim extraction**: Added `research_claim_extraction_enabled: bool = True` to `Settings` as a first-class configuration field and removed dead condition checks.
+- **Read API disabled status**: `GET /v1/fixtures/{fixture_id}/research` returns `DISABLED` state when research capability is disabled and no run exists.
+- **Partial provider failure visibility**: Surfaces as `PROVIDER_ERROR` with failure diagnostics (`queries_planned`, `queries_attempted`, `queries_succeeded`, `partial_failure`, `provider_error_class`) stored in `details_jsonb` while preserving retrieved documents and claims.
+- **Strict query parameter validation**: Query parameter `mode` typed as `Literal["latest_run", "accumulated"]` in API and service layer; invalid values rejected with HTTP 422.
+
+## M5.3 — Runtime correctness fixes (M5.2 review: FAIL)
+
+- **PROVIDER_ERROR retry job identity**: Replaced the `(None, None)` hack in `ResearchCollector.latest_snapshot()` with true `(captured_at, run_id)`; exposed state-aware `latest_run_info()` and `refresh_due()`; scanner generates deterministic `error_due:<epoch>` opportunity keys (`epoch = captured_at + error_retry_ttl`, default 900s). Tested full scanner lifecycle: no job before retry due, new job enqueued after retry due, de-duplicated within opportunity, second error opens later generation, success resumes normal 6h TTL.
+- **Explicit QUOTA_DENIED state**: Differentiated local quota denial from external provider failures. Added `ResearchState.QUOTA_DENIED`; quota denial before first request yields 0 provider calls, 0 ledger rows, status `QUOTA_DENIED`, and reason in details; partial quota denial preserves retrieved documents and claims with status `QUOTA_DENIED`.
+- **Accurate failure observation timestamps**: Every external attempt tracks its clock observation time; failures and partial failures record the exact post-failure observation timestamp on `ResearchRun.captured_at`; documents keep their own `retrieved_at`; historical `as_of` between document retrieval and failure does not reveal the later failed run.
+- **Respect Retry-After for 429**: `compute_retry_delay()` parses `Retry-After` header on `ProviderRateLimitError`, bounded by `research_max_retry_after_seconds` (default 30s); deterministic exponential backoff fallback; injectable sleeper and clock for offline tests.
+- **Fixture status capability-awareness**: Extended `CategoryState` Literal to include `"disabled"`; `GET /v1/fixtures/{fixture_id}/status` reports research freshness as `"disabled"` when research capability is disabled and no run exists.
+
 ---
 
 # 3. In progress
 
-None. Milestone M5.2 implemented, awaiting review.
+None. Milestone M5.3 implemented, awaiting independent review.
 
 ---
 
-# 4. Acceptance tests passed (actually run, M5.2 state)
+# 4. Acceptance tests passed (actually run, M5.3 state)
 
-- `uv run pytest -q -m "not integration"` → **308 passed, 71 deselected in 12.75s**
+- `uv run pytest -q -m "not integration"` → **318 passed, 76 deselected in 5.30s**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
-  **71 passed, 308 deselected in 18.29s** (all M2/M3/M4/M5 integration tests
-  plus M5.1 reciprocal FK verification, anti-leakage `as_of` modes, exact 6 query
-  ledger entries, quota stoppage before 3rd query, and fresh research zero calls)
-- Full test suite (`uv run pytest -q`) → **379 passed in 20.18s**
+  **76 passed, 318 deselected in 17.16s** (all M2/M3/M4/M5 integration tests
+  plus M5.3 lifecycle, quota-denial, observation timestamp anti-leakage, and status tests)
+- Full test suite (`uv run pytest -q`) → **394 passed in 16.24s**
 - `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 157 files formatted)
 - `uv run mypy src` → **Success: no issues found in 104 source files** (strict)
 - `uv run alembic check` → clean (No new upgrade operations detected)
@@ -607,10 +621,10 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m5` (M5 complete, awaiting review); base `main` at `2e4683a` (`v0.5-m4`)
+- `build/m5` (M5.3 complete, awaiting review); base `main` at `2e4683a` (`v0.5-m4`)
 
 Commit:
-- `147862f` (Milestone M5.2 HEAD)
+- will reflect final M5.3 commit hash on `build/m5`
 
 Working tree:
 - clean after commit
@@ -619,10 +633,10 @@ Working tree:
 
 # 12. Next action
 
-1. Commit M5.1 changes to `build/m5`.
-2. Push `build/m5` to remote repository.
-3. Verify remote GitHub Actions CI run.
-4. Await independent review of Milestone M5.1 on `build/m5`.
+1. Commit M5.3 changes to `build/m5`.
+2. Push `build/m5` to remote repository without force.
+3. Verify remote GitHub Actions CI run on exact final remote HEAD.
+4. Await independent review of Milestone M5.3 on `build/m5`.
 5. Do not merge `build/m5` into `main`. Do not start M6.
 
 ---
@@ -640,8 +654,9 @@ Safe to begin M5: YES.
 
 **Review verdict (2026-09-29): M5 FAIL — focused M5.1 required.**
 **Review verdict (2026-09-29): M5.1 FAIL — focused M5.2 required.**
+**Review verdict (2026-09-29): M5.2 FAIL — focused M5.3 required.**
 
-**Current review target:** Milestone M5.2 (Web Research Subsystem Correctness Pass) on `build/m5`.
+**Current review target:** Milestone M5.3 (Web Research Subsystem Runtime Correctness Pass) on `build/m5`.
 
 ---
 

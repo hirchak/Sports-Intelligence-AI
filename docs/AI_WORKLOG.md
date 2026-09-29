@@ -1704,3 +1704,54 @@ results: All tests pass.
 known problems: None.
 spec/ADR deviations: None.
 next recommended action: Review M5.2 changes.
+
+---
+timestamp: 2026-09-29T21:20:00+02:00
+agent/model: Antigravity (Gemini 3.8 Flash)
+milestone: M5.3
+task: Implement focused M5.3 runtime correctness pass on branch build/m5
+files changed:
+- .env.example
+- src/sports_intelligence/core/config.py
+- src/sports_intelligence/core/phases.py
+- src/sports_intelligence/schemas/status.py
+- src/sports_intelligence/api/routes/status.py
+- src/sports_intelligence/collectors/refresh.py
+- src/sports_intelligence/collectors/research_collector.py
+- src/sports_intelligence/workers/tasks/pre_match.py
+- tests/unit/collectors/test_research_collector.py
+- tests/integration/test_m5_research.py
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/REVIEW_HANDOFF.md
+- docs/AI_WORKLOG.md
+behavior implemented:
+- Replaced (None, None) hack in latest_snapshot with true (captured_at, id) and added latest_run_info / refresh_due on ResearchCollector.
+- Implemented deterministic error_due:<epoch> refresh opportunity identity for PROVIDER_ERROR runs (and quota_due:<epoch> for QUOTA_DENIED).
+- Added ResearchState.QUOTA_DENIED; prevented fake provider error exceptions/telemetry on local quota denial; preserved partial documents/claims on mid-run quota denial.
+- Tracked clock observation timestamps after every external HTTP attempt, ensuring ResearchRun.captured_at on failure reflects exact observation time (T2/T3) while documents keep their retrieved_at (T1); verified historical as_of between T1 and T3 does not leak the later failed run.
+- Implemented compute_retry_delay() respecting Retry-After on 429, capped at research_max_retry_after_seconds (30s) with exponential backoff fallback; added injectable sleeper and clock.
+- Updated GET /v1/fixtures/{fixture_id}/status to report research freshness as "disabled" when capability is disabled and no run exists.
+commands/tests run:
+- uv run ruff check .
+- uv run ruff format --check .
+- uv run mypy src
+- uv run pytest -q -m "not integration"
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q
+- uv run alembic upgrade head && uv run alembic check
+- docker compose config -q && docker compose --profile telegram config -q
+results:
+- Lint: clean
+- Format: clean (157 files)
+- Mypy: clean (104 files)
+- Unit tests: 318 passed, 76 deselected
+- Integration tests: 76 passed, 318 deselected
+- Full suite: 394 passed in 16.24s
+- Alembic: clean (No new upgrade operations detected)
+- Compose: valid
+- Real external Tavily calls: 0
+known problems: None.
+spec/ADR deviations: None.
+Git commit hash if created: to be recorded after commit
+next recommended action: Commit M5.3, push build/m5, verify CI, await independent review.

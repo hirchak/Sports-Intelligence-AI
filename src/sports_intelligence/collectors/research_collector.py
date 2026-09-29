@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import uuid as _uuid
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -30,7 +31,10 @@ from sports_intelligence.db.models import (
     ResearchRun,
     Team,
 )
-from sports_intelligence.providers.errors import RETRYABLE_PROVIDER_ERRORS
+from sports_intelligence.providers.errors import (
+    RETRYABLE_PROVIDER_ERRORS,
+    ProviderRateLimitError,
+)
 from sports_intelligence.providers.search.base import (
     SearchProvider,
     SearchResultItem,
@@ -51,14 +55,56 @@ from sports_intelligence.research.query_builder import build_research_queries
 logger = get_logger(__name__)
 
 
+@dataclass(frozen=True)
+class ResearchRunInfo:
+    captured_at: datetime | None
+    run_id: _uuid.UUID | None
+    status: str | None
+    retry_due_at: datetime | None
+
+
+def compute_retry_delay(
+    exc: Exception,
+    attempt: int,
+    *,
+    max_retry_after_seconds: float = 30.0,
+) -> float:
+    """Compute backoff delay for retrying an external search provider attempt.
+
+    - If exc is ProviderRateLimitError (429) and has a valid Retry-After header:
+      use it, bounded by max_retry_after_seconds (M5.3 §4).
+    - If Retry-After is missing, invalid, or negative:
+      fallback to deterministic exponential backoff: 0.1 * (2 ** attempt).
+    """
+    if isinstance(exc, ProviderRateLimitError):
+        headers = getattr(exc, "quota_headers", None) or {}
+        retry_after_str = headers.get("retry-after")
+        if retry_after_str is not None:
+            try:
+                seconds = float(retry_after_str)
+                if seconds >= 0:
+                    return float(min(seconds, max_retry_after_seconds))
+            except (ValueError, TypeError):
+                pass
+    return float(0.1 * (2**attempt))
+
+
 class ResearchCollector:
     name = "research"
     category = FreshnessCategory.RESEARCH
     priority = Priority.P3
     owns_quota: bool = True
 
-    def __init__(self, extractor: ClaimExtractor | None = None) -> None:
+    def __init__(
+        self,
+        extractor: ClaimExtractor | None = None,
+        *,
+        sleeper: Any | None = None,
+        clock: Any | None = None,
+    ) -> None:
         self.extractor = extractor or RuleBasedClaimExtractor()
+        self._sleeper = sleeper or asyncio.sleep
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     def lock_key(self, *, fixture_id: object, **_: Any) -> str:
         return f"research:{fixture_id}"
@@ -79,6 +125,24 @@ class ResearchCollector:
     ) -> tuple[datetime | None, _uuid.UUID | None]:
         fid = _uuid.UUID(str(fixture_id))
         stmt = (
+            select(ResearchRun.captured_at, ResearchRun.id)
+            .where(ResearchRun.fixture_id == fid)
+            .order_by(ResearchRun.captured_at.desc())
+            .limit(1)
+        )
+        row = (await session.execute(stmt)).first()
+        return (row[0], row[1]) if row else (None, None)
+
+    async def latest_run_info(
+        self,
+        session: AsyncSession,
+        *,
+        fixture_id: object,
+        error_retry_ttl_seconds: int = 900,
+        **_: Any,
+    ) -> ResearchRunInfo:
+        fid = _uuid.UUID(str(fixture_id))
+        stmt = (
             select(ResearchRun.captured_at, ResearchRun.id, ResearchRun.status)
             .where(ResearchRun.fixture_id == fid)
             .order_by(ResearchRun.captured_at.desc())
@@ -86,11 +150,38 @@ class ResearchCollector:
         )
         row = (await session.execute(stmt)).first()
         if not row:
-            return (None, None)
+            return ResearchRunInfo(None, None, None, None)
         captured_at, run_id, status = row[0], row[1], row[2]
-        if status == ResearchState.PROVIDER_ERROR.value:
-            return (None, None)
-        return (captured_at, run_id)
+        retry_due_at = None
+        if status in (ResearchState.PROVIDER_ERROR.value, ResearchState.QUOTA_DENIED.value):
+            retry_due_at = captured_at + timedelta(seconds=error_retry_ttl_seconds)
+        return ResearchRunInfo(captured_at, run_id, status, retry_due_at)
+
+    async def refresh_due(
+        self,
+        ctx: CollectorContext,
+        inputs: dict[str, Any],
+        *,
+        captured_at: datetime | None,
+        now: datetime,
+    ) -> bool:
+        if captured_at is None:
+            return True
+        fid = _uuid.UUID(str(inputs["fixture_id"]))
+        async with ctx.session_factory() as session:
+            stmt = (
+                select(ResearchRun.status)
+                .where(ResearchRun.fixture_id == fid)
+                .order_by(ResearchRun.captured_at.desc())
+                .limit(1)
+            )
+            status = (await session.execute(stmt)).scalar_one_or_none()
+        if status is None:
+            return True
+        if status in (ResearchState.PROVIDER_ERROR.value, ResearchState.QUOTA_DENIED.value):
+            error_ttl = getattr(ctx.settings, "research_provider_error_retry_seconds", 900)
+            return (now - captured_at).total_seconds() >= error_ttl
+        return ctx.freshness.is_stale(self.category, captured_at, now, ctx.phase)
 
     async def fetch(
         self,
@@ -104,6 +195,7 @@ class ResearchCollector:
         if not ctx.settings.research_capability_enabled or not isinstance(
             ctx.provider, SearchProvider
         ):
+            now_clock = self._clock()
             return CollectorResult(
                 raw_payload={"status": "disabled"},
                 normalized={
@@ -116,9 +208,10 @@ class ResearchCollector:
                     "documents_count": 0,
                     "claims_count": 0,
                     "conflicts_count": 0,
-                    "captured_at": datetime.now(UTC).isoformat(),
+                    "captured_at": now_clock.isoformat(),
                     "documents": [],
                 },
+                retrieved_at=now_clock,
             )
         provider = ctx.provider
 
@@ -155,10 +248,12 @@ class ResearchCollector:
 
         all_raw_results: list[dict[str, Any]] = []
         raw_items: list[SearchResultItem] = []
-        latest_retrieved_at = datetime.now(UTC)
+        latest_attempt_observed_at: datetime | None = None
         rate_headers: dict[str, str] = {}
         queries_executed: list[str] = []
         provider_error: Exception | None = None
+        quota_denied: bool = False
+        quota_denial_reason: str | None = None
 
         # 3. Execute bounded queries with per-request quota protection & ledger
         MAX_SEARCH_ATTEMPTS = 3
@@ -177,14 +272,22 @@ class ResearchCollector:
                         "search query quota denied; stopping further queries",
                         extra={"query": query, "reason": decision.reason},
                     )
+                    quota_denied = True
+                    quota_denial_reason = decision.reason
                     break
 
-                q_start = datetime.now(UTC)
+                q_start = self._clock()
                 try:
                     resp = await provider.search(
                         query, max_results=ctx.settings.research_max_results_per_query
                     )
-                    q_end = datetime.now(UTC)
+                    q_end = self._clock()
+                    obs_time = resp.retrieved_at if resp.retrieved_at else q_end
+                    latest_attempt_observed_at = (
+                        max(latest_attempt_observed_at, obs_time)
+                        if latest_attempt_observed_at is not None
+                        else obs_time
+                    )
                     await ctx.quota.record_success(
                         provider=provider.name,
                         endpoint_category="research",
@@ -196,7 +299,6 @@ class ResearchCollector:
                         fixture_id=fid,
                     )
                     queries_executed.append(query)
-                    latest_retrieved_at = max(latest_retrieved_at, resp.retrieved_at)
                     if resp.rate_limit_headers:
                         rate_headers.update(resp.rate_limit_headers)
                     if resp.raw_payload:
@@ -205,7 +307,13 @@ class ResearchCollector:
                     query_success = True
                     break
                 except Exception as exc:
-                    q_end = datetime.now(UTC)
+                    q_end = self._clock()
+                    obs_time = q_end
+                    latest_attempt_observed_at = (
+                        max(latest_attempt_observed_at, obs_time)
+                        if latest_attempt_observed_at is not None
+                        else obs_time
+                    )
                     await ctx.quota.record_failure(
                         provider=provider.name,
                         endpoint_category="research",
@@ -224,7 +332,11 @@ class ResearchCollector:
 
                     if isinstance(exc, RETRYABLE_PROVIDER_ERRORS):
                         if attempt < MAX_SEARCH_ATTEMPTS - 1:
-                            await asyncio.sleep(0.1 * (2**attempt))
+                            max_ra = getattr(ctx.settings, "research_max_retry_after_seconds", 30)
+                            delay = compute_retry_delay(
+                                exc, attempt, max_retry_after_seconds=float(max_ra)
+                            )
+                            await self._sleeper(delay)
                             continue
                         else:
                             provider_error = exc
@@ -233,15 +345,47 @@ class ResearchCollector:
                         provider_error = exc
                         break
 
-            if not query_success:
-                # Need to also set provider_error if it's missing (e.g. quota denied)
-                if provider_error is None:
-                    provider_error = Exception("Query failed or quota denied")
+            if quota_denied or not query_success:
                 break
+
+        if latest_attempt_observed_at is None:
+            latest_attempt_observed_at = self._clock()
 
         partial_failure = provider_error is not None and bool(raw_items)
 
-        # If provider failed and no raw items were retrieved, record PROVIDER_ERROR
+        # Quota denied before any documents retrieved
+        if quota_denied and not raw_items:
+            normalized = {
+                "fixture_id": str(fid),
+                "phase": phase,
+                "status": ResearchState.QUOTA_DENIED.value,
+                "provider": provider.name,
+                "queries": queries_executed,
+                "queries_count": len(queries_executed),
+                "documents_count": 0,
+                "claims_count": 0,
+                "conflicts_count": 0,
+                "documents": [],
+                "details": {
+                    "reason": quota_denial_reason or "quota_denied",
+                    "queries_planned": len(queries),
+                    "queries_succeeded": 0,
+                    "quota_denied": True,
+                },
+            }
+            return CollectorResult(
+                raw_payload={
+                    "queries": queries,
+                    "raw_responses": all_raw_results,
+                    "quota_denied": True,
+                    "reason": quota_denial_reason,
+                },
+                normalized=normalized,
+                rate_headers=rate_headers,
+                retrieved_at=latest_attempt_observed_at,
+            )
+
+        # Provider failed and no raw items were retrieved
         if provider_error is not None and not raw_items:
             normalized = {
                 "fixture_id": str(fid),
@@ -257,6 +401,10 @@ class ResearchCollector:
                 "details": {
                     "error": str(provider_error),
                     "error_class": provider_error.__class__.__name__,
+                    "queries_planned": len(queries),
+                    "queries_attempted": len(queries_executed) + 1,
+                    "queries_succeeded": len(queries_executed),
+                    "failed_query_count": 1,
                 },
             }
             return CollectorResult(
@@ -267,7 +415,7 @@ class ResearchCollector:
                 },
                 normalized=normalized,
                 rate_headers=rate_headers,
-                retrieved_at=latest_retrieved_at,
+                retrieved_at=latest_attempt_observed_at,
             )
 
         # 4. Deduplicate candidate documents
@@ -354,7 +502,9 @@ class ResearchCollector:
             )
 
         # 7. Research status determination
-        if partial_failure:
+        if quota_denied:
+            status = ResearchState.QUOTA_DENIED
+        elif partial_failure:
             status = ResearchState.PROVIDER_ERROR
         elif extraction_unavailable and deduped_docs:
             status = ResearchState.EXTRACTION_UNAVAILABLE
@@ -376,21 +526,31 @@ class ResearchCollector:
             "documents": normalized_docs,
         }
 
-        if provider_error is not None:
+        if quota_denied:
+            normalized["details"] = {
+                "reason": quota_denial_reason or "quota_denied",
+                "queries_planned": len(queries),
+                "queries_succeeded": len(queries_executed),
+                "partial_failure": bool(raw_items),
+                "quota_denied": True,
+            }
+        elif partial_failure:
             normalized["details"] = {
                 "queries_planned": len(queries),
                 "queries_attempted": len(queries_executed) + 1,  # +1 for the failed one
                 "queries_succeeded": len(queries_executed),
                 "failed_query_count": 1,
-                "partial_failure": partial_failure,
-                "provider_error_class": provider_error.__class__.__name__,
+                "partial_failure": True,
+                "provider_error_class": (
+                    provider_error.__class__.__name__ if provider_error else "ProviderError"
+                ),
             }
 
         return CollectorResult(
             raw_payload={"queries": queries, "raw_responses": all_raw_results},
             normalized=normalized,
             rate_headers=rate_headers,
-            retrieved_at=latest_retrieved_at,
+            retrieved_at=latest_attempt_observed_at,
         )
 
     async def persist(

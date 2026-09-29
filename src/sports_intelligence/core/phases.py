@@ -50,6 +50,7 @@ class ResearchState(StrEnum):
     PROVIDER_ERROR = "PROVIDER_ERROR"
     STALE = "STALE"
     EXTRACTION_UNAVAILABLE = "EXTRACTION_UNAVAILABLE"
+    QUOTA_DENIED = "QUOTA_DENIED"
 
 
 class ClaimType(StrEnum):
