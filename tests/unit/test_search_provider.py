@@ -256,6 +256,7 @@ async def test_tavily_retrieval_time_captured_after_response_anti_leakage() -> N
     finally:
         await provider.aclose()
 
+
 @pytest.mark.asyncio
 async def test_retry_per_attempt_quota_reservation() -> None:
     import uuid
@@ -271,9 +272,10 @@ async def test_retry_per_attempt_quota_reservation() -> None:
 
     class MockSearchFailFirst(SearchProvider):
         name = "mock"
+
         def __init__(self):
             self.calls = 0
-            
+
         async def search(self, query: str, **kwargs) -> SearchResponse:
             self.calls += 1
             if self.calls == 1:
@@ -284,11 +286,11 @@ async def test_retry_per_attempt_quota_reservation() -> None:
                 retrieved_at=datetime.now(UTC),
                 cost_estimate=1,
                 raw_payload={},
-                rate_limit_headers={}
+                rate_limit_headers={},
             )
 
     provider = MockSearchFailFirst()
-    
+
     lock_mgr = MagicMock()
     lock_mgr.acquire = AsyncMock(return_value=True)
     lock_mgr.release = AsyncMock()
@@ -298,20 +300,31 @@ async def test_retry_per_attempt_quota_reservation() -> None:
     quota_mgr.reserve = AsyncMock(return_value=allowed_decision)
     quota_mgr.record_success = AsyncMock()
     quota_mgr.record_failure = AsyncMock()
-    
-    settings = Settings(_env_file=None, app_env="mock", search_provider="mock", research_enabled=True, research_max_queries_per_fixture=1)
+
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        search_provider="mock",
+        research_enabled=True,
+        research_max_queries_per_fixture=1,
+    )
     session = AsyncMock()
-    fixture = Fixture(id=uuid.uuid4(), home_team_id=uuid.uuid4(), away_team_id=uuid.uuid4(), kickoff_at=datetime.now(UTC))
+    fixture = Fixture(
+        id=uuid.uuid4(),
+        home_team_id=uuid.uuid4(),
+        away_team_id=uuid.uuid4(),
+        kickoff_at=datetime.now(UTC),
+    )
     home_team = Team(id=uuid.uuid4(), name="Arsenal")
     away_team = Team(id=uuid.uuid4(), name="Chelsea")
     row_mock = MagicMock()
     row_mock.first.return_value = (fixture, home_team, away_team)
     session.execute.return_value = row_mock
-    
+
     session_factory = MagicMock()
     session_factory.return_value.__aenter__ = AsyncMock(return_value=session)
     session_factory.return_value.__aexit__ = AsyncMock()
-    
+
     ctx = CollectorContext(
         settings=settings,
         session_factory=session_factory,
@@ -321,10 +334,10 @@ async def test_retry_per_attempt_quota_reservation() -> None:
         freshness=MagicMock(),
         provider=provider,
     )
-    
+
     collector = ResearchCollector()
     await collector.fetch(ctx, fixture_id=fixture.id, phase=ForecastPhase.MORNING.value)
-    
+
     assert provider.calls == 2
     assert quota_mgr.reserve.call_count == 2
     assert quota_mgr.record_failure.call_count == 1

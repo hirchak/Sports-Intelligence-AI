@@ -979,6 +979,7 @@ async def test_claim_level_as_of_safety_integration(
         assert len(view_t3.claims) == 1  # Claim included!
         assert view_t3.claims[0].claim_text == "Late extracted claim at T2"
 
+
 @pytest.mark.asyncio
 async def test_research_api_mode_invalid_returns_422(
     m5_session_factory: Any,
@@ -1002,7 +1003,7 @@ async def test_research_api_returns_disabled_when_capability_disabled(
 ) -> None:
     seeded = await _seed_fixture(m5_session_factory)
     fid = seeded["fixture_id"]
-    
+
     # We can override app.state.settings in FastAPI test client if needed,
     # or just use service_client with settings overridden.
     # Actually, the easiest is to patch the app dependency or just set app_env to disable it.
@@ -1033,21 +1034,33 @@ async def test_partial_provider_failure_persists_provider_error(
 ) -> None:
     from sports_intelligence.providers.errors import ProviderServerError
     from sports_intelligence.providers.search.base import SearchProvider, SearchResponse
-    
+
     class MockSearchPartialIntegration(SearchProvider):
         name = "mock"
+
         def __init__(self):
             self.calls = 0
-            
+
         async def search(self, query: str, **kwargs) -> SearchResponse:
             self.calls += 1
             if self.calls == 1:
                 return SearchResponse(
                     query=query,
-                    results=[SearchResultItem(url="http://mock", domain="mock", title="mock", published_at=None, retrieved_at=datetime.now(UTC), content="mock", score=1.0, provider_metadata={})],
+                    results=[
+                        SearchResultItem(
+                            url="http://mock",
+                            domain="mock",
+                            title="mock",
+                            published_at=None,
+                            retrieved_at=datetime.now(UTC),
+                            content="mock",
+                            score=1.0,
+                            provider_metadata={},
+                        )
+                    ],
                     retrieved_at=datetime.now(UTC),
                     cost_estimate=1,
-                    raw_payload={}
+                    raw_payload={},
                 )
             raise ProviderServerError("Failed on second call")
 
@@ -1057,7 +1070,7 @@ async def test_partial_provider_failure_persists_provider_error(
     ctx = _ctx(
         factory=m5_session_factory, redis=redis_client, settings=m5_settings, provider=provider
     )
-    
+
     await run_collector(
         ctx,
         "research",
@@ -1066,9 +1079,7 @@ async def test_partial_provider_failure_persists_provider_error(
 
     async with m5_session_factory() as session:
         run = (
-            await session.execute(
-                select(ResearchRun).where(ResearchRun.fixture_id == fid)
-            )
+            await session.execute(select(ResearchRun).where(ResearchRun.fixture_id == fid))
         ).scalar_one()
         assert run.status == ResearchState.PROVIDER_ERROR.value
         assert run.documents_count == 1

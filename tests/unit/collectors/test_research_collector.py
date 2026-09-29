@@ -275,6 +275,7 @@ async def test_research_collector_persist_returns_snapshot_ref() -> None:
     assert refs[0].table == "research_runs"
     assert refs[0].snapshot_id is not None
 
+
 @pytest.mark.asyncio
 async def test_extraction_unavailable_via_settings() -> None:
     settings = Settings(
@@ -333,20 +334,33 @@ async def test_partial_failure_status_is_provider_error() -> None:
 
     from sports_intelligence.providers.errors import ProviderServerError
     from sports_intelligence.providers.search.base import SearchProvider, SearchResponse
+
     class MockSearchPartial(SearchProvider):
         name = "mock"
+
         def __init__(self):
             self.calls = 0
-            
+
         async def search(self, query: str, **kwargs) -> SearchResponse:
             self.calls += 1
             if self.calls == 1:
                 return SearchResponse(
                     query=query,
-                    results=[MagicMock(url="http://mock", domain="mock", title="mock", published_at=None, retrieved_at=datetime.now(UTC), content="mock", score=1.0, provider_metadata={})],
+                    results=[
+                        MagicMock(
+                            url="http://mock",
+                            domain="mock",
+                            title="mock",
+                            published_at=None,
+                            retrieved_at=datetime.now(UTC),
+                            content="mock",
+                            score=1.0,
+                            provider_metadata={},
+                        )
+                    ],
                     retrieved_at=datetime.now(UTC),
                     cost_estimate=1,
-                    raw_payload={}
+                    raw_payload={},
                 )
             raise ProviderServerError("Failed on second call")
 
@@ -368,9 +382,13 @@ async def test_provider_error_run_not_fresh() -> None:
     session = AsyncMock()
     row_mock = MagicMock()
     # (captured_at, run_id, status)
-    row_mock.first.return_value = (datetime.now(UTC), uuid.uuid4(), ResearchState.PROVIDER_ERROR.value)
+    row_mock.first.return_value = (
+        datetime.now(UTC),
+        uuid.uuid4(),
+        ResearchState.PROVIDER_ERROR.value,
+    )
     session.execute.return_value = row_mock
-    
+
     captured_at, run_id = await collector.latest_snapshot(session, fixture_id=uuid.uuid4())
     assert captured_at is None
     assert run_id is None
