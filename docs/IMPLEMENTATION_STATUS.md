@@ -2,9 +2,9 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M5.3 — COMPLETE (Web Research runtime correctness pass awaiting independent review)  
+**Current milestone:** M5 — PASS / ACCEPTED (finalizing merge to main, v0.6-m5 tag, and M6 kickoff)  
 **Last updated:** 2026-09-29 (Antigravity)  
-**Last known good commit:** 0d0cd4a631c067a29c21ce584e806a47c534dc82 (M4 accepted HEAD)
+**Last known good commit:** b38229b0874e9ab992ae25ea2a63e1e6109f8ca7 (M5 accepted implementation HEAD)
 
 ---
 
@@ -12,27 +12,25 @@
 
 M4 passed independent review (PASS / ACCEPTED, HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`).
 
-Milestone M5 independent review verdict: **FAIL** (HEAD `6c52b1f1df85163b0aeef1f3a16d223bd3296cff`).
-Milestone M5.1 independent review verdict: **FAIL** (HEAD `30dd97a4a948f906d6e690b9acbd14550c75dec8`).
-Milestone M5.2 independent review verdict: **FAIL** (HEAD `42f2277d8f7dde2f0b315c259f22c210da05cefb`).
-Milestone M5.3 runtime correctness pass completed on branch `build/m5`, awaiting independent review.
+Milestone M5 independent review verdicts:
+- M5 initial: **FAIL** (HEAD `6c52b1f1df85163b0aeef1f3a16d223bd3296cff`)
+- M5.1 pass: **FAIL** (HEAD `30dd97a4a948f906d6e690b9acbd14550c75dec8`)
+- M5.2 pass: **FAIL** (HEAD `42f2277d8f7dde2f0b315c259f22c210da05cefb`)
+- **M5.3 pass / Milestone M5: PASS / ACCEPTED**
+  - **Accepted implementation remote HEAD:** `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`
+  - **Eventual main merge commit:** to be recorded upon merge.
 
-M5.3 fixes (on top of accepted M5.2 work):
-1. **PROVIDER_ERROR retry job identity**: Replaced the `(None, None)` hack in `latest_snapshot()` with true `(captured_at, run_id)`; exposed state-aware `latest_run_info()` and `refresh_due()`; scanner generates deterministic `error_due:<epoch>` opportunity keys (`epoch = captured_at + error_retry_ttl`), preventing duplicate jobs inside an error opportunity while guaranteeing automatic retry once the error TTL expires.
-2. **Distinguish quota denial from provider failure**: Added `ResearchState.QUOTA_DENIED`; local quota exhaustion no longer raises fake provider error exceptions or logs false provider errors; quota denial before any queries performs 0 provider calls, 0 ledger rows, and sets `QUOTA_DENIED`; partial quota denial preserves retrieved documents and claims with status `QUOTA_DENIED`.
-3. **Research failure observation timestamp**: Every external attempt tracks its clock observation time; failures and partial failures record the exact post-failure observation timestamp on `ResearchRun.captured_at`; documents keep their own `retrieved_at`; historical `as_of` between document retrieval and failure does not reveal the later failed run.
-4. **Respect Retry-After for 429**: Implemented `compute_retry_delay()` respecting `Retry-After` header on `ProviderRateLimitError`, bounded by `research_max_retry_after_seconds` (default 30s); falls back to deterministic exponential backoff on invalid/negative/missing values; uses injectable sleeper/clock for offline testing.
-5. **Fixture status when research disabled**: Extended `CategoryState` with `"disabled"`; `GET /v1/fixtures/{fixture_id}/status` reports research freshness as `"disabled"` when research capability is disabled and no run exists.
+Phase A: Finalize accepted M5:
+1. Ensure `build/m5` is pushed and clean.
+2. Create/update PR `build/m5` → `main`.
+3. Wait for CI and merge without force.
+4. Update local `main` from `origin/main`.
+5. Create and push annotated tag `v0.6-m5`.
+6. Create `build/m6` from updated accepted `main`.
 
-**Review verdicts:**
-- M5 → FAIL
-- M5.1 → FAIL  
-- M5.2 → FAIL
-- M5.3 → awaiting independent review
+Phase B: Milestone M6 — Deterministic Feature Builder + Data Quality Engine + immutable MatchContext.
 
-Do NOT merge `build/m5` to `main`. Do NOT start M6.
 Development remains strictly LOCAL ONLY.
-
 No Hetzner deployment is authorized.
 No Hermes access/dependency is authorized.
 
@@ -633,11 +631,11 @@ Working tree:
 
 # 12. Next action
 
-1. Commit M5.3 changes to `build/m5`.
-2. Push `build/m5` to remote repository without force.
-3. Verify remote GitHub Actions CI run on exact final remote HEAD.
-4. Await independent review of Milestone M5.3 on `build/m5`.
-5. Do not merge `build/m5` into `main`. Do not start M6.
+1. Merge accepted `build/m5` into `main` via PR with CI verification.
+2. Fast-forward local `main` to `origin/main`.
+3. Create and push annotated tag `v0.6-m5`.
+4. Create branch `build/m6` from accepted `main`.
+5. Implement Milestone M6.
 
 ---
 
@@ -655,8 +653,9 @@ Safe to begin M5: YES.
 **Review verdict (2026-09-29): M5 FAIL — focused M5.1 required.**
 **Review verdict (2026-09-29): M5.1 FAIL — focused M5.2 required.**
 **Review verdict (2026-09-29): M5.2 FAIL — focused M5.3 required.**
-
-**Current review target:** Milestone M5.3 (Web Research Subsystem Runtime Correctness Pass) on `build/m5`.
+**Final review verdict (2026-09-29): M5.3 / M5 PASS — M5 ACCEPTED.**
+Accepted implementation remote HEAD: `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`.
+Safe to begin M6: YES (following merge and tag).
 
 ---
 

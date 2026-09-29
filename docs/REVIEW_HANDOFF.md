@@ -9,19 +9,16 @@ Update it before every milestone review.
 
 # Review status
 
-**Ready for review:** YES (Milestone M5.3 runtime correctness pass completed, fully tested)  
-**Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M5.3 — Web Research Runtime Correctness Pass  
-**Review target branch:** `build/m5`  
-**Review target commit:** `8833d9e7c47a6dd7aeef9dd24d999b4bad214b59` (Milestone M5.3 HEAD)  
-**Previous reviewed remote HEAD:** `42f2277d8f7dde2f0b315c259f22c210da05cefb` (M5.2)  
+**Milestone:** M5 — Web Research Subsystem  
+**Milestone Verdict:** PASS / ACCEPTED  
+**Accepted implementation remote HEAD:** `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`  
 **Previous accepted state:** `main` = `2e4683a` (`v0.5-m4` accepted M4 merge)  
-**Previous review verdicts:**
+**Eventual main merge commit:** to be recorded upon merge.  
+**Review verdicts:**
 - M5 → FAIL (`6c52b1f1df85163b0aeef1f3a16d223bd3296cff`)
 - M5.1 → FAIL (`30dd97a4a948f906d6e690b9acbd14550c75dec8`)
 - M5.2 → FAIL (`42f2277d8f7dde2f0b315c259f22c210da05cefb`)
-- M5.3 → awaiting independent review  
-**Review scope:** diff `main..build/m5` or diff `42f2277..build/m5`
+- **M5.3 / M5 → PASS / ACCEPTED** (`b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`)
 
 ---
 
