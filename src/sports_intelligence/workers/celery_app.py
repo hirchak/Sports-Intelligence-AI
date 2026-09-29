@@ -56,6 +56,7 @@ def create_celery_app(settings: Settings) -> Celery:
             "sports_intelligence.workers.tasks.sports",
             "sports_intelligence.workers.tasks.pre_match",
             "sports_intelligence.workers.tasks.scheduling",
+            "sports_intelligence.workers.tasks.research",
         ],
     )
     application.conf.update(

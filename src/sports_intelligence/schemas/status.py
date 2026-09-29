@@ -6,7 +6,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-CategoryState = Literal["fresh", "stale", "unknown"]
+CategoryState = Literal["fresh", "stale", "unknown", "disabled"]
 
 
 class CategoryStatus(BaseModel):

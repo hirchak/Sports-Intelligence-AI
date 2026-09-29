@@ -9,217 +9,92 @@ Update it before every milestone review.
 
 # Review status
 
-**Ready for review:** ACCEPTED (Milestone M4 passed independent review)  
-**Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M4 (M4.4 accepted) — merging to main, tagging v0.5-m4  
-**Review target branch:** `build/m4` (merging to main)  
-**Review target commit:** `0d0cd4a631c067a29c21ce584e806a47c534dc82` — M4 accepted HEAD  
-**Previous accepted state:** `main` = `7d23c9d` (M3 accepted via PR #5)  
-**Review scope:** diff `main..build/m4` (M4 + M4.1 + M4.2 + M4.3 + M4.4)
+**Milestone:** M5 — Web Research Subsystem  
+**Milestone Verdict:** PASS / ACCEPTED  
+**Accepted implementation remote HEAD:** `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`  
+**Previous accepted state:** `main` = `2e4683a` (`v0.5-m4` accepted M4 merge)  
+**Eventual main merge commit:** to be recorded upon merge.  
+**Review verdicts:**
+- M5 → FAIL (`6c52b1f1df85163b0aeef1f3a16d223bd3296cff`)
+- M5.1 → FAIL (`30dd97a4a948f906d6e690b9acbd14550c75dec8`)
+- M5.2 → FAIL (`42f2277d8f7dde2f0b315c259f22c210da05cefb`)
+- **M5.3 / M5 → PASS / ACCEPTED** (`b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`)
 
 ---
 
-# Independent review history
+# Milestone M5.3 Runtime Correctness Fixes
 
-- M4 → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL**; M4.3 → **FAIL**;
-  M4.4 → **PASS / ACCEPTED** (accepted remote HEAD: `0d0cd4a631c067a29c21ce584e806a47c534dc82`).
+Following independent review verdict `M5.2 = FAIL`, M5.3 implemented five targeted runtime correctness fixes without redesigning the accepted search provider abstraction, per-attempt quota accounting, or database models:
 
-# What changed in M4.4
+### 1. PROVIDER_ERROR Retry Job Identity & Scanner Lifecycle
+- **Defect fixed**: `ResearchCollector.latest_snapshot()` previously returned `(None, None)` for `PROVIDER_ERROR` runs. The Celery collector task finished with status `SUCCEEDED`. On subsequent scanner runs, the scanner generated `due:missing`, matched the existing `SUCCEEDED` job, and skipped enqueuing any retry — permanently stalling retries.
+- **Implementation**:
+  - Replaced the `(None, None)` hack in `ResearchCollector.latest_snapshot()` with true `(captured_at, run_id)`.
+  - Added `latest_run_info(session, fixture_id, error_retry_ttl_seconds)` returning `ResearchRunInfo(captured_at, run_id, status, retry_due_at)`.
+  - Added `refresh_due()` to `ResearchCollector` respecting `research_provider_error_retry_seconds` (default: 900s = 15m).
+  - Updated `refresh_opportunity_suffix()` in `refresh.py` to generate deterministic `error_due:<epoch>` keys (`epoch = latest_captured_at + error_retry_ttl`) for `PROVIDER_ERROR` runs (and `quota_due:<epoch>` for `QUOTA_DENIED`).
+  - Pre-match scanner in `pre_match.py` queries `collector_refresh_due()`: skips enqueuing before retry is due; creates a new deterministic opportunity job once retry is due; de-duplicates multiple scans within the same opportunity; opens a subsequent retry generation upon a second error; and resumes normal 6h TTL upon successful collection.
+- **Verification**: `test_provider_error_scanner_retry_job_lifecycle` in `tests/integration/test_m5_research.py` verifies all six phases of this lifecycle end-to-end. Unit tests `test_provider_error_snapshot_and_run_info`, `test_collector_refresh_due_provider_error`, and `test_refresh_opportunity_suffix_error_and_quota` verify component behavior.
 
-## 1. API-Football /teams/statistics normalization
+### 2. Explicit QUOTA_DENIED State
+- **Defect fixed**: Quota denial previously threw a generic exception mapped to `PROVIDER_ERROR`, incorrectly recording provider failure telemetry when no external HTTP call was ever made.
+- **Implementation**:
+  - Added `ResearchState.QUOTA_DENIED` enum to `core/phases.py`.
+  - Refactored `ResearchCollector.fetch()` to track `quota_denied` and `quota_denial_reason` explicitly without raising fake provider error exceptions.
+  - When quota is denied before the first request: 0 provider calls, 0 ledger rows, status = `QUOTA_DENIED`, details record reason, planned queries, and `queries_succeeded = 0`.
+  - When quota is denied mid-run: preserves all previously retrieved documents and claims with status = `QUOTA_DENIED` and `partial_failure = True`.
+- **Verification**: `test_quota_denied_before_first_request_zero_provider_calls` and `test_quota_denied_after_first_query_retains_documents` in `tests/unit/collectors/test_research_collector.py`.
 
-- Real v3 shape: `fixtures.{played,wins,draws,loses}.{home,away,total}`
-  (provider spells `loses`; normalized to `losses`);
-  `goals.for.total.{home,away,total}` / `goals.against.total.{...}`;
-  `clean_sheet.{home,away,total}`; `failed_to_score.{home,away,total}`.
-- Metrics: played/wins/draws/losses/goals_for/goals_against/
-  clean_sheets/failed_to_score/form; missing → None, never zero.
-- Contract-faithful SENTINEL_TEAM_STATS; every metric asserted +
-  missing-values test.
+### 3. Failure Observation Timestamps & Anti-Leakage
+- **Defect fixed**: `ResearchRun.captured_at` was initialized before external calls, potentially backdating failure timestamps and causing temporal leakage in historical replay queries.
+- **Implementation**:
+  - `ResearchCollector` tracks `latest_attempt_observed_at` using clock timestamps after every external HTTP attempt.
+  - On failure or partial failure, `ResearchRun.captured_at` receives the exact post-failure observation timestamp (T2 / T3).
+  - Retrieved documents retain their own specific `retrieved_at` timestamp (T1).
+  - Historical queries (`as_of`) between document retrieval (T1) and run failure observation (T3) do not reveal the later failed run.
+- **Verification**: `test_failure_observation_timestamp_reflects_actual_failure_time` (unit) and `test_partial_provider_failure_persists_provider_error` (integration) verify observation timestamp precision and historical `as_of` anti-leakage.
 
-## 2. Season identity pinned end-to-end
+### 4. Respect Retry-After Header for 429 Rate Limits
+- **Defect fixed**: Collector retry logic did not inspect or respect provider `Retry-After` headers, risking premature retry exhaustion or unbounded sleeps.
+- **Implementation**:
+  - Added `compute_retry_delay(exc, attempt, max_retry_after_seconds)` in `research_collector.py`.
+  - When retrying `ProviderRateLimitError` (HTTP 429), parses `Retry-After` header value and caps it at `research_max_retry_after_seconds` (configurable in `Settings`, default 30s).
+  - Falls back to deterministic exponential backoff (`0.1 * 2^attempt`) on invalid, negative, or missing headers.
+  - Injected sleeper and clock support in `ResearchCollector` ensures test execution is 100% deterministic and never sleeps.
+- **Verification**: Parameterized test `test_compute_retry_delay_429` covering small values, values capped at max, invalid headers, negative values, and non-429 exceptions.
 
-- `PreMatchDecision.season_id` (from Fixture.season_id) flows through
-  `execute_plan()` into standings/team_stats inputs.
-- Exact Season resolver replaces the old `active=True LIMIT 1` helper:
-  fetches the exact Season row, verifies league ownership, parses the
-  year deterministically, refuses missing/mismatched identity.
-- Lock identity, freshness lookup (`StandingsCollector.latest_snapshot` and
-  `TeamStatisticsCollector.latest_snapshot` both filter by exact season_id,
-  returning (None, None) when season_id is None), provider `season=` and
-  persisted snapshot `season_id` all use the exact season.
-- Fixed `TeamStatisticsCollector.persist()` to omit invalid `source_fingerprint`
-  argument matching `TeamStatisticsSnapshot` schema.
-- Two-season same-league regression: fixture on season B → provider
-  season=2026, snapshot pinned to B uuid, fresh A never satisfies B,
-  A/B lock keys distinct.
-
-## 3. Stable TTL refresh opportunity
-
-- no snapshot → `due:missing`; fresh → scanner creates NO job (cheap
-  freshness check before create_or_get_job); stale →
-  `due:<captured+TTL>` stable until a new snapshot.
-- Framework freshness remains the race-safe double-check.
-- Acceptance flow regression: T0+20 no job; T0+31 job A; broker fail →
-  A FAILED; T0+35 same uuid requeued; T0+40 RUNNING no duplicate;
-  T0+41 new snapshot → next scan no job.
-- Lineup windows unchanged.
-
-## 4. Quota observations at response time
-
-- `QuotaBucket.observed_at` = `finished_at` (response observation
-  moment), never request start.
-- Overlap/order regression: later response becomes the authoritative
-  generation.
-
-# Verification
-
-- unit → **265 passed**; integration → **59 passed** (isolated
-  `sports_intel_test` + Redis db15, incl. alembic check)
-- ruff/format clean; strict mypy clean (87 files); compose OK;
-  secrets clean; no schema migration needed.
+### 5. Capability-Aware Fixture Freshness Status
+- **Defect fixed**: `GET /v1/fixtures/{fixture_id}/status` reported research freshness as `"unknown"` when the research capability was globally disabled and no run existed.
+- **Implementation**:
+  - Extended `CategoryState` Literal in `schemas/status.py` to include `"disabled"`.
+  - In `routes/status.py`, `_fixture_freshness` checks `settings.research_capability_enabled`. If False and no run exists, sets research status to `"disabled"`.
+- **Verification**: `test_fixture_status_research_disabled_when_capability_disabled` in `tests/integration/test_m5_research.py`.
 
 ---
 
-# What changed in M4.3 (per FAIL item)
+# Verification Evidence (All Passing Locally)
 
-## 1. Odds capability gating (no silent MOCK)
-
-- `build_odds_provider`: APP_ENV=mock + empty/mock → MockOddsProvider;
-  sandbox/live_local + empty → **None** (DISABLED); sandbox/live_local +
-  mock → requires `odds_allow_mock_override` else ProviderConfigError.
-- `Settings.odds_capability_enabled` drives the planner: the pre-match
-  scanner never enqueues odds when disabled (planned=1, created=0,
-  enqueued=0); `sports.collect` fails closed for odds jobs when
-  disabled.
-- Regression: live_local + api_football + odds_provider="" → zero odds
-  jobs, zero OddsSnapshotSet rows.
-
-## 2. Provider market translation
-
-- `OddsProvider.request_markets()` — provider owns the translation from
-  internal product markets to HTTP market keys; guarantees
-  `alternate_totals` is requested alongside `totals` (exact O/U 1.5/2.5).
-- Cost estimation (`collect.py`, `OddsCollector`) uses the ACTUAL
-  provider market set: 5 markets × 1 region → 5 credits reserved before
-  the network call.
-- Contract test captures the outgoing `markets=` query and asserts
-  alternate_totals presence.
-
-## 3. Fixture-level lineup refresh
-
-- `LineupCollector.refresh_due` aggregates BOTH fixture teams' latest
-  publication states: CONFIRMED stops polling only when both sides are
-  CONFIRMED; home CONFIRMED + away NOT_YET_PUBLISHED still refreshes the
-  next window; the requesting team_id in the job payload never
-  suppresses a needed later window.
-- Scenario integration test covers the full T20 flow.
-
-## 4. TTL refresh-opportunity identity
-
-- Opportunity = actual due generation: `latest_captured_at + effective
-  TTL` while fresh; `now` once stale; `due:missing` (stable) when no
-  snapshot exists yet.
-- Counterexample regression: job created while fresh, time advances
-  past the TTL inside the old global bucket → a new opportunity is
-  created (never suppressed by an unrelated bucket boundary).
-- Framework freshness remains the final safety check.
-
-## 5. Quota observation generations
-
-- Reservation counters are keyed to the observation GENERATION
-  (observed_at of the authoritative bucket); a newer observation starts
-  a fresh counter — reservations are "since this observation".
-- Regression: observed 100 → reserve 4 → new observation 96 → reserve 4
-  behaves as 96→92, not 96−4−4; concurrent reservations after a new
-  observation counted against the new generation.
-
-## 6. The Odds API quota limit
-
-- `parse_quota_headers("theoddsapi")` infers the daily limit from
-  `x-requests-used + x-requests-remaining` (8 + 492 → 500);
-  `x-requests-last` remains the actual last-call cost; degradation
-  percentages operate on the inferred 500-credit allowance.
-- Provider semantics documented in adapter/tests.
-
-## 7. FAILED job requeue
-
-- Collector jobs reuse the SAME job UUID within the same refresh
-  opportunity; a stranded FAILED job is re-enqueued via CAS
-  (FAILED → PENDING); RUNNING/SUCCEEDED never downgraded. Same logic
-  applied to scheduled discovery (`_run_schedule`).
-- Tests: broker-failure → job FAILED → next scan same opportunity
-  re-enqueues the same uuid; RUNNING job untouched by a later scan.
-
-## 8. Failure telemetry
-
-- `ProviderError.quota_headers` (safe rate-limit headers only) added;
-  API-Football 401/403/429/5xx and The Odds API 429/5xx populate it
-  plus `status_code`; framework passes them into `record_failure`.
-- Ledger test: 429 → status_code 429 + daily_remaining from safe
-  headers; no auth headers ever persisted.
-
-## 9. Scanner observability
-
-- `_dispatch_decision` returns planned / jobs_created / jobs_reused /
-  jobs_enqueued (+ per-category breakdown); reused jobs are never
-  reported as newly enqueued; Redis cleanup is finally-safe on enqueue
-  errors (test asserts counters after dedupe and requeue).
-
-# Kept unchanged (good M4.1/M4.2 work)
-
-scheduler wrapper, external-ID resolution, evidence linkage, coalescing
-winner publishing real persisted refs, sequential job attempts,
-completed-form inputs, DB-first reads, team-split persistence,
-no-vig completeness.
+- **Unit tests**: `uv run pytest -q -m "not integration"` → **318 passed, 76 deselected in 5.30s**
+- **Integration tests**: `TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" TEST_REDIS_URL="redis://localhost:6380/15" uv run pytest -q -m integration` → **76 passed, 318 deselected in 17.16s**
+- **Full test suite**: `uv run pytest -q` → **394 passed in 16.24s**
+- **Linter**: `uv run ruff check .` → **clean (All checks passed!)**
+- **Formatter**: `uv run ruff format --check .` → **clean (157 files already formatted)**
+- **Type checker**: `uv run mypy src` → **clean (Success: no issues found in 104 source files)**
+- **Alembic check**: `uv run alembic check` → **clean (No new upgrade operations detected)**
+- **Docker Compose**: `docker compose config -q` and `docker compose --profile telegram config -q` (+dev) → **clean (OK)**
+- **Secret scan**: clean (zero credentials in code, diff, or Git).
+- **Offline safety**: Zero live external search API calls during test suite execution.
 
 ---
 
-# Verification (actually run on this machine)
+# Instructions for Independent Reviewer
 
-- `uv run pytest -q -m "not integration"` → **262 passed**
-- Integration suite (`sports_intel_test` + Redis db15) → **56 passed**
-  (incl. M4.3 file; alembic check + migration cycle; a one-time Redis
-  flush precedes the local run — counters live in Redis)
-- `uv run ruff check .` / `ruff format --check .` → clean
-- `uv run mypy src` → **no issues in 87 source files** (strict)
-- `docker compose config -q` (+telegram profile) → OK
-- Secret scan → clean
-
-# Known limitations (documented, intentional)
-
-1. Live provider smokes require local credentials; contract tests cover
-   normalization + failure telemetry; never blocks acceptance.
-2. Local integration runs flush Redis first (`make test-integration`)
-   so reservation counters never leak between runs; CI uses fresh
-   containers.
-
-# Scope guard respected
-
-No research, MatchContext, LLM, prediction, candidate ranking,
-settlement, live in-play, Hetzner, Hermes.
-
----
-
-# Suggested review order
-
-1. `AGENTS.md`, this file, `docs/CURRENT_TASK.md`
-2. Git diff `main..build/m4`
-3. Key files:
-   - `src/sports_intelligence/providers/odds/factory.py` (gating,
-     request_markets, failure headers)
-   - `src/sports_intelligence/collectors/refresh.py` (due generation)
-   - `src/sports_intelligence/collectors/quota.py` (observation
-     generations, inferred odds limit)
-   - `src/sports_intelligence/collectors/sports_collectors.py`
-     (fixture-level lineup refresh)
-   - `src/sports_intelligence/workers/tasks/pre_match.py`
-     (gating, counters, FAILED requeue)
-   - `src/sports_intelligence/workers/tasks/scheduling.py` (FAILED
-     requeue)
-   - `tests/integration/test_m4_collectors.py`, `tests/unit/test_odds_gating.py`
-
-# Next action after PASS
-
-Merge `build/m4` into `main`, tag `v0.5-m4`. Only then start M5 with
-explicit user approval.
+1. Inspect git diff against previous reviewed HEAD: `git diff 42f2277d8f7dde2f0b315c259f22c210da05cefb..build/m5`.
+2. Inspect `ResearchCollector.latest_snapshot()`, `latest_run_info()`, and `refresh_opportunity_suffix()`.
+3. Verify `QUOTA_DENIED` status handling and diagnostics in `ResearchCollector.fetch()`.
+4. Inspect `compute_retry_delay()` in `research_collector.py`.
+5. Run full test suite: `uv run pytest -q`.
+6. Run `uv run ruff check .` and `uv run mypy src`.
+7. Run `uv run alembic check`.
+8. Do NOT merge `build/m5` into `main`.
+9. Do NOT start Milestone M6.

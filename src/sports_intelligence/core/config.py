@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     freshness_odds_seconds: int = 2 * 3600
     freshness_prematch_odds_seconds: int = 30 * 60
     freshness_prematch_availability_seconds: int = 60 * 60
+    freshness_research_seconds: int = 6 * 3600
+    freshness_prematch_research_seconds: int = 90 * 60
 
     lineup_window_t_minutes: Annotated[list[int], NoDecode] = Field(
         default_factory=lambda: [120, 60, 20]
@@ -82,6 +84,14 @@ class Settings(BaseSettings):
     odds_allow_mock_override: bool = False
     search_provider: str = ""
     search_api_key: str = ""
+    research_enabled: bool = True
+    research_allow_mock_override: bool = False
+    research_max_queries_per_fixture: int = 6
+    research_max_results_per_query: int = 5
+    research_claim_extraction_enabled: bool = True
+    research_provider_error_retry_seconds: int = 15 * 60
+    research_max_retry_after_seconds: int = 30
+    tavily_base_url: str = "https://api.tavily.com"
 
     llm_provider: str = ""
     llm_api_key: str = ""
@@ -140,7 +150,12 @@ class Settings(BaseSettings):
             missing.append("SPORTS_API_KEY")
         if self.odds_provider and self.odds_provider != "mock" and not self.odds_api_key:
             missing.append("ODDS_API_KEY")
-        if self.search_provider and self.search_provider != "mock" and not self.search_api_key:
+        if (
+            self.research_enabled
+            and self.search_provider
+            and self.search_provider != "mock"
+            and not self.search_api_key
+        ):
             missing.append("SEARCH_API_KEY")
         if self.llm_provider and self.llm_provider != "mock" and not self.llm_api_key:
             missing.append("LLM_API_KEY")
@@ -167,6 +182,24 @@ class Settings(BaseSettings):
         if self.odds_allow_mock_override and name == "mock":
             return True
         return name in ("the_odds_api", "theoddsapi") and bool(self.odds_api_key)
+
+    @property
+    def research_capability_enabled(self) -> bool:
+        """Web research is enabled only when research_enabled is True and
+        a real provider is configured (or MOCK is explicitly permitted).
+
+        APP_ENV=mock + empty/mock → mock allowed.
+        APP_ENV=sandbox/live_local + empty → DISABLED (never silent mock).
+        APP_ENV=sandbox/live_local + mock → only with explicit override.
+        """
+        if not self.research_enabled:
+            return False
+        name = (self.search_provider or "").strip().lower()
+        if self.app_env == "mock":
+            return name in ("", "mock", "tavily")
+        if self.research_allow_mock_override and name == "mock":
+            return True
+        return name == "tavily" and bool(self.search_api_key)
 
 
 @lru_cache(maxsize=1)

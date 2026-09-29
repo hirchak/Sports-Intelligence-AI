@@ -73,12 +73,6 @@ class OddsProvider(Protocol):
     async def get_odds(self, fixture_id: str, markets: list[str]) -> dict[str, Any]: ...
 
 
-class SearchProvider(Protocol):
-    """Minimum interface per master spec section 8.3. Not implemented (M5)."""
-
-    async def search(self, query: str, max_results: int) -> list[dict[str, Any]]: ...
-
-
 @dataclass(frozen=True)
 class LLMResult:
     parsed_output: BaseModel | None

@@ -17,10 +17,12 @@ from sports_intelligence.db.models import (
     Fixture,
     LineupSnapshot,
     OddsSnapshotSet,
+    ResearchRun,
     StandingSnapshot,
     TeamStatisticsSnapshot,
 )
 from sports_intelligence.schemas.status import (
+    CategoryState,
     CategoryStatus,
     FixtureStatusOut,
     SystemStatusOut,
@@ -142,6 +144,24 @@ async def _fixture_freshness(
             if not policy.is_stale(FreshnessCategory.ODDS, odds_captured, now)
             else ("stale" if odds_captured else "unknown")
         ),
+    )
+
+    research_captured, _ = await _latest_snapshot(session, ResearchRun, fixture_id=fixture.id)
+    if not settings.research_capability_enabled:
+        research_state: CategoryState = "disabled"
+    elif research_captured is not None:
+        research_state = (
+            "fresh"
+            if not policy.is_stale(FreshnessCategory.RESEARCH, research_captured, now, phase)
+            else "stale"
+        )
+    else:
+        research_state = "unknown"
+
+    out["research"] = CategoryStatus(
+        captured_at=research_captured,
+        age_seconds=_age_seconds(research_captured, now),
+        state=research_state,
     )
     return out
 

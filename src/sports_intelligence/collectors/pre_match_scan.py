@@ -86,25 +86,27 @@ def decide_categories(
     windows = [w for w in settings.lineup_window_t_minutes if w > 0]
     prematch_horizon = max(windows) if windows else 60
 
-    if minutes_until <= prematch_horizon:
-        phase = ForecastPhase.PREMATCH
-        categories: tuple[FreshnessCategory, ...] = (
-            FreshnessCategory.STANDINGS,
-            FreshnessCategory.TEAM_STATISTICS,
-            FreshnessCategory.TEAM_FORM,
-            FreshnessCategory.AVAILABILITY,
-            FreshnessCategory.LINEUPS,
-            FreshnessCategory.ODDS,
-        )
-        return phase, categories
-
-    phase = ForecastPhase.MORNING
-    categories = (
+    cats: list[FreshnessCategory] = [
         FreshnessCategory.STANDINGS,
         FreshnessCategory.TEAM_STATISTICS,
         FreshnessCategory.TEAM_FORM,
-    )
-    return phase, categories
+    ]
+    if settings.research_capability_enabled:
+        cats.append(FreshnessCategory.RESEARCH)
+
+    if minutes_until <= prematch_horizon:
+        phase = ForecastPhase.PREMATCH
+        cats.extend(
+            [
+                FreshnessCategory.AVAILABILITY,
+                FreshnessCategory.LINEUPS,
+                FreshnessCategory.ODDS,
+            ]
+        )
+        return phase, tuple(cats)
+
+    phase = ForecastPhase.MORNING
+    return phase, tuple(cats)
 
 
 async def plan_for_date(
@@ -252,4 +254,11 @@ async def execute_plan(
                 phase=phase,
             )
             counters["odds"] = counters.get("odds", 0) + 1
+        if FreshnessCategory.RESEARCH in decision.categories_to_collect:
+            await enqueue_collector(
+                "research",
+                fixture_id=decision.fixture_id,
+                phase=phase,
+            )
+            counters["research"] = counters.get("research", 0) + 1
     return counters

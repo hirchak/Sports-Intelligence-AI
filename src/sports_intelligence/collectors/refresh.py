@@ -53,16 +53,20 @@ def refresh_opportunity_suffix(
     windows_minutes: list[int],
     ttl_seconds: int,
     latest_captured_at: datetime | None = None,
+    status: str | None = None,
+    error_retry_ttl_seconds: int | None = None,
 ) -> str:
     """Deterministic suffix for a collector job's idempotency key.
 
     - `lineups` → the active T-window id (`t120` / `t60` / `t20`) or
       `no_window`;
-    - everything else → `due:<epoch>` where `due` is the ACTUAL refresh
-      due opportunity: `latest_captured_at + effective TTL` while the
-      snapshot is fresh, or `now` once it has gone stale (M4.3 §4). A
-      snapshot that became stale is eligible on the NEXT scanner run —
-      never suppressed by an unrelated global bucket boundary.
+    - `research` with PROVIDER_ERROR → `error_due:<epoch>` where epoch is
+      `latest_captured_at + error_retry_ttl_seconds` (M5.3 §1);
+    - `research` with QUOTA_DENIED → `quota_due:<epoch>` where epoch is
+      `latest_captured_at + error_retry_ttl_seconds` (M5.3 §2);
+    - everything else without a snapshot → `due:missing`;
+    - everything else with snapshot → `due:<epoch>` where `due` is the
+      ACTUAL refresh due opportunity: `latest_captured_at + effective TTL`.
     """
     if collector_name == "lineups":
         if kickoff_at is None:
@@ -77,6 +81,14 @@ def refresh_opportunity_suffix(
         # same uuid); once a snapshot exists the due generation governs.
         return "due:missing"
     captured = _aware(latest_captured_at)
+    if status == "PROVIDER_ERROR":
+        error_ttl = error_retry_ttl_seconds or 900
+        due = captured + timedelta(seconds=max(error_ttl, 1))
+        return f"error_due:{int(due.timestamp())}"
+    if status == "QUOTA_DENIED":
+        error_ttl = error_retry_ttl_seconds or 900
+        due = captured + timedelta(seconds=max(error_ttl, 1))
+        return f"quota_due:{int(due.timestamp())}"
     # M4.4 §3: the due generation is `captured_at + effective TTL` and
     # stays UNCHANGED until a new successful snapshot is persisted —
     # even once the snapshot has gone stale. The scanner skips fresh

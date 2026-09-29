@@ -17,6 +17,9 @@ from typing import Any
 
 from redis.asyncio import Redis
 
+from sports_intelligence.collectors import (
+    research_collector as _research_collector,  # noqa: F401
+)
 from sports_intelligence.collectors.framework import (
     CollectorContext,
     run_collector,
@@ -31,6 +34,7 @@ from sports_intelligence.core.phases import ForecastPhase
 from sports_intelligence.db.session import create_engine, create_session_factory
 from sports_intelligence.pipelines.discover_fixtures import update_job_status
 from sports_intelligence.providers.odds.factory import build_odds_provider
+from sports_intelligence.providers.search.factory import build_search_provider
 from sports_intelligence.providers.sports.factory import build_sports_provider
 from sports_intelligence.workers.celery_app import celery_app
 from sports_intelligence.workers.utils import record_job_attempt
@@ -84,16 +88,25 @@ async def _run_collect_job(
             await session.commit()
 
         redis = Redis.from_url(settings.redis_url)
-        sports_provider = build_sports_provider(settings)
-        odds_provider = build_odds_provider(settings)
+        search_provider = None
         if collector_name == "odds":
+            odds_provider = build_odds_provider(settings)
             if odds_provider is None:
                 raise RuntimeError(
                     "odds collector job refused: odds capability is "
                     "DISABLED in this environment (no provider configured)"
                 )
             provider: Any = odds_provider
+        elif collector_name == "research":
+            search_provider = build_search_provider(settings)
+            if search_provider is None:
+                raise RuntimeError(
+                    "research collector job refused: research capability is "
+                    "DISABLED in this environment (no provider configured)"
+                )
+            provider = search_provider
         else:
+            sports_provider = build_sports_provider(settings)
             provider = sports_provider
         quota = QuotaManager(settings, factory, redis=redis)
         locks = CoalesceLockManager(redis, settings)
@@ -175,10 +188,9 @@ async def _run_collect_job(
         raise
     finally:
         cleanup_tasks = []
-        if sports_provider is not None:
-            cleanup_tasks.append(sports_provider.aclose())
-        if odds_provider is not None:
-            cleanup_tasks.append(odds_provider.aclose())
+        for p in (sports_provider, odds_provider, search_provider):
+            if p is not None and hasattr(p, "aclose"):
+                cleanup_tasks.append(p.aclose())
         for cleanup in cleanup_tasks:
             try:
                 await cleanup

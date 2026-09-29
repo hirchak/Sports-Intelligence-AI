@@ -147,7 +147,11 @@ async def _dispatch_decision(
     planned / jobs_created / jobs_reused / jobs_enqueued per category."""
     from redis.asyncio import Redis
 
-    from sports_intelligence.collectors.framework import CollectorContext, resolve
+    from sports_intelligence.collectors.framework import (
+        CollectorContext,
+        collector_refresh_due,
+        resolve,
+    )
     from sports_intelligence.collectors.freshness import FreshnessPolicy
     from sports_intelligence.collectors.locks import CoalesceLockManager
     from sports_intelligence.collectors.pre_match_scan import execute_plan
@@ -189,6 +193,13 @@ async def _dispatch_decision(
                 logger.info("odds collector skipped: odds capability disabled in this environment")
                 return
 
+            # M5: research disabled → scanner never enqueues research.
+            if name == "research" and not settings.research_capability_enabled:
+                logger.info(
+                    "research collector skipped: research capability disabled in this environment"
+                )
+                return
+
             # M4.4 §2: standings and team_stats require exact season identity.
             if name in ("standings", "team_stats") and not inputs.get("season_id"):
                 logger.warning(
@@ -207,22 +218,34 @@ async def _dispatch_decision(
             # snapshot persists); no snapshot yet → `due:missing`.
             # A FRESH snapshot produces NO job at all.
             latest_captured_at: datetime | None = None
+            latest_status: str | None = None
             if name != "lineups":
                 try:
                     async with factory() as session:
-                        latest_captured_at, _ = await collector.latest_snapshot(
-                            session,
-                            **{k: v for k, v in inputs.items() if k != "phase"},
-                        )
+                        if hasattr(collector, "latest_run_info"):
+                            run_info = await collector.latest_run_info(
+                                session,
+                                fixture_id=inputs["fixture_id"],
+                                error_retry_ttl_seconds=settings.research_provider_error_retry_seconds,
+                            )
+                            latest_captured_at = run_info.captured_at
+                            latest_status = run_info.status
+                        else:
+                            latest_captured_at, _ = await collector.latest_snapshot(
+                                session,
+                                **{k: v for k, v in inputs.items() if k != "phase"},
+                            )
                 except Exception:  # noqa: BLE001 — best-effort DB read
                     logger.warning(
                         "could not read latest snapshot for opportunity identity",
                         extra={"name": name},
                     )
                     latest_captured_at = None
-                if latest_captured_at is not None and not FreshnessPolicy(settings).is_stale(
-                    collector.category, latest_captured_at, now or datetime.now(UTC), decision.phase
-                ):
+                    latest_status = None
+                is_due = await collector_refresh_due(
+                    collector, ctx, inputs, latest_captured_at, now or datetime.now(UTC)
+                )
+                if not is_due:
                     # Fresh snapshot: no collector job needed.
                     return
             opportunity = refresh_opportunity_suffix(
@@ -232,6 +255,8 @@ async def _dispatch_decision(
                 windows_minutes=settings.lineup_window_t_minutes,
                 ttl_seconds=int(ttl.total_seconds()),
                 latest_captured_at=latest_captured_at,
+                status=latest_status,
+                error_retry_ttl_seconds=settings.research_provider_error_retry_seconds,
             )
             job_key = (
                 f"collect:{name}:{hashlib.sha1(lock_key.encode()).hexdigest()[:20]}:"
@@ -273,7 +298,11 @@ async def _dispatch_decision(
                     from sports_intelligence.workers.tasks.collect import collect_task
 
                     payload = {k: v for k, v in inputs.items() if k != "phase"}
-                    collect_task.apply_async(args=[job_id, name, json.dumps(payload), phase_value])
+                    queue = "research_io" if name == "research" else "sports_io"
+                    collect_task.apply_async(
+                        args=[job_id, name, json.dumps(payload), phase_value],
+                        queue=queue,
+                    )
                     bucket["enqueued"] += 1
                 except Exception:
                     logger.error("collector job enqueue failed; marking job FAILED", exc_info=True)

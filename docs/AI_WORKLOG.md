@@ -49,6 +49,54 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 
 ---
 
+### 2026-09-29 20:33 CEST — Antigravity (Claude Sonnet 4.6)
+
+**Milestone:** M5.2  
+**Task:** Focused correctness pass — all 6 M5.2 review findings
+
+**Completed**
+1. **Per-HTTP-attempt quota/ledger**: removed retry loop from `TavilySearchProvider.search()` (now single-attempt). Moved 3-attempt retry orchestration to `ResearchCollector.fetch()` with `quota.reserve()` + `record_success/failure()` per physical HTTP attempt. Imported `RETRYABLE_PROVIDER_ERRORS` for correct retry classification.
+2. **`research_claim_extraction_enabled` as real Settings field**: added `research_claim_extraction_enabled: bool = True` to `Settings`; removed `getattr` fallback in collector; removed dead `self.extractor is None` branch; added `RESEARCH_CLAIM_EXTRACTION_ENABLED=true` to `.env.example`.
+3. **DISABLED state in read API**: `get_research_for_fixture()` accepts `capability_enabled: bool = True`; when no run exists and capability is disabled → returns `DISABLED` instead of `NO_USEFUL_RESULTS`. API route reads `request.app.state.settings`.
+4. **PROVIDER_ERROR not fresh**: `latest_snapshot()` selects `status` column; returns `(None, None)` for `PROVIDER_ERROR` runs, making them immediately stale for retry.
+5. **Partial failure visibility**: after query loop, `partial_failure = provider_error is not None and bool(raw_items)`; partial failure → `status = PROVIDER_ERROR` even if documents exist; diagnostics (`queries_planned`, `queries_attempted`, `queries_succeeded`, `failed_query_count`, `partial_failure`, `provider_error_class`) persisted in `details_jsonb`.
+6. **Typed mode validation**: `?mode=` changed from `str` to `Literal["latest_run", "accumulated"]` in API route and service; FastAPI returns HTTP 422 for invalid values.
+7. **Scratch patch scripts cleanup**: removed 11 `patch_*.py` files left in project root; fixed 5 E501 lint errors in test files; ran `ruff format`.
+
+**Files changed**
+- `src/sports_intelligence/providers/search/tavily.py` — removed retry loop
+- `src/sports_intelligence/collectors/research_collector.py` — retry orchestration, partial failure, latest_snapshot status check, extraction_enabled via settings
+- `src/sports_intelligence/core/config.py` — added `research_claim_extraction_enabled`
+- `src/sports_intelligence/research/service.py` — `capability_enabled` param, `Literal` mode type
+- `src/sports_intelligence/api/routes/research.py` — `Literal` mode, pass capability_enabled
+- `.env.example` — added `RESEARCH_CLAIM_EXTRACTION_ENABLED=true`
+- `tests/unit/test_search_provider.py` — new retry-per-attempt tests; E501 fixes
+- `tests/unit/collectors/test_research_collector.py` — new partial failure, PROVIDER_ERROR freshness, extraction_unavailable tests; E501 fixes
+- `tests/integration/test_m5_research.py` — new 422 mode, DISABLED API, partial failure integration tests; E501 fix
+- `docs/IMPLEMENTATION_STATUS.md`, `docs/CURRENT_TASK.md`, `docs/REVIEW_HANDOFF.md`, `docs/AI_WORKLOG.md`
+
+**Verification**
+- `uv run ruff check .` → All checks passed
+- `uv run ruff format --check .` → 157 files already formatted
+- `uv run mypy src` → Success: no issues found in 104 source files
+- `uv run pytest -q -m 'not integration'` → 312 passed
+- `pytest -q -m integration` (TEST_DATABASE_URL + TEST_REDIS_URL) → 74 passed
+
+**Known problems**
+- None
+
+**Spec / ADR deviations**
+- None
+
+**Git**
+- branch: `build/m5`
+- commits: `fea1e71` (M5.2 implementation), `4f78e84` (scratch cleanup + lint fixes)
+
+**Next action**
+- Stop for independent review of `build/m5` HEAD `4f78e8402fc7d2e7b4f550d04b81e1ebf92399b4`
+
+---
+
 ## Initial record
 
 ### 2026-08-20 — Project specification phase
@@ -1359,5 +1407,375 @@ button-based menus and a Back button on every screen.
 **Next action**
 - Commit doc cleanup, push build/m4, merge into main via PR, tag v0.5-m4, create build/m5.
 
+---
+
+### 2026-09-29 10:00 +02:00 — Antigravity (Gemini 3.8 Flash)
+
+**Milestone:** M5
+**Task:** Milestone M5 Web Research Subsystem implementation, verification, and preparation for review
+
+**Completed**
+- Finalized accepted M4 state and merged `build/m4` to `main` via PR #6 (`2e4683a`), pushed tag `v0.5-m4`.
+- Created and switched to branch `build/m5`.
+- Implemented core freshness and phase definitions: `FreshnessCategory.RESEARCH`, `ResearchState`, `ClaimType`, and updated settings (`freshness_research_seconds`, `research_enabled`).
+- Implemented search provider boundary & adapters (`src/sports_intelligence/providers/search/`):
+  - `SearchProvider` Protocol, `SearchResultItem`, `SearchResponse`.
+  - `MockSearchProvider`: deterministic canned responses, token matching, error simulation, query history tracking, JSONB-safe datetime serialization.
+  - `TavilySearchProvider`: production-ready adapter with bounded timeouts, retries with backoff and jitter, 4xx non-retryable handling, canonical URL normalization, secret redaction, rate limit header parsing.
+  - `build_search_provider` factory: strict gating against silent mock in live environments without explicit override.
+- Implemented claim extraction, conflict detection & anti-leakage audit (`src/sports_intelligence/research/`):
+  - DTOs: `ExtractedClaimDTO`, `ResearchDocumentDTO`, `ResearchRunResultDTO`.
+  - `build_research_queries`: bounded (max 6), deterministic queries per fixture for MORNING and PREMATCH phases.
+  - `deduplicate_search_results`, `normalize_url` (strips tracking parameters, query fragments, trailing slashes), `content_sha256`.
+  - `RuleBasedClaimExtractor` / `MockClaimExtractor`: extracts claims across 8 categories, associates team IDs, assigns confidence scores.
+  - `detect_conflicts`: identifies contradictory presence/absence claims for the same subject or team; strictly preserves both claims, flags `conflict_flag=True`, links `conflicting_claim_id`, and attaches metadata.
+  - `get_research_for_fixture`: anti-leakage audit service enforcing `as_of` temporal cutoff (`retrieved_at <= as_of` and `published_at <= as_of`).
+- Implemented database models and migration (`src/sports_intelligence/db/`):
+  - `ResearchRun`, `ResearchDocument`, `ResearchClaim` models with descending composite indexes and foreign keys.
+  - Alembic migration `0006_m5_research_documents_claims.py` created, tested, and verified clean with `alembic check`.
+- Integrated collector and Celery workers:
+  - `ResearchCollector`: registered in framework (`name="research"`, `category=FreshnessCategory.RESEARCH`, `priority=Priority.P3`), supports coalescing locks (`research:{fixture_id}`), raw payload storage in `raw_provider_payloads`, and snapshot persistence.
+  - Pre-match scanner includes `FreshnessCategory.RESEARCH` in scan plan and TTL evaluations.
+  - Celery task `sports_intelligence.workers.tasks.research` routed to `research_io` queue.
+- Implemented REST API endpoints:
+  - `GET /v1/fixtures/{fixture_id}/research`: returns documents and claims with optional `as_of` query parameter.
+  - `GET /v1/fixtures/{fixture_id}/status`: reflects `research` freshness state and last refresh timestamp.
+- Added comprehensive unit and integration tests (300 unit + 66 integration = 366 passing tests).
+
+**Files changed**
+- Created:
+  - `src/sports_intelligence/api/routes/research.py`
+  - `src/sports_intelligence/collectors/research_collector.py`
+  - `src/sports_intelligence/db/migrations/versions/0006_m5_research_documents_claims.py`
+  - `src/sports_intelligence/providers/search/__init__.py`
+  - `src/sports_intelligence/providers/search/base.py`
+  - `src/sports_intelligence/providers/search/factory.py`
+  - `src/sports_intelligence/providers/search/mock.py`
+  - `src/sports_intelligence/providers/search/tavily.py`
+  - `src/sports_intelligence/research/conflict.py`
+  - `src/sports_intelligence/research/dedup.py`
+  - `src/sports_intelligence/research/extractor.py`
+  - `src/sports_intelligence/research/models.py`
+  - `src/sports_intelligence/research/query_builder.py`
+  - `src/sports_intelligence/research/service.py`
+  - `src/sports_intelligence/schemas/research.py`
+  - `src/sports_intelligence/workers/tasks/research.py`
+  - `tests/integration/test_m5_research.py`
+  - `tests/unit/collectors/test_research_collector.py`
+  - `tests/unit/test_research_conflict.py`
+  - `tests/unit/test_research_dedup.py`
+  - `tests/unit/test_research_extractor.py`
+  - `tests/unit/test_research_provenance.py`
+  - `tests/unit/test_research_query_builder.py`
+  - `tests/unit/test_search_gating.py`
+  - `tests/unit/test_search_provider.py`
+- Modified:
+  - `src/sports_intelligence/api/app.py`
+  - `src/sports_intelligence/api/routes/status.py`
+  - `src/sports_intelligence/collectors/framework.py`
+  - `src/sports_intelligence/collectors/freshness.py`
+  - `src/sports_intelligence/collectors/pre_match_scan.py`
+  - `src/sports_intelligence/collectors/quota.py`
+  - `src/sports_intelligence/core/config.py`
+  - `src/sports_intelligence/core/phases.py`
+  - `src/sports_intelligence/db/models/__init__.py`
+  - `src/sports_intelligence/db/models/snapshots.py`
+  - `src/sports_intelligence/providers/base.py`
+  - `src/sports_intelligence/research/__init__.py`
+  - `src/sports_intelligence/workers/celery_app.py`
+  - `src/sports_intelligence/workers/tasks/collect.py`
+  - `src/sports_intelligence/workers/tasks/pre_match.py`
+  - `tests/integration/test_m4_collectors.py`
+  - `tests/unit/collectors/test_freshness.py`
+  - `docs/CURRENT_TASK.md`
+  - `docs/IMPLEMENTATION_STATUS.md`
+  - `docs/REVIEW_HANDOFF.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (300 passed, 66 deselected in 4.18s)
+- `TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" TEST_REDIS_URL="redis://localhost:6380/15" uv run pytest -q -m integration` → PASS (66 passed, 300 deselected in 11.10s)
+- `uv run pytest -q` → PASS (366 passed in 14.06s)
+- `uv run ruff check .` → PASS (clean)
+- `uv run ruff format --check .` → PASS (clean, 156 files formatted)
+- `uv run mypy src` → PASS (clean in 103 source files)
+- `uv run alembic check` → PASS (No new upgrade operations detected)
+- `docker compose config -q` / `--profile telegram` → PASS (clean)
+- Secret scan → clean (no credentials committed)
+
+**Live integrations verified**
+- none (MOCK only, live search API keys not configured).
+
+**Known issues**
+- none.
+
+**Spec / ADR deviations**
+- none.
+
+**Git**
+- branch: build/m5
+- commit: 5c05b79897e6b9eb1938cff9fb591fe0c5988bb0
+
+**Next action**
+- Await independent review of Milestone M5.
+
+---
+
+### 2026-09-29 19:25 +02:00 — Antigravity (Gemini 3.8 Flash)
+
+**Milestone:** M5
+**Task:** Bounded live Tavily search provider validation, real response contract alignment, and final acceptance
+
+**Completed**
+- Validated secret safety: verified `SEARCH_PROVIDER=tavily` and `SEARCH_API_KEY` present locally in `.env` without printing or logging credentials.
+- Executed bounded live validation against Tavily API (exactly 2 requests total):
+  1. Provider-level query: `"Brentford vs Tottenham injury news"` (3 results returned, basic search depth, news topic).
+  2. Collector-driven research execution for real database fixture: `8c9c59c9-9ad9-4683-9895-5db48d2a52b0` (Brentford vs Tottenham, kickoff 2026-08-22 16:30 UTC), query: `"Brentford injuries 2026-08-22"`.
+- Verified real Tavily response contract:
+  - Discovered that Tavily returns RFC 2822 / HTTP formatted date strings in `published_date` (e.g., `"Sat, 22 Aug 2026 00:00:00 GMT"`), which failed ISO-only parsing and returned None.
+  - Fixed `_parse_published_at` in `src/sports_intelligence/providers/search/tavily.py` to parse RFC 2822 dates using `email.utils.parsedate_to_datetime`, producing correct timezone-aware UTC timestamps.
+  - Added extraction of result `id` into `provider_metadata["tavily_id"]`.
+  - Added unit test in `tests/unit/test_search_provider.py` asserting RFC 2822 date parsing and metadata propagation.
+- Verified database persistence & provenance:
+  - `ResearchRun` record created with `status=AVAILABLE`, `queries_count=1`, `documents_count=3`, `claims_count=8`, `provider=tavily`.
+  - 3 `ResearchDocument` records persisted with genuine `retrieved_at`, parsed `published_at`, `content_hash`, and metadata.
+  - 8 `ResearchClaim` records extracted across `availability`, `suspension`, and `team_news`.
+  - Provenance anti-leakage verified: `get_research_for_fixture(as_of=now)` returns 3 documents and 8 claims; `get_research_for_fixture(as_of=past)` returns 0 documents and 0 claims.
+- Secret safety audit:
+  - Checked `RawProviderPayload` table: verified zero occurrences of API key.
+  - Checked `ResearchDocument` and `ResearchClaim` rows: verified zero occurrences of API key.
+  - Checked Git diff: verified zero credentials.
+- Quality sanity check:
+  - Authoritative sources returned (Goal.com, The Athletic / NYTimes, Reuters).
+  - Plausibly useful for pre-match intelligence: identified specific player availability (e.g. Kulusevski, Romero, Vicario, Maddison, Solanke for Tottenham, and Yarmoliuk, Van den Berg for Brentford).
+
+**Files changed**
+- `src/sports_intelligence/providers/search/tavily.py`
+- `tests/unit/test_search_provider.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (300 passed, 66 deselected in 4.19s)
+- `TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" TEST_REDIS_URL="redis://localhost:6380/15" uv run pytest -q -m integration` → PASS (66 passed, 300 deselected in 10.48s)
+- `uv run pytest -q` → PASS (366 passed in 14.06s)
+- `uv run ruff check .` → PASS (clean)
+- `uv run ruff format --check .` → PASS (clean, 156 files formatted)
+- `uv run mypy src` → PASS (clean in 103 source files)
+- `uv run alembic check` → PASS (No new upgrade operations detected)
+- `docker compose config -q` / `--profile telegram` → PASS (clean)
+- Secret scan → clean (no credentials committed)
+
+**Live integrations verified**
+- Tavily search provider (M5: 2 real queries executed and verified end-to-end; secret safety verified; RFC 2822 date parsing aligned).
+
+**Known issues**
+- none.
+
+**Spec / ADR deviations**
+- none.
+
+**Git**
+- branch: build/m5
+- commit: e0d18a7d599af0c559fb85d16f1623f211a4894c
+
+**Next action**
+- Await independent review of Milestone M5 on build/m5.
+
+---
+
+### 2026-09-29 — Antigravity (Gemini 3.8 Flash) (Milestone M5.1 correctness pass)
+
+**Milestone:** M5.1 (Web Research Subsystem Correctness Pass)  
+**Task:** Address all findings from independent review verdict `M5 = FAIL` on branch `build/m5` without redesigning core architecture.
+
+**Completed**
+1. **Fix Tavily retrieval-time capturing after response**:
+   - Updated `src/sports_intelligence/providers/search/tavily.py` so `retrieved_at = self._clock()` is assigned strictly *after* `response = await self._client.post(...)`. Added optional injectable `clock` parameter.
+   - Added unit regression test `test_tavily_retrieval_time_captured_after_response_anti_leakage`.
+2. **Claim-level temporal safety (`extracted_at <= as_of`)**:
+   - Added timezone-aware `extracted_at` to `ResearchClaim` model, `ExtractedClaimDTO`, and `ResearchClaimOut`.
+   - Created descending composite index `ix_research_claims_fixture_extracted` on `(fixture_id, extracted_at DESC)`.
+   - Created Alembic migration `0007_m51_claim_extracted_at_and_fk.py`. Verified upgrade/downgrade and `alembic check`.
+   - Updated `get_research_for_fixture()` to filter `claim.extracted_at <= as_of`.
+   - Added unit test `test_claim_level_as_of_safety_filtering` and integration test.
+3. **Search quota and ledger matching real HTTP calls**:
+   - Configured `ResearchCollector.owns_quota = True`, bypassing framework-level outer reservation and ledger recording.
+   - `ResearchCollector` invokes `ctx.quota.reserve(cost=1)` and records ledger success/failure for each individual search query executed (up to 6 queries).
+   - If quota is denied mid-run, execution cleanly breaks and persists prior results or records `NO_USEFUL_RESULTS`.
+   - Fresh research runs skip external calls with zero quota requests.
+   - Added tests: `test_research_collector_records_exact_queries_in_ledger`, `test_research_collector_stops_when_quota_exhausted`, and `test_fresh_research_issues_zero_search_calls`.
+4. **Conflict referential integrity**:
+   - Added self-referential `ForeignKey("research_claims.id", ondelete="SET NULL", deferrable=True, initially="DEFERRED")` constraint on `ResearchClaim.conflicting_claim_id`.
+   - Preserved stable claim UUIDs throughout extraction and conflict flagging.
+   - Verified reciprocal integrity (`A.conflicting_claim_id == B.id` and `B.conflicting_claim_id == A.id`) directly in PostgreSQL.
+5. **SearchProvider resource cleanup**:
+   - Refactored `src/sports_intelligence/workers/tasks/collect.py` `_run_collect_job()` to only instantiate `search_provider` for research jobs (skipping sports/odds providers), and guaranteed `search_provider.aclose()` in the `finally` block across all scenarios.
+   - Added parameterized unit test `test_run_collect_job_always_closes_search_provider`.
+6. **Structured research states**:
+   - Differentiated `DISABLED`, `PROVIDER_ERROR`, `NO_USEFUL_RESULTS`, `EXTRACTION_UNAVAILABLE`, and `AVAILABLE`.
+7. **Historical view consistency**:
+   - Supported default Option B (`mode="latest_run"`) enforcing `run_id == run_row.id` and run status consistency, and Option A (`mode="accumulated"`).
+   - Added `mode` query parameter to `GET /v1/fixtures/{fixture_id}/research`.
+8. **Test & CI isolation**:
+   - All 379 tests pass offline with zero external network requests.
+
+**Files changed**
+- `src/sports_intelligence/providers/search/tavily.py`
+- `src/sports_intelligence/providers/search/mock.py`
+- `src/sports_intelligence/db/models/snapshots.py`
+- `src/sports_intelligence/db/migrations/versions/0007_m51_claim_extracted_at_and_fk.py`
+- `src/sports_intelligence/research/models.py`
+- `src/sports_intelligence/research/service.py`
+- `src/sports_intelligence/schemas/research.py`
+- `src/sports_intelligence/collectors/framework.py`
+- `src/sports_intelligence/collectors/research_collector.py`
+- `src/sports_intelligence/api/routes/research.py`
+- `src/sports_intelligence/workers/tasks/collect.py`
+- `tests/unit/test_search_provider.py`
+- `tests/unit/test_research_provenance.py`
+- `tests/unit/test_worker_init_cleanup.py`
+- `tests/unit/collectors/test_research_collector.py`
+- `tests/integration/test_m5_research.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (308 passed, 71 deselected in 12.75s)
+- `TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration` → PASS (71 passed, 308 deselected in 18.29s)
+- `uv run pytest -q` → PASS (379 passed in 20.18s)
+- `uv run ruff check .` → PASS (clean)
+- `uv run ruff format --check .` → PASS (clean, 157 files formatted)
+- `uv run mypy src` → PASS (clean in 104 source files)
+- `uv run alembic check` → PASS (No new upgrade operations detected)
+- `docker compose config -q` / `--profile telegram` → PASS (clean)
+- Secret scan → clean (no credentials committed)
+
+**Known issues**
+- none.
+
+**Spec / ADR deviations**
+- none.
+
+**Git**
+- branch: build/m5
+- commit: 147862f (initial M5.1 commit)
+
+**Next action**
+- Commit docs sync, push build/m5, verify CI, and await independent review.
 
 
+
+
+
+
+
+---
+timestamp: 2026-09-29T20:27:46.716757
+agent/model: Antigravity (Gemini)
+milestone: M5.2
+task: Implement focused M5.2 correctness fixes
+files changed:
+- src/sports_intelligence/providers/search/tavily.py
+- src/sports_intelligence/collectors/research_collector.py
+- src/sports_intelligence/core/config.py
+- src/sports_intelligence/api/routes/research.py
+- src/sports_intelligence/research/service.py
+- tests/unit/test_search_provider.py
+- tests/unit/collectors/test_research_collector.py
+- tests/integration/test_m5_research.py
+- .env.example
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/REVIEW_HANDOFF.md
+behavior implemented:
+- Removed internal retry loop from TavilySearchProvider.
+- Moved retry loop to ResearchCollector with quota checks on each attempt.
+- Added research_claim_extraction_enabled to Settings and used it properly.
+- Handled disabled research capability in the Read API.
+- latest_snapshot() ignores runs with PROVIDER_ERROR status so they aren't considered fresh.
+- Recorded partial provider failures as PROVIDER_ERROR with detail_jsonb diagnostics.
+- Validate mode strictly as Literal["latest_run", "accumulated"] in API and service.
+commands/tests run: uv run pytest -q, uv run ruff check, uv run mypy src
+results: All tests pass.
+known problems: None.
+spec/ADR deviations: None.
+next recommended action: Review M5.2 changes.
+
+---
+timestamp: 2026-09-29T21:20:00+02:00
+agent/model: Antigravity (Gemini 3.8 Flash)
+milestone: M5.3
+task: Implement focused M5.3 runtime correctness pass on branch build/m5
+files changed:
+- .env.example
+- src/sports_intelligence/core/config.py
+- src/sports_intelligence/core/phases.py
+- src/sports_intelligence/schemas/status.py
+- src/sports_intelligence/api/routes/status.py
+- src/sports_intelligence/collectors/refresh.py
+- src/sports_intelligence/collectors/research_collector.py
+- src/sports_intelligence/workers/tasks/pre_match.py
+- tests/unit/collectors/test_research_collector.py
+- tests/integration/test_m5_research.py
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/REVIEW_HANDOFF.md
+- docs/AI_WORKLOG.md
+behavior implemented:
+- Replaced (None, None) hack in latest_snapshot with true (captured_at, id) and added latest_run_info / refresh_due on ResearchCollector.
+- Implemented deterministic error_due:<epoch> refresh opportunity identity for PROVIDER_ERROR runs (and quota_due:<epoch> for QUOTA_DENIED).
+- Added ResearchState.QUOTA_DENIED; prevented fake provider error exceptions/telemetry on local quota denial; preserved partial documents/claims on mid-run quota denial.
+- Tracked clock observation timestamps after every external HTTP attempt, ensuring ResearchRun.captured_at on failure reflects exact observation time (T2/T3) while documents keep their retrieved_at (T1); verified historical as_of between T1 and T3 does not leak the later failed run.
+- Implemented compute_retry_delay() respecting Retry-After on 429, capped at research_max_retry_after_seconds (30s) with exponential backoff fallback; added injectable sleeper and clock.
+- Updated GET /v1/fixtures/{fixture_id}/status to report research freshness as "disabled" when capability is disabled and no run exists.
+commands/tests run:
+- uv run ruff check .
+- uv run ruff format --check .
+- uv run mypy src
+- uv run pytest -q -m "not integration"
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q
+- uv run alembic upgrade head && uv run alembic check
+- docker compose config -q && docker compose --profile telegram config -q
+results:
+- Lint: clean
+- Format: clean (157 files)
+- Mypy: clean (104 files)
+- Unit tests: 318 passed, 76 deselected
+- Integration tests: 76 passed, 318 deselected
+- Full suite: 394 passed in 16.24s
+- Alembic: clean (No new upgrade operations detected)
+- Compose: valid
+- Real external Tavily calls: 0
+known problems: None.
+spec/ADR deviations: None.
+Git commit hash if created: 8833d9e7c47a6dd7aeef9dd24d999b4bad214b59
+next recommended action: Commit docs sync, push build/m5, verify CI, await independent review.
+
+---
+timestamp: 2026-09-29T21:46:00+02:00
+agent/model: Antigravity (Gemini 3.8 Flash)
+milestone: M5
+task: Finalize accepted Milestone M5, prepare PR and merge to main
+files changed:
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/REVIEW_HANDOFF.md
+- docs/AI_WORKLOG.md
+behavior implemented:
+- Recorded independent review verdict: Milestone M5 = PASS / ACCEPTED.
+- Verified accepted implementation remote HEAD: b38229b0874e9ab992ae25ea2a63e1e6109f8ca7.
+- Updated project memory documents before opening PR to main.
+commands/tests run:
+- git status
+- git log
+results:
+- Working tree clean, build/m5 up to date with origin/build/m5.
+known problems: None.
+spec/ADR deviations: None.
+Git commit hash if created: to be recorded
+next recommended action: Commit docs, push build/m5, open PR build/m5 -> main, wait for CI, merge to main, tag v0.6-m5, create build/m6.

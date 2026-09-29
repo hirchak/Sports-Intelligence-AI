@@ -131,6 +131,13 @@ def parse_quota_headers(provider: str, headers: dict[str, str] | None) -> QuotaO
             raw=dict(headers),
         )
 
+    if provider == "tavily":
+        return QuotaObservation(
+            daily_remaining=_int_header(headers, "x-ratelimit-remaining"),
+            daily_limit=_int_header(headers, "x-ratelimit-limit"),
+            raw=dict(headers),
+        )
+
     # Unknown providers: best-effort legacy keys.
     return QuotaObservation(
         daily_remaining=_int_header(headers, "x-requests-remaining"),
