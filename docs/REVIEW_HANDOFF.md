@@ -13,7 +13,7 @@ Update it before every milestone review.
 **Development phase:** LOCAL DEVELOPMENT ONLY  
 **Milestone:** M5.1 — Web Research Subsystem Correctness Pass  
 **Review target branch:** `build/m5`  
-**Review target commit:** `147862f` (Milestone M5.1 HEAD)  
+**Review target commit:** `147862f` (Milestone M5.2 HEAD)  
 **Previous accepted state:** `main` = `2e4683a` (`v0.5-m4` accepted M4 merge)  
 **Previous M5 review verdict:** FAIL (HEAD `6c52b1f1df85163b0aeef1f3a16d223bd3296cff`)  
 **Review scope:** diff `main..build/m5`

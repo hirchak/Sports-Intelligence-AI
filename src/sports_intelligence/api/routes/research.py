@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -25,7 +25,7 @@ async def fixture_research(
         ),
     ] = None,
     mode: Annotated[
-        str,
+        Literal["latest_run", "accumulated"],
         Query(
             description="Research evidence retrieval mode: 'latest_run' (default) or 'accumulated'",
         ),
@@ -40,6 +40,10 @@ async def fixture_research(
         if fixture is None:
             raise HTTPException(status_code=404, detail="fixture not found")
 
-        view = await get_research_for_fixture(session, fixture_id, as_of=as_of, mode=mode)
+        settings = getattr(request.app.state, "settings", None)
+        capability_enabled = settings.research_capability_enabled if settings else True
+        view = await get_research_for_fixture(
+            session, fixture_id, as_of=as_of, mode=mode, capability_enabled=capability_enabled
+        )
 
     return FixtureResearchOut.model_validate(view)

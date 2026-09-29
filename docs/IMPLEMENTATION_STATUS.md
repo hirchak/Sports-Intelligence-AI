@@ -457,11 +457,11 @@ All review items implemented and independently verified:
 
 # 3. In progress
 
-None. Milestone M5.1 implemented, fully verified, and ready for independent review.
+None. Milestone M5.2 implemented, awaiting review.
 
 ---
 
-# 4. Acceptance tests passed (actually run, M5.1 state)
+# 4. Acceptance tests passed (actually run, M5.2 state)
 
 - `uv run pytest -q -m "not integration"` → **308 passed, 71 deselected in 12.75s**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
@@ -601,7 +601,7 @@ Branch:
 - `build/m5` (M5 complete, awaiting review); base `main` at `2e4683a` (`v0.5-m4`)
 
 Commit:
-- `147862f` (Milestone M5.1 HEAD)
+- `147862f` (Milestone M5.2 HEAD)
 
 Working tree:
 - clean after commit
@@ -630,8 +630,9 @@ Safe to begin M4: YES.
 Safe to begin M5: YES.
 
 **Review verdict (2026-09-29): M5 FAIL — focused M5.1 required.**
+**Review verdict (2026-09-29): M5.1 FAIL — focused M5.2 required.**
 
-**Current review target:** Milestone M5.1 (Web Research Subsystem Correctness Pass) on `build/m5`.
+**Current review target:** Milestone M5.2 (Web Research Subsystem Correctness Pass) on `build/m5`.
 
 ---
 

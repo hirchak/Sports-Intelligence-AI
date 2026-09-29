@@ -274,3 +274,103 @@ async def test_research_collector_persist_returns_snapshot_ref() -> None:
     assert len(refs) == 1
     assert refs[0].table == "research_runs"
     assert refs[0].snapshot_id is not None
+
+@pytest.mark.asyncio
+async def test_extraction_unavailable_via_settings() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        search_provider="mock",
+        research_enabled=True,
+        research_claim_extraction_enabled=False,
+    )
+    fid = uuid.uuid4()
+    hid = uuid.uuid4()
+    aid = uuid.uuid4()
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+
+    fixture = Fixture(id=fid, home_team_id=hid, away_team_id=aid, kickoff_at=kickoff)
+    home_team = Team(id=hid, name="Arsenal")
+    away_team = Team(id=aid, name="Chelsea")
+
+    session = AsyncMock()
+    row_mock = MagicMock()
+    row_mock.first.return_value = (fixture, home_team, away_team)
+    session.execute.return_value = row_mock
+
+    provider = MockSearchProvider()
+    ctx = _make_context(settings=settings, session=session, provider=provider)
+    collector = ResearchCollector()
+
+    result = await collector.fetch(ctx, fixture_id=fid, phase=ForecastPhase.MORNING.value)
+
+    assert result.normalized["status"] == ResearchState.EXTRACTION_UNAVAILABLE.value
+    assert result.normalized["documents_count"] > 0
+    assert result.normalized["claims_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_partial_failure_status_is_provider_error() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        search_provider="mock",
+        research_enabled=True,
+    )
+    fid = uuid.uuid4()
+    hid = uuid.uuid4()
+    aid = uuid.uuid4()
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+
+    fixture = Fixture(id=fid, home_team_id=hid, away_team_id=aid, kickoff_at=kickoff)
+    home_team = Team(id=hid, name="Arsenal")
+    away_team = Team(id=aid, name="Chelsea")
+
+    session = AsyncMock()
+    row_mock = MagicMock()
+    row_mock.first.return_value = (fixture, home_team, away_team)
+    session.execute.return_value = row_mock
+
+    from sports_intelligence.providers.errors import ProviderServerError
+    from sports_intelligence.providers.search.base import SearchProvider, SearchResponse
+    class MockSearchPartial(SearchProvider):
+        name = "mock"
+        def __init__(self):
+            self.calls = 0
+            
+        async def search(self, query: str, **kwargs) -> SearchResponse:
+            self.calls += 1
+            if self.calls == 1:
+                return SearchResponse(
+                    query=query,
+                    results=[MagicMock(url="http://mock", domain="mock", title="mock", published_at=None, retrieved_at=datetime.now(UTC), content="mock", score=1.0, provider_metadata={})],
+                    retrieved_at=datetime.now(UTC),
+                    cost_estimate=1,
+                    raw_payload={}
+                )
+            raise ProviderServerError("Failed on second call")
+
+    provider = MockSearchPartial()
+    ctx = _make_context(settings=settings, session=session, provider=provider)
+    collector = ResearchCollector()
+
+    result = await collector.fetch(ctx, fixture_id=fid, phase=ForecastPhase.MORNING.value)
+
+    assert result.normalized["status"] == ResearchState.PROVIDER_ERROR.value
+    assert "details" in result.normalized
+    assert result.normalized["details"]["partial_failure"] is True
+    assert result.normalized["documents_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_provider_error_run_not_fresh() -> None:
+    collector = ResearchCollector()
+    session = AsyncMock()
+    row_mock = MagicMock()
+    # (captured_at, run_id, status)
+    row_mock.first.return_value = (datetime.now(UTC), uuid.uuid4(), ResearchState.PROVIDER_ERROR.value)
+    session.execute.return_value = row_mock
+    
+    captured_at, run_id = await collector.latest_snapshot(session, fixture_id=uuid.uuid4())
+    assert captured_at is None
+    assert run_id is None

@@ -151,7 +151,7 @@ async def test_tavily_search_provider_429_rate_limit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_tavily_search_provider_500_retries_and_raises_transient() -> None:
+async def test_tavily_single_attempt_per_search() -> None:
     call_count = 0
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -161,12 +161,13 @@ async def test_tavily_search_provider_500_retries_and_raises_transient() -> None
 
     transport = httpx.MockTransport(handler)
     client = httpx.AsyncClient(transport=transport)
-    provider = TavilySearchProvider(api_key="secret-key-123", client=client, max_retries=2)
+    provider = TavilySearchProvider(api_key="secret-key-123", client=client)
 
     try:
         with pytest.raises(ProviderServerError):
             await provider.search("any query")
-        assert call_count == 3
+        # Ensure only 1 attempt is made inside Tavily provider
+        assert call_count == 1
     finally:
         await provider.aclose()
 
@@ -254,3 +255,77 @@ async def test_tavily_retrieval_time_captured_after_response_anti_leakage() -> N
         assert is_visible_after is True
     finally:
         await provider.aclose()
+
+@pytest.mark.asyncio
+async def test_retry_per_attempt_quota_reservation() -> None:
+    import uuid
+    from unittest.mock import AsyncMock, MagicMock
+
+    from sports_intelligence.collectors.framework import CollectorContext
+    from sports_intelligence.collectors.research_collector import ResearchCollector
+    from sports_intelligence.core.config import Settings
+    from sports_intelligence.core.phases import ForecastPhase
+    from sports_intelligence.db.models import Fixture, Team
+    from sports_intelligence.providers.errors import ProviderServerError
+    from sports_intelligence.providers.search.base import SearchProvider, SearchResponse
+
+    class MockSearchFailFirst(SearchProvider):
+        name = "mock"
+        def __init__(self):
+            self.calls = 0
+            
+        async def search(self, query: str, **kwargs) -> SearchResponse:
+            self.calls += 1
+            if self.calls == 1:
+                raise ProviderServerError("Failed first time")
+            return SearchResponse(
+                query=query,
+                results=[],
+                retrieved_at=datetime.now(UTC),
+                cost_estimate=1,
+                raw_payload={},
+                rate_limit_headers={}
+            )
+
+    provider = MockSearchFailFirst()
+    
+    lock_mgr = MagicMock()
+    lock_mgr.acquire = AsyncMock(return_value=True)
+    lock_mgr.release = AsyncMock()
+
+    quota_mgr = MagicMock()
+    allowed_decision = MagicMock(denied=False, allowed=True, reason="ok")
+    quota_mgr.reserve = AsyncMock(return_value=allowed_decision)
+    quota_mgr.record_success = AsyncMock()
+    quota_mgr.record_failure = AsyncMock()
+    
+    settings = Settings(_env_file=None, app_env="mock", search_provider="mock", research_enabled=True, research_max_queries_per_fixture=1)
+    session = AsyncMock()
+    fixture = Fixture(id=uuid.uuid4(), home_team_id=uuid.uuid4(), away_team_id=uuid.uuid4(), kickoff_at=datetime.now(UTC))
+    home_team = Team(id=uuid.uuid4(), name="Arsenal")
+    away_team = Team(id=uuid.uuid4(), name="Chelsea")
+    row_mock = MagicMock()
+    row_mock.first.return_value = (fixture, home_team, away_team)
+    session.execute.return_value = row_mock
+    
+    session_factory = MagicMock()
+    session_factory.return_value.__aenter__ = AsyncMock(return_value=session)
+    session_factory.return_value.__aexit__ = AsyncMock()
+    
+    ctx = CollectorContext(
+        settings=settings,
+        session_factory=session_factory,
+        redis=MagicMock(),
+        locks=lock_mgr,
+        quota=quota_mgr,
+        freshness=MagicMock(),
+        provider=provider,
+    )
+    
+    collector = ResearchCollector()
+    await collector.fetch(ctx, fixture_id=fixture.id, phase=ForecastPhase.MORNING.value)
+    
+    assert provider.calls == 2
+    assert quota_mgr.reserve.call_count == 2
+    assert quota_mgr.record_failure.call_count == 1
+    assert quota_mgr.record_success.call_count == 1

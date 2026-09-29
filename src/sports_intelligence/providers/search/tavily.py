@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import re
 import urllib.parse
 from datetime import UTC, datetime
@@ -179,66 +178,54 @@ class TavilySearchProvider:
             extra={"provider": self.name, "query_length": len(query), "max_results": max_results},
         )
 
-        retried = 0
-        last_exception: Exception | None = None
+        try:
+            response = await self._client.post(url, json=payload)
+            # Captured AFTER awaiting the HTTP response, representing observation time:
+            retrieved_at = self._clock()
+            safe_headers = _safe_rate_headers(response.headers)
 
-        while retried <= self._max_retries:
-            try:
-                response = await self._client.post(url, json=payload)
-                # Captured AFTER awaiting the HTTP response, representing observation time:
-                retrieved_at = self._clock()
-                safe_headers = _safe_rate_headers(response.headers)
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                except Exception as exc:
+                    raise ProviderResponseError("Invalid JSON returned by Tavily") from exc
+                return self._normalize_response(query, data, retrieved_at, safe_headers)
 
-                if response.status_code == 200:
-                    try:
-                        data = response.json()
-                    except Exception as exc:
-                        raise ProviderResponseError("Invalid JSON returned by Tavily") from exc
-                    return self._normalize_response(query, data, retrieved_at, safe_headers)
-
-                if response.status_code in (401, 403):
-                    raise ProviderAuthError(
-                        "Tavily authentication failed: invalid or unauthorized API key",
-                        status_code=response.status_code,
-                        quota_headers=safe_headers,
-                    )
-
-                if response.status_code == 429:
-                    raise ProviderRateLimitError(
-                        "Tavily rate limit exceeded",
-                        status_code=429,
-                        quota_headers=safe_headers,
-                    )
-
-                if response.status_code >= 500:
-                    raise ProviderServerError(
-                        f"Tavily server error HTTP {response.status_code}",
-                        status_code=response.status_code,
-                        quota_headers=safe_headers,
-                    )
-
-                raise ProviderResponseError(
-                    f"Unexpected HTTP {response.status_code} from Tavily",
+            if response.status_code in (401, 403):
+                raise ProviderAuthError(
+                    "Tavily authentication failed: invalid or unauthorized API key",
                     status_code=response.status_code,
                     quota_headers=safe_headers,
                 )
 
-            except (ProviderRateLimitError, ProviderServerError, httpx.TransportError) as exc:
-                last_exception = exc
-                if isinstance(exc, httpx.TimeoutException):
-                    last_exception = ProviderTimeoutError("Tavily request timed out")
-                elif isinstance(exc, httpx.TransportError) and not isinstance(
-                    exc, (ProviderRateLimitError, ProviderServerError)
-                ):
-                    last_exception = ProviderTransportError(f"Tavily transport error: {exc}")
+            if response.status_code == 429:
+                raise ProviderRateLimitError(
+                    "Tavily rate limit exceeded",
+                    status_code=429,
+                    quota_headers=safe_headers,
+                )
 
-                retried += 1
-                if retried > self._max_retries:
-                    break
-                await asyncio.sleep(0.1 * (2 ** (retried - 1)))
+            if response.status_code >= 500:
+                raise ProviderServerError(
+                    f"Tavily server error HTTP {response.status_code}",
+                    status_code=response.status_code,
+                    quota_headers=safe_headers,
+                )
 
-        assert last_exception is not None
-        raise last_exception
+            raise ProviderResponseError(
+                f"Unexpected HTTP {response.status_code} from Tavily",
+                status_code=response.status_code,
+                quota_headers=safe_headers,
+            )
+
+        except (ProviderRateLimitError, ProviderServerError, httpx.TransportError) as exc:
+            if isinstance(exc, httpx.TimeoutException):
+                raise ProviderTimeoutError("Tavily request timed out") from exc
+            if isinstance(exc, httpx.TransportError) and not isinstance(
+                exc, (ProviderRateLimitError, ProviderServerError)
+            ):
+                raise ProviderTransportError(f"Tavily transport error: {exc}") from exc
+            raise
 
     def _normalize_response(
         self,

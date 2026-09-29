@@ -88,6 +88,7 @@ class Settings(BaseSettings):
     research_allow_mock_override: bool = False
     research_max_queries_per_fixture: int = 6
     research_max_results_per_query: int = 5
+    research_claim_extraction_enabled: bool = True
     tavily_base_url: str = "https://api.tavily.com"
 
     llm_provider: str = ""

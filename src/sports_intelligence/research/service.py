@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -65,7 +65,8 @@ async def get_research_for_fixture(
     fixture_id: uuid.UUID,
     *,
     as_of: datetime | None = None,
-    mode: str = "latest_run",
+    mode: Literal["latest_run", "accumulated"] = "latest_run",
+    capability_enabled: bool = True,
 ) -> FixtureResearchView:
     """Read research evidence for a fixture with strict provenance & anti-leakage control.
 
@@ -98,7 +99,11 @@ async def get_research_for_fixture(
     if run_row is None:
         return FixtureResearchView(
             fixture_id=fixture_id,
-            status=ResearchState.NO_USEFUL_RESULTS.value,
+            status=(
+                ResearchState.NO_USEFUL_RESULTS.value
+                if capability_enabled
+                else ResearchState.DISABLED.value
+            ),
             last_captured_at=None,
             documents_count=0,
             claims_count=0,

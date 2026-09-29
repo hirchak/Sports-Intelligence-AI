@@ -978,3 +978,98 @@ async def test_claim_level_as_of_safety_integration(
         assert len(view_t3.documents) == 1
         assert len(view_t3.claims) == 1  # Claim included!
         assert view_t3.claims[0].claim_text == "Late extracted claim at T2"
+
+@pytest.mark.asyncio
+async def test_research_api_mode_invalid_returns_422(
+    m5_session_factory: Any,
+    service_client: TestClient,
+    m5_settings: Settings,
+) -> None:
+    seeded = await _seed_fixture(m5_session_factory)
+    fid = seeded["fixture_id"]
+    resp = service_client.get(
+        f"/v1/fixtures/{fid}/research",
+        params={"mode": "invalid_mode"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_research_api_returns_disabled_when_capability_disabled(
+    m5_session_factory: Any,
+    service_client: TestClient,
+    m5_settings: Settings,
+) -> None:
+    seeded = await _seed_fixture(m5_session_factory)
+    fid = seeded["fixture_id"]
+    
+    # We can override app.state.settings in FastAPI test client if needed,
+    # or just use service_client with settings overridden.
+    # Actually, the easiest is to patch the app dependency or just set app_env to disable it.
+    app = service_client.app
+    old_settings = getattr(app.state, "settings", None)
+    try:
+        disabled_settings = Settings(
+            _env_file=None,
+            app_env="mock",
+            search_provider="",
+            research_enabled=False,
+            database_url=m5_settings.database_url,
+            redis_url=m5_settings.redis_url,
+        )
+        app.state.settings = disabled_settings
+        resp = service_client.get(f"/v1/fixtures/{fid}/research")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == ResearchState.DISABLED.value
+    finally:
+        app.state.settings = old_settings
+
+
+@pytest.mark.asyncio
+async def test_partial_provider_failure_persists_provider_error(
+    m5_session_factory: Any,
+    redis_client: Redis,
+    m5_settings: Settings,
+) -> None:
+    from sports_intelligence.providers.errors import ProviderServerError
+    from sports_intelligence.providers.search.base import SearchProvider, SearchResponse
+    
+    class MockSearchPartialIntegration(SearchProvider):
+        name = "mock"
+        def __init__(self):
+            self.calls = 0
+            
+        async def search(self, query: str, **kwargs) -> SearchResponse:
+            self.calls += 1
+            if self.calls == 1:
+                return SearchResponse(
+                    query=query,
+                    results=[SearchResultItem(url="http://mock", domain="mock", title="mock", published_at=None, retrieved_at=datetime.now(UTC), content="mock", score=1.0, provider_metadata={})],
+                    retrieved_at=datetime.now(UTC),
+                    cost_estimate=1,
+                    raw_payload={}
+                )
+            raise ProviderServerError("Failed on second call")
+
+    seeded = await _seed_fixture(m5_session_factory)
+    fid = seeded["fixture_id"]
+    provider = MockSearchPartialIntegration()
+    ctx = _ctx(
+        factory=m5_session_factory, redis=redis_client, settings=m5_settings, provider=provider
+    )
+    
+    await run_collector(
+        ctx,
+        "research",
+        inputs={"fixture_id": str(fid), "phase": ForecastPhase.MORNING.value},
+    )
+
+    async with m5_session_factory() as session:
+        run = (
+            await session.execute(
+                select(ResearchRun).where(ResearchRun.fixture_id == fid)
+            )
+        ).scalar_one()
+        assert run.status == ResearchState.PROVIDER_ERROR.value
+        assert run.documents_count == 1
+        assert "details" in run.details_jsonb or "partial_failure" in run.details_jsonb
