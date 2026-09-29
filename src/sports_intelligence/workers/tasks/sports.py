@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+import uuid
+from datetime import UTC, date, datetime
+from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from sports_intelligence.collectors.quota import QuotaManager  # noqa: E402
 from sports_intelligence.core.config import get_settings
 from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.league_config import (
@@ -18,6 +23,7 @@ from sports_intelligence.pipelines.discover_fixtures import (
 from sports_intelligence.providers.base import SportsDataProvider
 from sports_intelligence.providers.sports.factory import build_sports_provider
 from sports_intelligence.workers.celery_app import celery_app
+from sports_intelligence.workers.utils import record_job_attempt
 
 logger = get_logger(__name__)
 
@@ -44,6 +50,8 @@ async def _run_discovery(
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     provider: SportsDataProvider | None = None
+    redis: Any = None
+    started_at = datetime.now(UTC)
     try:
         league_config = load_league_config(settings.leagues_config_path)
         if league_config.version != expected_league_config_version:
@@ -52,11 +60,28 @@ async def _run_discovery(
                 actual=league_config.version,
             )
         provider = build_sports_provider(settings)
+        quota: QuotaManager | None = None
+        try:
+            from redis.asyncio import Redis
+
+            redis = Redis.from_url(settings.redis_url)
+            quota = QuotaManager(settings, session_factory, redis=redis)
+        except Exception:  # noqa: BLE001
+            # M4.2 §10: fail CLOSED for real providers — automatic
+            # external collection must never run ungated. MOCK may stay
+            # keyless/quota-safe.
+            if settings.sports_provider not in ("", "mock"):
+                logger.error("quota manager initialization failed; refusing to run ungated")
+                raise
+            logger.warning("quota manager unavailable (MOCK); running ungated", exc_info=True)
+            quota = None
+
         service = FixtureDiscoveryService(
             provider=provider,
             session_factory=session_factory,
             league_config=league_config,
             app_timezone=discovery_timezone,
+            quota=quota,
         )
 
         async with session_factory() as session:
@@ -69,8 +94,9 @@ async def _run_discovery(
             await update_job_status(session, job_id, JobStatus.SUCCEEDED)
             await session.commit()
 
+        await _record_attempt(session_factory, job_id, started_at, "SUCCEEDED", None)
         return {"job_id": job_id, **summary.model_dump(mode="json")}
-    except Exception:
+    except Exception as exc:
         logger.exception("fixture discovery job failed", extra={"job_id": job_id})
         try:
             async with session_factory() as session:
@@ -82,8 +108,14 @@ async def _run_discovery(
                 exc_info=True,
                 extra={"job_id": job_id},
             )
+        await _record_attempt(session_factory, job_id, started_at, "FAILED", exc)
         raise
     finally:
+        if redis is not None:
+            try:
+                await redis.aclose()
+            except Exception:  # noqa: BLE001
+                logger.warning("redis cleanup failed during discovery", exc_info=True)
         if provider is not None:
             try:
                 await provider.aclose()
@@ -93,3 +125,24 @@ async def _run_discovery(
             await engine.dispose()
         except Exception:
             logger.warning("engine cleanup failed during discovery", exc_info=True)
+
+
+async def _record_attempt(
+    session_factory: async_sessionmaker[AsyncSession],
+    job_id: str,
+    started_at: datetime,
+    outcome: str,
+    exc: BaseException | None,
+) -> None:
+    try:
+        job_uuid = uuid.UUID(job_id)
+    except ValueError:
+        return
+    await record_job_attempt(
+        session_factory,
+        job_id=job_uuid,
+        started_at=started_at,
+        finished_at=datetime.now(UTC),
+        outcome=outcome,
+        error=exc,
+    )

@@ -907,3 +907,457 @@ button-based menus and a Back button on every screen.
 **Next action**
 - Final independent review of M3.1; merge to `main` after
   acceptance; M4 only with explicit user approval.
+
+---
+
+### 2026-08-24 — ox-alpha (OpenCode)
+
+**Milestone:** M4
+**Task:** Automated Match Data Collection + Odds + Quota/Freshness — finish implementation started in a prior session (uncommitted working tree on `build/m4`)
+
+**Completed**
+- Recovered state from repo (no chat memory): M3 merged to `main` (`7d23c9d`); M4 work existed uncommitted on `build/m4` (config, celery beat, migration 0004, snapshot models, collectors skeleton, quota, locks, freshness, status API, job_attempts util).
+- Fixed `framework.run_collector` ordering: quota is now acquired BEFORE any provider fetch; denial raises `QuotaUnavailableError` and never reaches the provider.
+- Made coalescing result publication JSON-safe: dataclass results serialize via `asdict`; waiters rebuild `CollectorResult`.
+- Removed double provider call in `OddsCollector.persist` (reuses fetched normalized prices; Decimal round-trip via strings).
+- Implemented The Odds API v4 normalizer (`providers/odds/parse.py`, contract-tested) and rewired `TheOddsApiProvider`: bounded tenacity retry, ProviderError hierarchy (401/403/429/5xx/timeout/transport), apiKey never logged (httpx INFO silenced at init because the key rides the URL).
+- Fixed Celery crontab usage (no `timezone=` kwarg; timezone resolves via `conf.timezone`=APP_TIMEZONE, DST-safe); pre-match scan toggle honored.
+- Aligned ORM with migration 0004 DESC indexes (alembic check clean); added explicit `updated_at` on snapshot persist (no server_default in DB for those columns).
+- Fixed duplicate-table-alias SQL bug in `select_upcoming_fixtures` (ORM `aliased(Team)`).
+- Tests: framework quota-order/stale/concurrency, confirmed-lineup polling stop, locks concurrency, sports-collector availability/lineup semantics, odds normalizer contract (8), TheOddsApiProvider error mapping + key-leak (7), beat schedule semantics incl. disabled default (12 total in file), new integration file `test_m4_collectors.py` (12 tests: persist/reuse, standings shared → single ledger row, odds immutable history, quota ledger, job_attempts, status API 200/404/system, DB-first UX zero external rows, planner idempotent).
+
+**Files changed**
+- src: collectors/{framework,locks,sports_collectors,odds_collector,pre_match_scan}.py; providers/odds/{factory,parse}.py (new parse); workers/{celery_app,tasks/sports,tasks/pre_match,utils}.py; db/models/snapshots.py; api/routes/status.py; core/{config,phases}.py; db/migrations/versions/0004_*.py
+- tests: unit/collectors/{test_framework,test_sports_collectors,test_quota,test_freshness,test_odds_math,test_pre_match_scan}; unit/test_celery_app; unit/test_odds_normalize (new); unit/test_theoddsapi (new); integration/test_m4_collectors (new)
+- docs: CURRENT_TASK.md, IMPLEMENTATION_STATUS.md, REVIEW_HANDOFF.md, AI_WORKLOG.md
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (233)
+- integration suite (`sports_intel_test` + redis db15) → PASS (38)
+- `uv run ruff check . && uv run ruff format --check .` → PASS
+- `uv run mypy src` → PASS (82 files, strict)
+- `docker compose config -q` (+telegram profile) → PASS
+- secret scan → clean
+
+**Live integrations verified**
+- none this session (MOCK-only by design; live Odds API intentionally not called — no credentials required for acceptance).
+
+**Mocked only**
+- FormInputsCollector (completed-fixture form needs score columns — deferred);
+- TheOddsApiProvider network path (contract-tested against documented v4 shape).
+
+**Known issues**
+- Pre-match scan executes collectors inline in one task (queue fan-out is future optimization).
+- Dev DB accumulated test leagues from repeated integration runs (unique-slug strategy; harmless).
+
+**Spec / ADR deviations**
+- none new; ADRs 0001–0009 unchanged. Framework quota-before-fetch ordering implements spec 11 §"prevent unnecessary requests" explicitly.
+
+**Git**
+- branch: build/m4
+- commit: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent review of M4 (diff `main..build/m4`); merge + tag `v0.5-m4` after PASS; M5 only with explicit user approval.
+
+---
+
+### 2026-08-24 — ox-alpha (OpenCode)
+
+**Milestone:** M4.1
+**Task:** Corrective implementation after independent M4 review **FAIL** (14 required fixes)
+
+**Completed**
+- 1. Scheduled discovery: `sports.schedule_discovery(slot)` wrapper (morning/refresh distinct jobs, full immutable tuple, config-version safety, FAILED on enqueue error); Beat rewired to wrapper.
+- 2. No fake data in real paths: extended `SportsDataProvider` protocol with typed category methods; real `ApiFootballProvider` adapters (standings/team stats/injuries/lineups/completed fixtures); collectors resolve external ids via `provider_entity_ids`; sentinel MockTransport regression tests.
+- 3. Team-specific persistence: one fixture request → one snapshot PER team (never merged); team_id-aware freshness.
+- 4. Lineup windows: `lineup_poll_due` state machine (NOT_YET_PUBLISHED/CONFIRMED/UNSUPPORTED/PROVIDER_ERROR), no started-fixture polling, per-window refresh (T-120 unconfirmed → T-60 due → confirmed stops), Warsaw calendar-day→UTC planner boundaries, phase propagated into CollectorContext.
+- 5. Coalescing: lock is a budget boundary (no fetch-anyway, LockContendedError), winner double-check, waiters reuse winner's REAL persisted snapshot id, freshness hit returns real id, evidence committed before snapshot persist (payload_id FK), 10-caller concurrency test (1 call/1 snapshot/1 ledger/same UUID).
+- 6. Quota: pct-of-actual-limit thresholds (100/500/7500), CONSERVE=P3, CRITICAL=P2/P3, RESERVE_ONLY=P0, effective_reserve keeps CRITICAL reachable, atomic Redis reservation with estimated cost, concurrent reservation test (10 workers → 4 allowed).
+- 7. Provider-specific headers: API-Football daily+minute; Odds remaining/used/last=cost.
+- 8. Ledger telemetry: started_at before request, duration incl HTTP, status/error class/headers/cost, failures visible.
+- 9. The Odds API: sport_key per league, strict event resolution (no-match/ambiguity = error), persisted odds_event_mappings, correct URL path (never internal UUID).
+- 10. Evidence linkage: content-dedup raw payloads + observation rows; snapshots carry payload_id.
+- 11. job_attempts: sequential numbering (1,2,3…), real hostname:pid, loud failure on uniqueness exhaustion.
+- 12. Scanner dispatches `sports.collect` jobs with job/attempt state; exception-safe cleanup (redis/providers/engine).
+- 13. Form inputs from deterministic completed-result history (W/D/L, no LLM/settlement).
+- 14. Status API: real degradation mode, both-team freshness, publication-aware lineup availability, Priority enum, zero external calls on reads.
+
+**Files changed**
+- src: collectors/{framework,locks,quota,ids,sports_collectors,odds_collector,pre_match_scan}.py; providers/{base,dto,errors}.py; providers/sports/{api_football,mock}.py; providers/odds/{base,mock,parse,factory}.py; workers/tasks/{scheduling,collect,pre_match,sports}.py; workers/{celery_app,utils}.py; pipelines/discover_fixtures.py; api/routes/status.py; db/models/{snapshots,__init__}.py; db/migrations/versions/0005_*.py (new); core/league_config.py
+- tests: unit/{test_scheduled_discovery,test_api_football_categories,test_odds_mapping}.py (new); collectors/{test_framework,test_quota,test_sports_collectors}.py (rewritten); integration/test_m4_collectors.py (rewritten + new M4.1 tests); test_celery_app.py; test_provider_protocols.py
+- docs: CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, AI_WORKLOG
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (242)
+- integration suite (`sports_intel_test` + redis db15) → PASS (41)
+- `uv run ruff check .` / `ruff format --check .` → PASS
+- `uv run mypy src` → PASS (86 files, strict)
+- `docker compose config -q` (+telegram profile) → PASS
+- secret scan → clean
+
+**Live integrations verified**
+- none this session (MOCK-only by design; live Odds API only with credentials).
+
+**Mocked only**
+- FormInputs completed-history (real provider path contract-tested);
+- The Odds API network path (contract-tested against documented v4 shape).
+
+**Known issues**
+- Pre-match scan enqueues per (collector, lock-key, phase); odds batch fan-out across fixtures is a future optimization.
+- No live smoke for real API-Football category endpoints (bounded live smoke deferred; contract tests cover normalization).
+
+**Spec / ADR deviations**
+- none new; implements reviewer-fixed semantics for spec 11 (pct thresholds), 14 (no-data), 7 (windows).
+
+**Git**
+- branch: build/m4
+- commit: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent re-review of M4.1 (diff `main..build/m4`); merge + tag `v0.5-m4` after PASS; M5 only with explicit user approval.
+
+---
+
+### 2026-08-24 — ox-alpha (OpenCode)
+
+**Milestone:** M4.2
+**Task:** Focused corrective implementation after M4.1 review **FAIL**
+
+**Completed**
+- 1. Refresh-opportunity job identity (`collectors/refresh.py`):
+  lineups → T-window id (t120/t60/t20); TTL categories → deterministic
+  time bucket tied to TTL; scanner job key includes opportunity; repeat
+  scan dedupes, later window/expiry opens new job (integration test).
+- 2. Lineup policy in real execution: Collector.refresh_due hook used by
+  framework (fast + double-check); LineupCollector uses lineup_poll_due
+  with fixture kickoff + latest state; decide_categories PREMATCH starts
+  at outermost window (removed max+60); runtime T120→T60→CONFIRMED-stops
+  test.
+- 3. Team-split persistence from actual fixture home/away: both teams
+  snapshotted from one observation; uncovered side conservative
+  (NOT_YET_PUBLISHED/UNKNOWN), never CONFIRMED; published refs include
+  both team refs; synchronized home+away test (1 call, 2 snapshots,
+  per-team UUIDs).
+- 4. Odds events contract: top-level JSON array accepted; contract
+  fixtures; no-match/ambiguity hard errors.
+- 5. Real double-chance names + alternate_totals → canonical ou_15/ou_25.
+- 6. No-vig only on complete expected selection sets.
+- 7. Explicit home/away name loading (no unordered IN) + reversed-order
+  regression test.
+- 8. sports.collect reserves OddsProvider.estimate_cost (4 markets × 1
+  region → 4), actual_cost from x-requests-last.
+- 9. Quota reservation baseline = observed remaining − reservations
+  since; post-INCR decision with rollback; P0 reserve preserved; test
+  observed=4 limit=100 concurrent P0/P1.
+- 10. Fail closed on quota-init failure for real providers (job FAILED,
+  zero calls); MOCK stays keyless; discovery Redis closed in finally.
+- 11. /teams/statistics parser: v3 single-object contract + faithful
+  fixture.
+- 12. Status both-team fresh-requires-both; one missing → unknown;
+  PREMATCH phase semantics.
+
+**Files changed**
+- src: collectors/{refresh(new),framework,sports_collectors,odds_collector,quota,pre_match_scan}.py;
+  providers/odds/{factory,parse}.py; providers/sports/api_football.py;
+  workers/tasks/{pre_match,collect,sports}.py; api/routes/status.py
+- tests: unit/{test_refresh(new),test_odds_mapping,test_api_football_categories,
+  collectors/test_odds_math,collectors/test_sports_collectors}.py;
+  integration/test_m4_collectors.py (23 tests)
+- docs: CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, AI_WORKLOG
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (254)
+- integration suite → PASS (49)
+- ruff check/format → PASS; mypy src strict → PASS (87 files)
+- compose config (+telegram) → PASS; secret scan → clean
+
+**Live integrations verified**
+- none (MOCK-only; live smokes require local credentials — allowed but
+  not run).
+
+**Mocked only**
+- The Odds API + /teams/statistics network paths (contract-tested).
+
+**Known issues**
+- Odds league-level batch endpoint remains a future optimization.
+
+**Spec / ADR deviations**
+- none new.
+
+**Git**
+- branch: build/m4
+- commit: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent re-review of M4.2; merge + tag `v0.5-m4` after PASS; M5
+  only with explicit user approval.
+
+---
+
+### 2026-08-24 — ox-alpha (OpenCode)
+
+**Milestone:** M4.3
+**Task:** Focused correctness pass after M4.2 review **FAIL**
+
+**Completed**
+- 1. Odds capability gating: build_odds_provider returns None when
+  DISABLED in non-mock env (empty ODDS_PROVIDER); mock in non-mock
+  requires ODDS_ALLOW_MOCK_OVERRIDE else ProviderConfigError; scanner
+  skips odds when disabled (planned/created/enqueued counters);
+  sports.collect fails closed; regression live_local + no odds → zero
+  jobs + zero snapshots.
+- 2. Provider market translation: OddsProvider.request_markets()
+  guarantees outgoing markets= contains h2h, double_chance, totals,
+  alternate_totals, btts; cost estimation uses ACTUAL provider set
+  (5×1 → 5); outgoing-query contract test.
+- 3. Fixture-level lineup refresh: refresh_due aggregates both fixture
+  teams; CONFIRMED stops only when both confirmed; partial state still
+  refreshes; scenario integration test.
+- 4. TTL due-generation identity: captured+TTL while fresh, now when
+  stale, due:missing when no snapshot; stale-inside-old-bucket
+  counterexample regression.
+- 5. Quota observation generations: reservation counters keyed to
+  observed_at generation; newer observation → fresh counter; regression
+  100→4→96→4 behaves as 92; concurrent-after-new-observation test.
+- 6. Odds limit from used+remaining (8+492 → 500); degradation % on
+  actual allowance; x-requests-last = cost.
+- 7. FAILED collector/scheduled job requeue: same uuid, CAS
+  FAILED→PENDING only; never downgrade RUNNING/SUCCEEDED; tests.
+- 8. Failure telemetry: ProviderError.quota_headers (safe only);
+  API-Football + Odds 401/403/429/5xx carry status_code + headers;
+  framework record_failure passes them; 429 ledger test.
+- 9. Scanner observability: planned/jobs_created/jobs_reused/
+  jobs_enqueued counters; finally-safe Redis cleanup.
+
+**Files changed**
+- src: providers/odds/{factory,base,mock}.py; providers/errors.py;
+  providers/sports/api_football.py; collectors/{refresh,quota,
+  sports_collectors,framework}.py; workers/tasks/{pre_match,collect,
+  scheduling}.py; core/config.py
+- tests: unit/test_odds_gating.py (new); unit/collectors/test_refresh.py,
+  test_quota.py; integration/test_m4_collectors.py (+7 M4.3 tests)
+- docs: CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, AI_WORKLOG;
+  Makefile (Redis flush before integration)
+
+**Verification**
+- unit → PASS (262); integration → PASS (56)
+- ruff check/format → PASS; mypy src strict → PASS (87 files)
+- compose (+telegram) → PASS; secret scan → clean
+
+**Live integrations verified**
+- none (contract-tested; live smokes require local credentials).
+
+**Mocked only**
+- Odds + API-Football network paths (contract-tested, incl. failure
+  telemetry).
+
+**Known issues**
+- Local integration runs flush Redis first (reservation counters).
+
+**Spec / ADR deviations**
+- none new.
+
+**Git**
+- branch: build/m4
+- commit: recorded in REVIEW_HANDOFF after commit
+
+**Next action**
+- Independent re-review of M4.3; merge + tag `v0.5-m4` after PASS; M5
+  only with explicit user approval.
+
+---
+
+### 2026-08-28 — ox-alpha (OpenCode)
+
+**Milestone:** M4.4
+**Task:** Focused correctness fixes (4 items) after M4.3 review **FAIL**
+
+**Completed**
+- 1. /teams/statistics v3 normalization: fixtures.{played,wins,draws,
+  loses}.{home,away,total} (loses→losses), goals.for/against.total.
+  {home,away,total} nested, clean_sheet/failed_to_score splits; missing
+  → None never zero; contract-faithful sentinel + full asserts.
+- 2. Season identity pinned: PreMatchDecision.season_id from fixture;
+  execute_plan passes exact season; exact Season resolver (league
+  verified, deterministic year, refuse missing/ambiguous) replaces
+  active=True LIMIT 1; lock/freshness/provider-season/snapshot all
+  pinned; two-season integration regression.
+- 3. Stable TTL opportunity: due:missing (no snapshot), fresh → no job
+  (scanner freshness check), stale → due:<captured+TTL> stable;
+  acceptance flow regression (T0+20/T0+31/T0+35/T0+40/T0+41).
+- 4. QuotaBucket.observed_at = response time (finished_at); overlap
+  ordering regression (later response authoritative).
+
+**Files changed**
+- src: providers/sports/api_football.py; collectors/{sports_collectors,
+  pre_match_scan,refresh,quota}.py; workers/tasks/pre_match.py
+- tests: unit/test_api_football_categories.py; unit/collectors/
+  test_refresh.py, test_framework.py; integration/test_m4_collectors.py
+- docs: CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, AI_WORKLOG
+
+**Verification**
+- unit → PASS (263); integration → PASS (59)
+- ruff/format → PASS; mypy strict (87) → PASS; compose → OK;
+  secrets clean; no schema migration.
+
+**Live integrations verified**
+- none (contract-tested; bounded live smoke allowed only with local
+  credentials — not run).
+
+**Known issues**
+- Local integration runs flush Redis first (reservation counters).
+
+**Git**
+- branch: build/m4
+- commit: 9ec45d9
+
+**Next action**
+- Independent re-review of M4.4; merge + tag `v0.5-m4` after PASS; M5
+  only with explicit user approval.
+
+---
+
+### 2026-09-28 22:48 +02:00 — Antigravity (Gemini 3.8 Flash)
+
+**Milestone:** M4.4
+**Task:** Independent review M4.3 verification and focused M4.4 correctness verification
+
+**Completed**
+- 1. Verified API-Football /teams/statistics v3 normalization:
+  fixtures.{played,wins,draws,loses}.{home,away,total} (loses→losses),
+  goals.for/against.total.{home,away,total}, clean_sheet, failed_to_score;
+  missing values stay None; contract tests assert all metrics.
+- 2. Pinned season identity end-to-end: PreMatchDecision.season_id,
+  execute_plan propagation, exact Season resolver (replaces active=True LIMIT 1),
+  StandingsCollector.latest_snapshot() AND TeamStatisticsCollector.latest_snapshot()
+  both filter by exact season_id; unit + integration tests verify season isolation.
+- 3. Verified stable TTL refresh opportunity: due:missing without snapshot,
+  fresh snapshot produces no job, stale snapshot identity stable across scanner runs
+  (due:<captured_at + effective_ttl>).
+- 4. Verified QuotaBucket.observed_at derived from response finished_at
+  rather than request start; ordering test proves later response becomes authoritative.
+
+**Files changed**
+- `src/sports_intelligence/collectors/sports_collectors.py` (added season_id filter to TeamStatisticsCollector.latest_snapshot)
+- `tests/integration/test_m4_collectors.py` (added team statistics season isolation assertions, cleaned duplicate decorator)
+- `tests/unit/collectors/test_sports_collectors.py` (added test_latest_snapshot_includes_season_id)
+- `docs/CURRENT_TASK.md`, `docs/IMPLEMENTATION_STATUS.md`, `docs/REVIEW_HANDOFF.md`, `docs/AI_WORKLOG.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (264 passed in 4.09s)
+- `uv run ruff check .` / `ruff format --check .` → PASS (clean)
+- `uv run mypy src` → PASS (87 source files strict clean)
+- `docker compose config -q` / `--profile telegram` → PASS (clean)
+- Secret scan → clean (no secrets in tracked files)
+
+**Live integrations verified**
+- none (MOCK only, live credentials not configured for broader smoke).
+
+**Known issues**
+- Local integration runs flush Redis first (reservation counters).
+- Docker desktop daemon not active locally during this session.
+
+**Spec / ADR deviations**
+- none new.
+
+**Git**
+- branch: build/m4
+- commit: 63b23f2
+
+**Next action**
+- Commit M4.4 verification fixes, update remote HEAD.
+- Independent review PASS before merge to main; do not start M5.
+
+---
+
+### 2026-09-28 23:10 +02:00 — Antigravity (Gemini 3.8 Flash)
+
+**Milestone:** M4.4
+**Task:** Full local acceptance suite execution and bugfixes for TeamStatisticsSnapshot & exact season freshness
+
+**Completed**
+- Discovered and fixed runtime TypeError in `TeamStatisticsCollector.persist()` by removing nonexistent `source_fingerprint` kwarg on `TeamStatisticsSnapshot` creation.
+- Eliminated cross-season fallback in `StandingsCollector.latest_snapshot()` and `TeamStatisticsCollector.latest_snapshot()` by returning `(None, None)` immediately when `season_id is None`.
+- Added defensive skips in `pre_match_scan.execute_plan()` and `tasks/pre_match.py` when `season_id` is missing for standings or team statistics.
+- Added and updated tests verifying two-season isolation, unique lock and job keys, season_id persistence, and execute_plan skipping.
+- Executed the full acceptance suite locally with live Docker service containers (sports-intel-sports-postgres-1 on 5433, sports-intel-sports-redis-1 on 6380): unit suite (265 passed), integration suite against isolated sports_intel_test (59 passed), ruff lint/format (clean), mypy strict (clean), alembic check (clean), compose validation (clean).
+
+**Files changed**
+- `src/sports_intelligence/collectors/pre_match_scan.py`
+- `src/sports_intelligence/collectors/sports_collectors.py`
+- `src/sports_intelligence/workers/tasks/pre_match.py`
+- `tests/integration/test_m4_collectors.py`
+- `tests/unit/collectors/test_pre_match_scan.py`
+- `tests/unit/collectors/test_sports_collectors.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Verification**
+- `~/.local/bin/uv run pytest -q -m "not integration"` → PASS (265 passed)
+- `docker exec sports-intel-sports-redis-1 redis-cli -n 15 FLUSHDB && TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" TEST_REDIS_URL="redis://localhost:6380/15" ~/.local/bin/uv run pytest -q -m integration` → PASS (59 passed)
+- `~/.local/bin/uv run ruff check .` / `ruff format --check .` → PASS (clean)
+- `~/.local/bin/uv run mypy src` → PASS (clean in 87 source files)
+- `~/.local/bin/uv run alembic check` → PASS (No new upgrade operations detected)
+- `docker compose config -q` / `--profile telegram` → PASS (clean)
+- Secret scan → clean (no credentials committed)
+
+**Live integrations verified**
+- none (MOCK only, live credentials not configured).
+
+**Known issues**
+- Local integration runs flush Redis db 15 first for isolation.
+
+**Spec / ADR deviations**
+- none.
+
+**Git**
+- branch: build/m4
+- commit: 0d0cd4a631c067a29c21ce584e806a47c534dc82
+
+**Next action**
+- Independent review PASS received.
+- Finalize documentation, merge build/m4 to main, tag v0.5-m4, create build/m5.
+
+---
+
+### 2026-09-29 08:50 +02:00 — Antigravity (Gemini 3.8 Flash)
+
+**Milestone:** M4 → M5 transition
+**Task:** M4 finalization, merge to main, tag v0.5-m4, create build/m5
+
+**Completed**
+- Independent review of M4 verdict: PASS / ACCEPTED (accepted remote HEAD: `0d0cd4a631c067a29c21ce584e806a47c534dc82`).
+- Updated persistent state docs (`CURRENT_TASK.md`, `IMPLEMENTATION_STATUS.md`, `REVIEW_HANDOFF.md`, `AI_WORKLOG.md`) to reflect accepted M4 state and actual accepted commit.
+- Cleaned stale development-agent/session references.
+- Documentation-only cleanup committed and ready for merge to main.
+
+**Files changed**
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Verification**
+- Git status clean; documentation aligned with accepted commit `0d0cd4a631c067a29c21ce584e806a47c534dc82`.
+
+**Live integrations verified**
+- none.
+
+**Known issues**
+- none.
+
+**Spec / ADR deviations**
+- none.
+
+**Git**
+- branch: build/m4
+- commit: [docs cleanup commit]
+
+**Next action**
+- Commit doc cleanup, push build/m4, merge into main via PR, tag v0.5-m4, create build/m5.
+
+
+

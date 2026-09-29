@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from sports_intelligence.api.resources import close_resources
-from sports_intelligence.api.routes import fixtures, health, jobs
+from sports_intelligence.api.routes import fixtures, health, jobs, status
 from sports_intelligence.core.config import Settings, get_settings
 from sports_intelligence.core.logging import get_logger, setup_logging
 from sports_intelligence.db.session import create_engine, create_session_factory
@@ -54,6 +54,7 @@ def create_app(settings: Settings) -> FastAPI:
     application.include_router(health.router)
     application.include_router(fixtures.router)
     application.include_router(jobs.router)
+    application.include_router(status.router)
     return application
 
 

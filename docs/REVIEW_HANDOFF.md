@@ -9,247 +9,217 @@ Update it before every milestone review.
 
 # Review status
 
-**Ready for review:** NO — review completed  
-**Final review verdict (2026-08-21):** **PASS. M3 ACCEPTED.** Safe to
-begin M4: YES.  
+**Ready for review:** ACCEPTED (Milestone M4 passed independent review)  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M3 + M3.1 — Telegram base UI / private control plane —
-accepted  
-**Review target branch:** `build/m3`  
-**Review target commits:** `3ad5dc0` (M3: Russian Telegram bot UI with
-button-based menus and Back navigation); `99f4a3c` (M3.1: guarantee
-callback acknowledgement and non-zero startup failure) — see Git
-section  
-**CI status:** green on `build/m3` (unit, integration with isolated
-Postgres/Redis, compose validation incl. telegram profile)  
-**Previous review:** M3.1 → **PASS**; M3 ACCEPTED  
-**Previous accepted state:** `main` = `c737f80` (M2 accepted, tag
-`v0.3-m2`)
+**Milestone:** M4 (M4.4 accepted) — merging to main, tagging v0.5-m4  
+**Review target branch:** `build/m4` (merging to main)  
+**Review target commit:** `0d0cd4a631c067a29c21ce584e806a47c534dc82` — M4 accepted HEAD  
+**Previous accepted state:** `main` = `7d23c9d` (M3 accepted via PR #5)  
+**Review scope:** diff `main..build/m4` (M4 + M4.1 + M4.2 + M4.3 + M4.4)
 
 ---
 
-# What changed since the last review
+# Independent review history
 
-M3.1 (the two required small fixes from the final M3 review):
+- M4 → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL**; M4.3 → **FAIL**;
+  M4.4 → **PASS / ACCEPTED** (accepted remote HEAD: `0d0cd4a631c067a29c21ce584e806a47c534dc82`).
 
-- **Telegram callback acknowledgement is guaranteed exactly once.** The
-  shared `_answer_from_callback` helper calls `answer_callback`
-  before editing/sending; every callback handler delegates through it
-  on its response path; the explicit `answer_callback` calls that
-  previously preceded it were removed. As a result, malformed `fx:` /
-  `pg:` / `rf:` payloads still get a safe UI response (`Неизвестное
-  действие.` + Back button) AND the Telegram client stops its
-  loading indicator. Regression tests for `fx:not-a-uuid`,
-  `pg:not-a-date:99`, `rf:not-a-date` assert `answer_callback` was
-  called, the user received a safe response, and no backend call was
-  made.
-- **Startup failure is non-zero.** `bot.__main__.main()` now suppresses
-  `KeyboardInterrupt` only; `SystemExit` (e.g. raised when
-  `TELEGRAM_BOT_TOKEN` is empty) propagates so the process exits with
-  the failure code. Normal Ctrl+C remains a clean shutdown. The
-  startup refusal message is a static string — token is never logged.
-- **Scope guard** — explicitly out of M3 / M3.1 and not touched:
-  scheduler, automatic discovery, sports collectors, odds, lineups /
-  injuries, quota manager, research, MatchContext, LLM prediction,
-  live football analysis. The Telegram bot remains a thin UI over the
-  FastAPI backend.
-- **Future roadmap** (documented only, NOT implemented): the scheduled
-  pipeline (M4+) must populate PostgreSQL automatically, independent of
-  Telegram usage; Telegram fixture screens must read essentially-ready
-  data from the DB; a future availability / lineup collector may do
-  bounded pre-kickoff refresh; a future confirmed / new lineup snapshot
-  may create a new `PREMATCH_FINAL` prediction rather than overwriting
-  `MORNING`; future live analytics is a separate post-v1 extension, not
-  part of M3 / M4.
+# What changed in M4.4
 
-M3 (final independent review requested):
+## 1. API-Football /teams/statistics normalization
 
-- **Telegram bot as a thin UI** over the existing FastAPI control plane.
-  The handler layer (`sports_intelligence.bot`) never touches provider
-  adapters, DB or LLM; all backend traffic goes through a typed
-  `BackendClient` (health/ready, fixtures list, fixture detail, discover
-  enqueue) whose errors are normalized into bot-safe text (no URLs,
-  bodies, stack traces or secrets ever reach Telegram).
-- **Central allowlist middleware** registered for both messages and
-  callback queries using `TELEGRAM_BOT_TOKEN` +
-  `TELEGRAM_ALLOWED_USER_IDS`. Unknown users receive "Доступ запрещён."
-  (or a silent callback answer). Empty allowlist denies everyone;
-  handlers never duplicate the check.
-- **Russian UI, single language** — all Telegram-facing text lives in
-  `bot/strings.py`; commands and callbacks render the same Russian
-  strings.
-- **Button-based navigation** — main menu (Сегодня / Найти / Здоровье
-  / Помощь); every screen has a «← Назад» button returning to the main
-  menu; find menu offers yesterday / today / tomorrow as quick picks
-  plus the `/fixtures ГГГГ-ММ-ДД` hint for arbitrary dates. Commands
-  remain as a power-user fallback (`/start /help /dashboard /today
-  /fixtures [date] /match <uuid> /health /discover [date]`) and reach
-  the same screens. `/predictions /stats /evaluate /improvements`
-  return a clear "недоступна в этой вехе (M3)" message — no fake
-  screens, no invented metrics.
-- **Inline callbacks** — short stable payloads (`fx:<uuid>`,
-  `pg:<date>:<page>`, `rf:<date>`, `disc`, `health`, `menu:*`); under
-  Telegram's 64-byte limit; no secrets, no JSON. Fixture view,
-  pagination, refresh, discover, health, main menu, find menu.
-  Malformed/tampered payloads are answered harmlessly; repeated taps
-  rely on backend idempotency (no second idempotency scheme inside
-  Telegram).
-- **Rendering** — /today grouped by league ordered by kickoff; kickoff
-  shown in `APP_TIMEZONE` (DB stays UTC); Russian month abbreviations
-  (янв., фев., …, авг., …); missing team names rendered as "—"
-  (stored data never mutated); pagination (8 per page, Prev/Next +
-  Refresh); HTML escaping for all backend-provided strings.
-- **Transport separated from handlers** — `TelegramTransport` protocol
-  (send_text / edit_text / answer_callback) with an aiogram
-  implementation and an in-memory fake; 72 deterministic bot unit
-  tests require no token and no network.
-- **Docker Compose `telegram` profile** — isolated `sports-telegram`
-  service (no exposed ports), internal networking to `sports-api`,
-  bot env via `BOT_BACKEND_BASE_URL`; the ordinary
-  api/postgres/redis/worker/beat stack starts without any Telegram
-  credentials.
-- **Live Telegram smoke** with a real token + allowlisted user:
-  English commands /start /today /health /discover + inline fixture
-  tap verified through bot/worker logs; Russian main-menu + button
-  navigation verified live by user screenshot. MOCK-mode discovery
-  round-trip verified idempotent (0 created / 3 updated; duplicate
-  POST → `already_queued: true`). Note: one accidental live
-  API-Football call was consumed before the smoke was pinned to MOCK
-  (documented in the worklog; quota-safe default restored afterwards).
+- Real v3 shape: `fixtures.{played,wins,draws,loses}.{home,away,total}`
+  (provider spells `loses`; normalized to `losses`);
+  `goals.for.total.{home,away,total}` / `goals.against.total.{...}`;
+  `clean_sheet.{home,away,total}`; `failed_to_score.{home,away,total}`.
+- Metrics: played/wins/draws/losses/goals_for/goals_against/
+  clean_sheets/failed_to_score/form; missing → None, never zero.
+- Contract-faithful SENTINEL_TEAM_STATS; every metric asserted +
+  missing-values test.
+
+## 2. Season identity pinned end-to-end
+
+- `PreMatchDecision.season_id` (from Fixture.season_id) flows through
+  `execute_plan()` into standings/team_stats inputs.
+- Exact Season resolver replaces the old `active=True LIMIT 1` helper:
+  fetches the exact Season row, verifies league ownership, parses the
+  year deterministically, refuses missing/mismatched identity.
+- Lock identity, freshness lookup (`StandingsCollector.latest_snapshot` and
+  `TeamStatisticsCollector.latest_snapshot` both filter by exact season_id,
+  returning (None, None) when season_id is None), provider `season=` and
+  persisted snapshot `season_id` all use the exact season.
+- Fixed `TeamStatisticsCollector.persist()` to omit invalid `source_fingerprint`
+  argument matching `TeamStatisticsSnapshot` schema.
+- Two-season same-league regression: fixture on season B → provider
+  season=2026, snapshot pinned to B uuid, fresh A never satisfies B,
+  A/B lock keys distinct.
+
+## 3. Stable TTL refresh opportunity
+
+- no snapshot → `due:missing`; fresh → scanner creates NO job (cheap
+  freshness check before create_or_get_job); stale →
+  `due:<captured+TTL>` stable until a new snapshot.
+- Framework freshness remains the race-safe double-check.
+- Acceptance flow regression: T0+20 no job; T0+31 job A; broker fail →
+  A FAILED; T0+35 same uuid requeued; T0+40 RUNNING no duplicate;
+  T0+41 new snapshot → next scan no job.
+- Lineup windows unchanged.
+
+## 4. Quota observations at response time
+
+- `QuotaBucket.observed_at` = `finished_at` (response observation
+  moment), never request start.
+- Overlap/order regression: later response becomes the authoritative
+  generation.
+
+# Verification
+
+- unit → **265 passed**; integration → **59 passed** (isolated
+  `sports_intel_test` + Redis db15, incl. alembic check)
+- ruff/format clean; strict mypy clean (87 files); compose OK;
+  secrets clean; no schema migration needed.
 
 ---
 
-# What should the reviewer verify?
+# What changed in M4.3 (per FAIL item)
 
-- every callback query (valid and malformed `fx:` / `pg:` / `rf:` /
-  `menu:*` payloads, catch-all) is acknowledged exactly once so the
-  Telegram client stops its loading indicator;
-- malformed callbacks (`fx:not-a-uuid`, `pg:not-a-date:99`,
-  `rf:not-a-date`) get a safe UI response, never call the backend,
-  and never crash;
-- missing `TELEGRAM_BOT_TOKEN` at startup raises `SystemExit(1)` and
-  the process exits with a non-zero status;
-- normal Ctrl+C (`KeyboardInterrupt`) is still handled cleanly;
-- token is never logged;
-- scope guard: scheduler, automatic discovery, sports collectors,
-  odds, lineups / injuries, quota manager, research, MatchContext,
-  LLM prediction, live football analysis — still NOT implemented;
-- M3 review items remain true (Russian UI, button-based navigation,
-  Back button, central allowlist, typed backend client, no provider
-  calls inside the bot, idempotent /discover, mute UI on backend
-  errors, long polling only, secrets never logged, compose
-  `telegram` profile isolated, unit tests do not require a token).
+## 1. Odds capability gating (no silent MOCK)
 
----
+- `build_odds_provider`: APP_ENV=mock + empty/mock → MockOddsProvider;
+  sandbox/live_local + empty → **None** (DISABLED); sandbox/live_local +
+  mock → requires `odds_allow_mock_override` else ProviderConfigError.
+- `Settings.odds_capability_enabled` drives the planner: the pre-match
+  scanner never enqueues odds when disabled (planned=1, created=0,
+  enqueued=0); `sports.collect` fails closed for odds jobs when
+  disabled.
+- Regression: live_local + api_football + odds_provider="" → zero odds
+  jobs, zero OddsSnapshotSet rows.
 
-# Commands claimed as passing
+## 2. Provider market translation
 
-```bash
-uv sync --frozen --dev
-uv run pytest -q -m "not integration"        # 159 passed
-make test-integration                        # 26 passed, isolated sports_intel_test
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy src                              # 62 source files, strict
-docker compose config -q
-docker compose --profile telegram config -q
-docker compose build sports-telegram
-docker compose --profile telegram up -d sports-telegram
-```
+- `OddsProvider.request_markets()` — provider owns the translation from
+  internal product markets to HTTP market keys; guarantees
+  `alternate_totals` is requested alongside `totals` (exact O/U 1.5/2.5).
+- Cost estimation (`collect.py`, `OddsCollector`) uses the ACTUAL
+  provider market set: 5 markets × 1 region → 5 credits reserved before
+  the network call.
+- Contract test captures the outgoing `markets=` query and asserts
+  alternate_totals presence.
 
-CI runs unit + integration (isolated service containers) + compose
-validation on every push; all three jobs green on `build/m3`.
+## 3. Fixture-level lineup refresh
 
-Live evidence: bounded Telegram smoke with real token + allowlisted
-user — Russian main menu + button navigation verified live; English
-commands path verified; MOCK-mode discovery round-trip verified
-idempotent end-to-end. One accidental live API-Football call was
-consumed before the smoke was pinned to MOCK; documented in the
-worklog and disposable. M3 changed the bot UI only (transport,
-payload, language) — no provider HTTP contract change, so the live
-sports data path was not re-exercised against an external service.
+- `LineupCollector.refresh_due` aggregates BOTH fixture teams' latest
+  publication states: CONFIRMED stops polling only when both sides are
+  CONFIRMED; home CONFIRMED + away NOT_YET_PUBLISHED still refreshes the
+  next window; the requesting team_id in the job payload never
+  suppresses a needed later window.
+- Scenario integration test covers the full T20 flow.
 
-Reviewer must not assume tests passed based on status text alone.
+## 4. TTL refresh-opportunity identity
 
----
+- Opportunity = actual due generation: `latest_captured_at + effective
+  TTL` while fresh; `now` once stale; `due:missing` (stable) when no
+  snapshot exists yet.
+- Counterexample regression: job created while fresh, time advances
+  past the TTL inside the old global bucket → a new opportunity is
+  created (never suppressed by an unrelated bucket boundary).
+- Framework freshness remains the final safety check.
 
-# Known limitations
+## 5. Quota observation generations
 
-- Live verification of the sports-provider HTTP path is a single-date,
-  single-league bounded smoke from M2/M2.1 — not multi-day production
-  usage. M3 did not re-exercise it.
-- One accidental live API-Football call was consumed during the M3
-  smoke (1301 fixtures received, 5 created, key never logged); the
-  smoke was then pinned to MOCK and the stack was restored to the
-  quota-safe default (`config/leagues.yaml`, all leagues disabled).
-- `job_attempts` rows are not written yet (M4 debt); only `jobs.status`
-  is updated.
-- QuotaManager / request ledger deferred to M4 (adapter captures
-  rate-limit headers already).
-- Odds / search / LLM protocols still typed as `dict[str, Any]`
-  placeholders until their milestones.
-- Docker Desktop multi-service bake build bug (per-service build
-  workaround documented in `docs/LOCAL_DEVELOPMENT.md`).
-- Slack-style react-on-tap / threaded updates are not implemented;
-  status messages are static until the next user interaction or
-  /discover completion.
+- Reservation counters are keyed to the observation GENERATION
+  (observed_at of the authoritative bucket); a newer observation starts
+  a fresh counter — reservations are "since this observation".
+- Regression: observed 100 → reserve 4 → new observation 96 → reserve 4
+  behaves as 96→92, not 96−4−4; concurrent reservations after a new
+  observation counted against the new generation.
 
----
+## 6. The Odds API quota limit
 
-# Files of highest relevance
+- `parse_quota_headers("theoddsapi")` infers the daily limit from
+  `x-requests-used + x-requests-remaining` (8 + 492 → 500);
+  `x-requests-last` remains the actual last-call cost; degradation
+  percentages operate on the inferred 500-credit allowance.
+- Provider semantics documented in adapter/tests.
 
-- `src/sports_intelligence/bot/app.py` — aiogram Bot/Dispatcher factory
-- `src/sports_intelligence/bot/access.py` — central allowlist middleware
-- `src/sports_intelligence/bot/backend_client.py` — typed backend client
-- `src/sports_intelligence/bot/transport.py` — transport protocol
-- `src/sports_intelligence/bot/context.py` — AppContext
-- `src/sports_intelligence/bot/strings.py` — Russian UI text constants
-- `src/sports_intelligence/bot/formatting.py` — renderers + keyboards
-- `src/sports_intelligence/bot/menu.py` — main menu / find / dashboard
-  keyboards
-- `src/sports_intelligence/bot/handlers.py` — commands + callbacks
-- `src/sports_intelligence/bot/callback_data.py` — payload schemas
-- `src/sports_intelligence/bot/__main__.py` — long-polling entrypoint
-- `tests/telegram_fakes.py` — FakeTransport
-- `tests/unit/test_bot_*.py` — 72 deterministic bot unit tests
-- `compose.yaml` — `telegram` profile
-- `docs/TELEGRAM.md`, `docs/IMPLEMENTATION_STATUS.md`,
-  `docs/REVIEW_HANDOFF.md`
-- Git diff `v0.3-m2..build/m3`
+## 7. FAILED job requeue
+
+- Collector jobs reuse the SAME job UUID within the same refresh
+  opportunity; a stranded FAILED job is re-enqueued via CAS
+  (FAILED → PENDING); RUNNING/SUCCEEDED never downgraded. Same logic
+  applied to scheduled discovery (`_run_schedule`).
+- Tests: broker-failure → job FAILED → next scan same opportunity
+  re-enqueues the same uuid; RUNNING job untouched by a later scan.
+
+## 8. Failure telemetry
+
+- `ProviderError.quota_headers` (safe rate-limit headers only) added;
+  API-Football 401/403/429/5xx and The Odds API 429/5xx populate it
+  plus `status_code`; framework passes them into `record_failure`.
+- Ledger test: 429 → status_code 429 + daily_remaining from safe
+  headers; no auth headers ever persisted.
+
+## 9. Scanner observability
+
+- `_dispatch_decision` returns planned / jobs_created / jobs_reused /
+  jobs_enqueued (+ per-category breakdown); reused jobs are never
+  reported as newly enqueued; Redis cleanup is finally-safe on enqueue
+  errors (test asserts counters after dedupe and requeue).
+
+# Kept unchanged (good M4.1/M4.2 work)
+
+scheduler wrapper, external-ID resolution, evidence linkage, coalescing
+winner publishing real persisted refs, sequential job attempts,
+completed-form inputs, DB-first reads, team-split persistence,
+no-vig completeness.
 
 ---
 
-# Questions for reviewer
+# Verification (actually run on this machine)
 
-1. Is the central allowlist middleware (message + callback) sufficient,
-   or are there paths where it could be bypassed (e.g., update types
-   outside its registration)?
-2. Is the typed `BackendClient`'s error normalization sufficient, or
-   should message-level errors also go through the same renderer?
-3. Is the Russian UI consistent and unambiguous, or are there screens
-   where the labels would confuse a primary Russian-speaking user?
-4. Is the button-based navigation sufficient, or should the fixture
-   detail screen also offer a "Back to date" jump?
-5. Is the next milestone safe to start?
+- `uv run pytest -q -m "not integration"` → **262 passed**
+- Integration suite (`sports_intel_test` + Redis db15) → **56 passed**
+  (incl. M4.3 file; alembic check + migration cycle; a one-time Redis
+  flush precedes the local run — counters live in Redis)
+- `uv run ruff check .` / `ruff format --check .` → clean
+- `uv run mypy src` → **no issues in 87 source files** (strict)
+- `docker compose config -q` (+telegram profile) → OK
+- Secret scan → clean
+
+# Known limitations (documented, intentional)
+
+1. Live provider smokes require local credentials; contract tests cover
+   normalization + failure telemetry; never blocks acceptance.
+2. Local integration runs flush Redis first (`make test-integration`)
+   so reservation counters never leak between runs; CI uses fresh
+   containers.
+
+# Scope guard respected
+
+No research, MatchContext, LLM, prediction, candidate ranking,
+settlement, live in-play, Hetzner, Hermes.
 
 ---
 
-# Reviewer output expected
+# Suggested review order
 
-```text
-VERDICT: PASS / PASS WITH FIXES / FAIL
+1. `AGENTS.md`, this file, `docs/CURRENT_TASK.md`
+2. Git diff `main..build/m4`
+3. Key files:
+   - `src/sports_intelligence/providers/odds/factory.py` (gating,
+     request_markets, failure headers)
+   - `src/sports_intelligence/collectors/refresh.py` (due generation)
+   - `src/sports_intelligence/collectors/quota.py` (observation
+     generations, inferred odds limit)
+   - `src/sports_intelligence/collectors/sports_collectors.py`
+     (fixture-level lineup refresh)
+   - `src/sports_intelligence/workers/tasks/pre_match.py`
+     (gating, counters, FAILED requeue)
+   - `src/sports_intelligence/workers/tasks/scheduling.py` (FAILED
+     requeue)
+   - `tests/integration/test_m4_collectors.py`, `tests/unit/test_odds_gating.py`
 
-P0 critical
-P1 high
-P2 medium
-P3 low
+# Next action after PASS
 
-Tests independently run:
-...
-
-Required fixes before next milestone:
-...
-
-Safe to begin next milestone:
-YES / NO
-```
+Merge `build/m4` into `main`, tag `v0.5-m4`. Only then start M5 with
+explicit user approval.

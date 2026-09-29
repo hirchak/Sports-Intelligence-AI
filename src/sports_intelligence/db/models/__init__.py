@@ -11,16 +11,38 @@ from sports_intelligence.db.models.discovery import (
     Team,
 )
 from sports_intelligence.db.models.jobs import Job, JobAttempt
+from sports_intelligence.db.models.snapshots import (
+    AvailabilitySnapshot,
+    ExternalApiRequest,
+    LineupSnapshot,
+    OddsEventMapping,
+    OddsPrice,
+    OddsSnapshotSet,
+    QuotaBucket,
+    StandingSnapshot,
+    TeamFormSnapshot,
+    TeamStatisticsSnapshot,
+)
 
 __all__ = [
+    "AvailabilitySnapshot",
     "Base",
+    "ExternalApiRequest",
     "Fixture",
     "Job",
     "JobAttempt",
     "League",
+    "LineupSnapshot",
+    "OddsEventMapping",
+    "OddsPrice",
+    "OddsSnapshotSet",
     "ProviderEntityId",
     "ProviderObservation",
+    "QuotaBucket",
     "RawProviderPayload",
     "Season",
+    "StandingSnapshot",
     "Team",
+    "TeamFormSnapshot",
+    "TeamStatisticsSnapshot",
 ]

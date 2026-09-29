@@ -1,51 +1,91 @@
 # Current Task
 
-**Status:** COMPLETE — awaiting independent review  
-**Milestone:** M3.1 (minimal fix after final M3 review: PASS WITH TWO SMALL FIXES)  
-**Owner/agent:** DeepSeek V4 Pro (lead engineer, OpenCode)  
-**Started at:** 2026-08-21  
-**Last updated:** 2026-08-21
+**Status:** ACCEPTED (Milestone M4 passed independent review)
+**Milestone:** M4 (M4.4 accepted) — finalization, merge to main, tag v0.5-m4, start M5
+**Owner/agent:** Antigravity (Gemini 3.8 Flash)
+**Started at:** 2026-09-28
+**Last updated:** 2026-09-29
 
 ---
 
 # Task
 
-Apply the two required small fixes on `build/m3`. → **Done, commit on `build/m3`.**
+Independent review of M4.3 returned **FAIL** with four focused
+correctness fixes. M4.4 on `build/m4` implements exactly those four
+items — working M4/M4.1/M4.2/M4.3 components are NOT redesigned.
 
----
+1. **Correct API-Football /teams/statistics normalization**:
+   - Real v3 shape: `fixtures.{played,wins,draws,loses}.{home,away,total}`
+     (note `loses` — normalized to `losses`);
+   - `goals.for.total.{home,away,total}` and
+     `goals.against.total.{home,away,total}` nested extraction;
+   - `clean_sheet.{home,away,total}` and
+     `failed_to_score.{home,away,total}` flat splits;
+   - Normalizes played/wins/draws/losses/goals_for/goals_against/
+     clean_sheets/failed_to_score/form; missing values remain None —
+     never fabricated zero;
+   - SENTINEL_TEAM_STATS updated to a sanitized contract-faithful
+     payload; every metric asserted (esp. losses, goals_for,
+     goals_against) + a missing-values test.
+2. **Pin season identity end-to-end**:
+   - `PreMatchDecision.season_id` added (from Fixture.season_id);
+   - `execute_plan()` passes the fixture's actual season_id to
+     standings/team_stats (never None);
+   - `_season_number(league_id)` (active=True LIMIT 1) replaced with an
+     exact Season resolver: fetches the exact Season, verifies it
+     belongs to the expected league, parses the year deterministically,
+     refuses missing/mismatched/ambiguous identity;
+   - standings/team_stats lock identity, freshness lookup (`StandingsCollector.latest_snapshot` and `TeamStatisticsCollector.latest_snapshot` both filter by exact season_id), provider
+     `season=` parameter and persisted snapshot `season_id` all use the
+     exact season;
+   - Integration regression: same league with season A=2025 and B=2026;
+     fixture on B → provider receives 2026; snapshot persisted with the
+     season-B uuid; a fresh season-A snapshot never satisfies season-B
+     freshness; A/B lock identities never collide.
+3. **Stable TTL refresh opportunity**:
+   - no snapshot → `due:missing`;
+   - snapshot fresh → the scanner creates NO collector job (cheap
+     freshness check before `create_or_get_job()`);
+   - snapshot stale → `due:<captured_at + effective_ttl>` — STABLE
+     until a new successful snapshot persists (never `due:now`);
+   - framework freshness remains the race-safe double-check;
+   - Acceptance flow regression: T0+20 fresh → no job; T0+31 stale →
+     job A; broker fails → A FAILED; T0+35 → SAME uuid A requeued;
+     T0+40 A RUNNING → no duplicate; successful snapshot at T0+41 →
+     next scan fresh → no job.
+   - Lineup t120/t60/t20 logic unchanged.
+4. **Quota observations at response observation time**:
+   - `QuotaBucket.observed_at` now derives from `finished_at` (the
+     response observation moment), never request `started_at`;
+   - Overlap/order regression: two overlapping requests — the LATER
+     response becomes the authoritative bucket/generation even if it
+     started earlier.
 
-# Acceptance criteria — verified
+# Verification (actually run)
 
-- every callback query (valid and malformed `fx:` / `pg:` / `rf:` / `menu:*`
-  payloads, catch-all) is acknowledged exactly once so the Telegram
-  client stops its loading indicator → OK
-- malformed callbacks (`fx:not-a-uuid`, `pg:not-a-date:99`,
-  `rf:not-a-date`) get a safe UI response, never call the backend, and
-  never crash → OK
-- missing `TELEGRAM_BOT_TOKEN` at startup raises `SystemExit(1)` and
-  the process exits with a non-zero status (not silently swallowed) → OK
-- normal Ctrl+C (`KeyboardInterrupt`) is still handled cleanly for normal
-  manual shutdown → OK
-- token is never logged, today or in any future path → OK
-- scope guard: scheduler / automatic discovery / odds / lineups /
-  injuries / quota manager / research / MatchContext / LLM prediction /
-  live analysis — still NOT implemented → OK
-- 159 unit + 26 integration green; Ruff; format; strict mypy (62 source
-  files); alembic check (in integration); compose validation →
-  OK
-- one coherent M3.1 commit, no merge of `build/m3` into `main`,
-  M4 not started → OK
+- `uv run pytest -q -m "not integration"` → **265 passed**
+- integration suite (`sports_intel_test` + Redis db15) → **59 passed**
+  (incl. new M4.4 tests: two-season isolation, TTL stable opportunity
+  acceptance flow, response-time observation ordering, season pinning,
+  and TeamStatisticsSnapshot kwargs & season_id persistence)
+- `uv run ruff check .` / `ruff format --check .` → clean
+- `uv run mypy src` → **no issues in 87 source files** (strict)
+- `uv run alembic check` → clean (No new upgrade operations detected)
+- `docker compose config -q` (+telegram profile) → OK
+- Secret scan → clean
 
----
+# Known limitations
 
-# Work notes
-
-- see `docs/AI_WORKLOG.md` for the M3.1 entry.
+- No schema migration needed (M4.4 §"no schema migration unless
+  necessary").
+- No broad live API smoke; a bounded /teams/statistics smoke is allowed
+  only with local credentials (not run — no key).
+- Local integration runs flush Redis first (reservation counters), as in
+  M4.3.
 
 ---
 
 # Completion
 
-- Status set to COMPLETE.
-- Commit: see `docs/REVIEW_HANDOFF.md`.
-- State files/docs updated. No merge to main; stopped before M4.
+- Status: ACCEPTED on `build/m4` at commit `0d0cd4a631c067a29c21ce584e806a47c534dc82`.
+- Review verdict: M4.4 PASS / ACCEPTED. Merging to main, tagging v0.5-m4, and transitioning to M5.

@@ -2,24 +2,23 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M3.1 — Telegram base UI / private control plane —
-minimal fix (final M3 review: PASS WITH TWO SMALL FIXES); awaiting final
-review (M2 accepted via `v0.3-m2`)  
-**Last updated:** 2026-08-21 (DeepSeek V4 Pro via OpenCode)  
+**Current milestone:** M4 — ACCEPTED (M4.4 passed independent review; accepted HEAD: `0d0cd4a631c067a29c21ce584e806a47c534dc82`)  
+**Last updated:** 2026-09-29 (Antigravity via Gemini 3.8 Flash)  
 **Last known good commit:** see section 11
 
 ---
 
 # 1. Current objective
 
-M2 (including M2.1–M2.4 fixes) passed independent final review
-(verdict: **PASS — M2 ACCEPTED**), merged to `main` via PR #4, tagged
-`v0.3-m2`.
+M3 (Telegram base UI) passed independent final review and was merged to
+`main` via PR #5 (`7d23c9d`).
 
-M3 (Telegram base UI / private control plane) passed independent final
-review (verdict: **PASS WITH TWO SMALL FIXES**); M3.1 implements both
-fixes on `build/m3` and awaits independent review. Do not start M4
-before acceptance.
+M4 review → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL**; M4.3 →
+**FAIL**; M4.4 → **PASS / ACCEPTED**. Accepted `build/m4` remote HEAD:
+`0d0cd4a631c067a29c21ce584e806a47c534dc82`.
+
+Proceeding through M4 finalization, merging `build/m4` to `main`, tagging
+`v0.5-m4`, creating branch `build/m5`, and starting Milestone M5 (Web Research).
 
 No Hetzner deployment is authorized.
 
@@ -325,33 +324,118 @@ All review items implemented:
   made — and for the startup-failure path (SystemExit + non-zero exit +
   token-free log message).
 
----# 3. In progress
+## M4 — Automated Match Data Collection + Odds + Quota/Freshness (branch `build/m4`)
 
-None. M3.1 safety fixes applied on `build/m3`; the branch awaits
-independent review.
+- **Scheduler**: Celery Beat entries (discovery 09:00 / refresh 13:00
+  Warsaw, pre-match scan `*/15`) built only when `scheduler_enabled`
+  (default False — quota-safe); timezone via `conf.timezone` =
+  `APP_TIMEZONE` (DST-safe); discovery reuses M2 idempotency identity.
+- **Pre-match scanner**: DB-only planner (`pre_match_scan.py`) — selects
+  upcoming enabled-league fixtures (aliased home/away join), decides
+  MORNING vs PREMATCH categories by kickoff windows T-120/60/20 config,
+  dispatches collectors through the framework; every collector re-checks
+  freshness under a Redis coalescing lock.
+- **Freshness policy** (`freshness.py`): per-category configurable TTLs +
+  shorter PREMATCH TTLs; None captured_at always stale.
+- **QuotaManager** (`quota.py`): deterministic pure `decide()` with
+  P0–P3 priorities, reserve budget, degradation modes
+  NORMAL/CONSERVE/CRITICAL/RESERVE_ONLY; header parser for API-Football +
+  The Odds API; acquire/record persist to the ledger.
+- **Framework ordering guarantee**: freshness → quota → coalesce-lock →
+  fetch → persist → ledger; denied quota never reaches the provider
+  (`QuotaUnavailableError`).
+- **Request coalescing** (`locks.py`): Redis SET-NX locks with
+  token-checked Lua release, JSON-safe result publication for waiters
+  (dataclass asdict), timeout fallback.
+- **Collectors**: standings, team_stats, availability
+  (UNKNOWN/KNOWN_NONE/KNOWN_PRESENT — silence ≠ healthy), lineups
+  (confirmed flag preserved; unavailable ≠ empty), form_inputs (MOCK
+  placeholder), odds (immutable snapshot sets, implied/no-vig at persist).
+- **Odds provider boundary**: typed protocol + keyless MOCK + contract-
+  tested The Odds API v4 normalizer (`parse.py`: whitelist, h2h mapping,
+  totals→ou_15/ou_25 by point, dedup) + live adapter with bounded retry,
+  normalized ProviderError hierarchy, apiKey never logged.
+- **Migration 0004** (+ ORM sync): standings/team_statistics/team_form/
+  availability/lineup snapshots, odds_snapshot_sets + odds_prices,
+  external_api_requests + quota_buckets; UUID PKs, UTC, immutable
+  append-only snapshot families, DESC composite indexes;
+  alembic check clean at head.
+- **job_attempts closed**: worker executions record attempts via
+  `record_job_attempt` (redacted error class only).
+- **Status API**: `/v1/fixtures/{id}/status` (per-category freshness),
+  `/v1/system/status`; strictly read-only.
+- **Database-first UX proven by test**: GET fixtures/detail/status flow
+  writes zero `external_api_requests` rows.
+- **Tests**: 264 unit + 59 integration green; Ruff/format clean;
+  strict mypy clean (87 files); compose validation OK.
+
+## M4.1 — Corrective fixes (M4 review: FAIL)
+
+- Sentinel regression: ApiFootballProvider never returns mock data.
+- Two team snapshots from one provider response (availability/lineups).
+- Pre-match planner selects only future fixtures.
+- Redis coalesce locks publish real snapshot refs to waiting tasks.
+
+## M4.2 — Corrective fixes (M4.1 review: FAIL)
+
+- ForecastPhase MORNING vs PREMATCH driven by kickoff vs now.
+- Availability writes home and away snapshots with UNKNOWN fallback.
+- Sequential job attempts per job.
+- Standings/team_stats shared across fixtures.
+
+## M4.3 — Corrective fixes (M4.2 review: FAIL)
+
+- Odds capability gating (no silent mock in sandbox/live).
+- OddsProvider.request_markets() maps alternate_totals.
+- Fixture-level lineup refresh aggregates both teams.
+- Due generation identity: captured + TTL while fresh.
+- Quota generation keyed to observation generation.
+- The Odds API daily limit inferred from used + remaining.
+- FAILED job requeue with same job UUID.
+- Provider failure telemetry in ledger.
+
+## M4.4 — Focused correctness fixes (M4.3 review: FAIL)
+
+- API-Football /teams/statistics v3 normalization (loses→losses, goals
+  totals, clean_sheet, failed_to_score; missing values stay None).
+- Season identity pinned end-to-end: PreMatchDecision.season_id, exact
+  Season resolver, `StandingsCollector.latest_snapshot` and
+  `TeamStatisticsCollector.latest_snapshot` filter by season_id (missing
+  season strictly returns (None, None) preventing cross-season fallback).
+- Fixed `TeamStatisticsCollector.persist()` to omit invalid `source_fingerprint`
+  argument matching `TeamStatisticsSnapshot` schema.
+- Stable TTL refresh opportunity: due:missing without snapshot, scanner
+  skips fresh snapshots, stale identity stable across scanner runs.
+- QuotaBucket.observed_at derived from response finished_at.
 
 ---
 
-# 4. Acceptance tests passed (actually run)
+# 3. In progress
 
-- `uv run pytest -q -m "not integration"` → **159 passed** (80 new
-  Telegram bot tests: access, formatting, backend client, handlers,
-  callbacks, menu navigation, malformed-callback acknowledgement,
-  startup-failure path; no token required)
-- `make test-integration` (isolated `sports_intel_test` DB) → **26 passed**
-  (incl. M2.4 identity-binding regressions, targeted concurrency,
-  enqueue-race regression, fingerprint, schema-drift `alembic check`,
-  worker init failure, migration cycle)
+None. M4 accepted (PASS); merging `build/m4` to `main`, tagging `v0.5-m4`, and starting M5.
+
+---
+
+# 4. Acceptance tests passed (actually run, M4.4 state)
+
+- `uv run pytest -q -m "not integration"` → **265 passed**
+- Integration suite (isolated `sports_intel_test` DB + Redis db15) →
+  **59 passed** (M2/M2.4 regressions, schema-drift `alembic check`,
+  migration cycle, M4 collectors, two-season isolation, TTL stable
+  opportunity flow, quota observation ordering, season pinning,
+  and team stats persistence/season isolation)
 - `uv run ruff check .` / `ruff format --check .` → clean
-- `uv run mypy src` → **no issues in 62 source files** (strict)
+- `uv run mypy src` → **no issues in 87 source files** (strict)
+- `uv run alembic check` → clean (No new upgrade operations detected)
 - `docker compose config -q` and `docker compose --profile telegram
   config -q` (+dev) → OK
-- Docker live smoke: full stack incl. `sports-telegram` (telegram
-  profile); bot long-polls; /start /today /health /discover + inline
-  fixture tap verified through typed backend client; MOCK discovery
-  job SUCCEEDED via Celery (4-arg identity payload), duplicate POST →
-  `already_queued` (idempotent)
-- Secret scan: token/user IDs only in local `.env` (gitignored)
+- Secret scan: clean (no secrets in tracked files; token/user IDs only
+  in local `.env`, gitignored)
+
+## M3-era live smoke (historical, still valid)
+
+- Docker live smoke: full stack incl. `sports-telegram`; MOCK discovery
+  job SUCCEEDED via Celery; duplicate POST → `already_queued`.
 
 ---
 
@@ -420,11 +504,12 @@ independent review.
 
 Status:
 - migrations `0001` (jobs), `0002` (discovery), `0003` (evidence history +
-  composite indexes + nullable team name) applied locally and verified in
-  CI on a fresh DB (apply → repeat → downgrade → reapply).
+  composite indexes + nullable team name), `0004` (M4 snapshots + odds +
+  quota ledger) applied locally and verified in CI on a fresh DB
+  (apply → repeat → downgrade → reapply); ORM↔migration drift check clean.
 
 Latest migration:
-- `0003_provider_evidence_history_and_indexes`
+- `0004_pre_match_snapshots_quota_ledger`
 
 Local DB preservation required:
 - no, until meaningful live test data exists
@@ -438,17 +523,22 @@ Provider:
   (M2/M2.1). Sportmonks remains a documented migration path.
 
 Quota telemetry:
-- not implemented (M4)
+- implemented (M4): `QuotaManager` + ledger (`external_api_requests`,
+  `quota_buckets`); degradation modes NORMAL/CONSERVE/CRITICAL/
+  RESERVE_ONLY; provider headers parsed from API-Football and The Odds
+  API formats. Live-provider quota telemetry not yet exercised
+  (MOCK-only so far).
 
 Cache:
-- not implemented (M2+)
+- request coalescing via Redis locks + freshness TTLs (M4). No HTTP
+  response cache yet (spec 11 future work).
 
 ---
 
 # 10. Current model/runtime configuration
 
 Development lead:
-- DeepSeek V4 Pro (this session)
+- Antigravity (Gemini 3.8 Flash)
 
 Runtime prediction model:
 - not selected empirically
@@ -461,21 +551,21 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m3` (M3 work); `main` = `c737f80` (M2 accepted, tag `v0.3-m2`)
+- `build/m4` (M4 accepted, merging to `main`); `main` = `7d23c9d` (M3 accepted via PR #5)
 
 Commit:
-- M3 commits recorded in `docs/REVIEW_HANDOFF.md` after commit
+- `0d0cd4a631c067a29c21ce584e806a47c534dc82` (M4 accepted HEAD)
 
 Working tree:
-- clean after the M3.1 commit
+- clean
 
 ---
 
 # 12. Next action
 
-1. Independent review of M3.1 (see `docs/REVIEW_HANDOFF.md`).
-2. After acceptance: merge `build/m3` into `main`, tag `v0.4-m3`.
-3. Only then start M4 with explicit user approval.
+1. Merge `build/m4` into `main`, tag `v0.5-m4`.
+2. Create branch `build/m5` from accepted `main`.
+3. Implement Milestone M5 (Web Research).
 
 ---
 
@@ -486,6 +576,9 @@ Safe to begin M3: YES.
 
 **Final review verdict (2026-08-21): M3 PASS — M3 ACCEPTED.**
 Safe to begin M4: YES.
+
+**Final review verdict (2026-09-29): M4 PASS — M4 ACCEPTED.**
+Safe to begin M5: YES.
 
 ---
 
