@@ -574,7 +574,7 @@ Branch:
 - `build/m5` (M5 complete, awaiting review); base `main` at `2e4683a` (`v0.5-m4`)
 
 Commit:
-- HEAD of `build/m5`
+- `5c05b79897e6b9eb1938cff9fb591fe0c5988bb0` (Milestone M5 HEAD)
 
 Working tree:
 - clean after commit

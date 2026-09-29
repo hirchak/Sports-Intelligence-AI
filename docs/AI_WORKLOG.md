@@ -1465,10 +1465,9 @@ button-based menus and a Back button on every screen.
 
 **Git**
 - branch: build/m5
-- commit: [to be recorded upon commit]
+- commit: 5c05b79897e6b9eb1938cff9fb591fe0c5988bb0
 
 **Next action**
-- Commit and push `build/m5`.
 - Await independent review of Milestone M5.
 
 

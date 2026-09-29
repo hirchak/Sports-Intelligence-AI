@@ -13,7 +13,7 @@ Update it before every milestone review.
 **Development phase:** LOCAL DEVELOPMENT ONLY  
 **Milestone:** M5 — Web Research Subsystem  
 **Review target branch:** `build/m5`  
-**Review target commit:** HEAD of `build/m5`  
+**Review target commit:** `5c05b79897e6b9eb1938cff9fb591fe0c5988bb0`  
 **Previous accepted state:** `main` = `2e4683a` (`v0.5-m4` accepted M4 merge)  
 **Review scope:** diff `main..build/m5` (Milestone M5 changes)
 
