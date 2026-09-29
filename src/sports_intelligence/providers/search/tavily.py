@@ -131,6 +131,7 @@ class TavilySearchProvider:
         transport: httpx.AsyncBaseTransport | None = None,
         timeout_seconds: float = 10.0,
         max_retries: int = 3,
+        clock: Any | None = None,
     ) -> None:
         if not api_key:
             raise ValueError("Tavily API key must not be empty")
@@ -143,6 +144,7 @@ class TavilySearchProvider:
             timeout=timeout_seconds,
         )
         self._owns_client = client is None
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -182,8 +184,9 @@ class TavilySearchProvider:
 
         while retried <= self._max_retries:
             try:
-                retrieved_at = datetime.now(UTC)
                 response = await self._client.post(url, json=payload)
+                # Captured AFTER awaiting the HTTP response, representing observation time:
+                retrieved_at = self._clock()
                 safe_headers = _safe_rate_headers(response.headers)
 
                 if response.status_code == 200:

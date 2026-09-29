@@ -1,106 +1,84 @@
 # Current Task
 
-**Status:** COMPLETE (Milestone M5 implemented, live validated with Tavily, fully tested, ready for independent review)
-**Milestone:** M5 — Web Research Subsystem
-**Branch:** `build/m5`
-**Owner/agent:** Antigravity (Gemini 3.8 Flash)
-**Started at:** 2026-09-29
-**Last updated:** 2026-09-29
+**Status:** COMPLETE (Ready for independent review)  
+**Milestone:** M5.1 — Web Research Subsystem Correctness & Anti-Leakage Pass  
+**Branch:** `build/m5`  
+**Owner/agent:** Antigravity (Gemini 3.8 Flash)  
+**Started at:** 2026-09-29  
+**Completed at:** 2026-09-29  
 
 ---
 
 # Milestone Objective
 
-Implement the bounded, testable, anti-leakage pre-match web research subsystem per authoritative specifications:
-- `08_FOOTBALL_ANALYTICS_PIPELINE.md`
-- `09_AGENT_CATALOG_AND_ORCHESTRATION.md`
-- `10_DATABASE_AND_DATA_LIFECYCLE.md`
-- `11_API_QUOTA_CACHING_STRATEGY.md`
-- `14_DATA_QUALITY_PROVENANCE_AND_LEAKAGE.md`
-
-### Hard Guardrails & Discipline
-1. **Local Development Only**: No Hetzner, no SSH, no Hermes, no production deployments.
-2. **Subsystem Isolation**: Web research is an evidence-gathering subsystem only. No predictions, forecasts, betting logic, no-vig calculations, or MatchContext assembly are included in M5 (reserved for M7).
-3. **Graceful Degradation / Optionality**: Web research must be completely optional. When `SEARCH_PROVIDER` is disabled or empty, or `RESEARCH_ENABLED=False`, zero external searches run, and the pipeline continues normally.
-4. **Zero Live Search API Calls in Normal Tests/CI**: Fully mocked offline execution via `MockSearchProvider` for all automated suites.
+Address all findings from the independent review of Milestone M5 (verdict `M5 = FAIL`) through a focused M5.1 correctness pass on `build/m5` without redesigning core architecture:
+1. **Fix Tavily Retrieval Time / As-Of Leakage**: `retrieved_at` captured strictly after awaiting HTTP response completion.
+2. **Claim-Level Temporal Safety**: Add `extracted_at` to `ResearchClaim`, index `ix_research_claims_fixture_extracted`, Alembic migration 0007, and filter `claim.extracted_at <= as_of`.
+3. **Search Quota and Request Ledger Matching Real HTTP Calls**: `ResearchCollector` owns per-search-request accounting (`owns_quota = True`), per-query `reserve(cost=1)` / `record_success()` / `record_failure()`, graceful stop when quota exhausted, and zero calls when research is fresh.
+4. **Fix Conflict Referential Integrity**: Stable claim IDs end-to-end, deferred self-referential FK (`fk_research_claims_conflicting_claim_id`), and reciprocal referential integrity queryable in PostgreSQL.
+5. **SearchProvider Resource Cleanup**: Provider lifecycle closed in `_run_collect_job()` `finally` block across all scenarios (success, quota denied, provider error, DB error) without instantiating sports or odds providers.
+6. **Structured Research States**: Semantically distinct `DISABLED`, `PROVIDER_ERROR`, `NO_USEFUL_RESULTS`, `EXTRACTION_UNAVAILABLE`, `AVAILABLE` states.
+7. **Research Run and Historical View Consistency**: Default Option B (`mode="latest_run"`) returns evidence strictly belonging to the latest run at or before `as_of` without mixing run statuses and documents, with optional Option A (`mode="accumulated"`).
+8. **Zero Unintended External Calls**: All automated tests run against deterministic mocks.
 
 ---
 
-# Subsystems Implemented
+# Subsystems Implemented & Verified in M5.1
 
-1. **Search Provider Boundary & Adapters (`src/sports_intelligence/providers/search/`)**:
-   - `SearchProvider` Protocol: `search(query, max_results=5) -> SearchResponse`.
-   - DTOs: `SearchResultItem`, `SearchResponse`.
-   - `MockSearchProvider`: deterministic offline search provider with canned query responses, query token fallbacks, simulated errors, call history, and JSON-safe raw payload serialization.
-   - `TavilySearchProvider`: production-ready adapter for Tavily Search API with bounded timeouts, retries (up to 3 attempts with exponential backoff and jitter), 4xx non-retryable handling, canonical URL normalization, secret redaction in logging/payloads, RFC 2822 date parsing, and rate limit header parsing.
-   - Provider factory `build_search_provider()`: strict gating based on `app_env`, `search_provider`, and `search_api_key`. Refuses silent mock in live environments without explicit override.
+1. **Anti-Leakage & Retrieval Time Precision (`src/sports_intelligence/providers/search/`)**:
+   - `TavilySearchProvider`: `retrieved_at = self._clock()` moved strictly *after* `response = await self._client.post(...)`. Added injectable `clock` for deterministic test verification.
+   - `MockSearchProvider`: Added injectable `clock` parameter for test alignment.
 
-2. **Core Domain Models & Extractor (`src/sports_intelligence/research/`)**:
-   - `ExtractedClaimDTO`, `ResearchDocumentDTO`, `ResearchRunResultDTO`.
-   - `build_research_queries`: bounded (max 6), deterministic queries per fixture based on team names, kickoff date, and phase (`morning` preparation vs `prematch` lineup/fitness refresh).
-   - `deduplicate_search_results`, `normalize_url` (strips tracking parameters, query fragments, trailing slashes), `content_sha256`.
-   - `RuleBasedClaimExtractor` / `MockClaimExtractor`: extracts claims across 8 categories (`AVAILABILITY`, `SUSPENSION`, `ROTATION`, `LINEUP`, `MANAGER_STATEMENT`, `TACTICAL`, `TRAVEL`, `TEAM_NEWS`), assigns team ownership, confidence scores, and extraction metadata.
-   - `detect_conflicts`: detects contradictory claims (e.g. absent vs present for the same subject/player or team); strictly preserves both claims, flags `conflict_flag=True`, links `conflicting_claim_id`, and attaches audit metadata (never discards or merges contradictory claims).
-   - `get_research_for_fixture`: anti-leakage audit service enforcing `as_of` temporal filtering (`retrieved_at <= as_of` and `published_at <= as_of`) for historical replay and point-in-time consistency.
+2. **Claim-Level Temporal Safety & Option B Consistency (`src/sports_intelligence/research/`)**:
+   - `ResearchClaim`: Added timezone-aware `extracted_at` column, populated from extractor execution timestamp.
+   - Composite index: `ix_research_claims_fixture_extracted` on `(fixture_id, extracted_at DESC)`.
+   - Migration `0007_m51_claim_extracted_at_and_fk.py`: Applied and verified clean bidirectional migration and `alembic check`.
+   - `get_research_for_fixture()`: Added `mode: Literal["latest_run", "accumulated"] = "latest_run"`.
+     - In `latest_run` mode (default Option B), resolves the latest `ResearchRun` at or before `as_of`, enforces `ResearchDocument.run_id == run_row.id`, and applies `doc.retrieved_at <= as_of`, `doc.published_at <= as_of`, and `claim.extracted_at <= as_of`.
+     - In `accumulated` mode (Option A), queries all historical documents and claims at or before `as_of`.
+   - REST API: Added `mode` query parameter to `GET /v1/fixtures/{fixture_id}/research`.
 
-3. **Database Persistence & Migrations (`src/sports_intelligence/db/`)**:
-   - Models: `ResearchRun`, `ResearchDocument`, `ResearchClaim` with descending composite indexes (`ix_research_runs_fixture_captured`, `ix_research_docs_fixture_retrieved`, `ix_research_claims_fixture_type`) and foreign keys.
-   - Alembic Migration `0006_m5_research_documents_claims.py`: clean downgrade and upgrade, fully verified by `alembic check`.
+3. **Per-Query Quota Accounting & Request Ledger Alignment (`src/sports_intelligence/collectors/`)**:
+   - `src/sports_intelligence/collectors/framework.py`: Checks `collector.owns_quota` to bypass generic outer reservation and ledger recording.
+   - `ResearchCollector`: Sets `owns_quota = True`, `cost_estimate = 1`. Iterates through generated queries (up to 6), invoking `ctx.quota.reserve()` and `ctx.quota.record_success()` / `record_failure()` per query.
+   - Graceful quota denial: Stops before executing further queries when quota is exhausted; persists any prior documents or marks `NO_USEFUL_RESULTS` if empty.
+   - Cache bypass: If fresh research run exists within TTL, exits early issuing zero quota reservations or search provider calls.
 
-4. **Collector & Pipeline Integration (`src/sports_intelligence/collectors/` & `workers/`)**:
-   - `ResearchCollector`: registered in framework (`name="research"`, `category=FreshnessCategory.RESEARCH`, `priority=Priority.P3`), supports coalescing locks (`research:{fixture_id}`), raw payload storage in `raw_provider_payloads`, and snapshot persistence.
-   - Pre-match scanner: includes `FreshnessCategory.RESEARCH` in scan plan and TTL evaluations.
-   - Celery tasks: `sports_intelligence.workers.tasks.research` routed to `research_io` queue.
+4. **Conflict Referential Integrity (`src/sports_intelligence/db/models/snapshots.py` & `research/`)**:
+   - Added self-referential foreign key `conflicting_claim_id` on `research_claims.id` with `DEFERRABLE INITIALLY DEFERRED` constraint.
+   - Preserves stable claim UUIDs throughout extraction and conflict resolution.
+   - Reciprocal integrity: Opposing claims point directly to each other (`claim_a.conflicting_claim_id == claim_b.id` and vice-versa) and are queryable directly in PostgreSQL.
 
-5. **REST API Routes (`src/sports_intelligence/api/`)**:
-   - `GET /v1/fixtures/{fixture_id}/research`: returns documents and claims with optional `as_of` query parameter.
-   - `GET /v1/fixtures/{fixture_id}/status`: reflects `research` category freshness state (`fresh`, `stale`, `unknown`) and last refresh timestamp.
+5. **Resource Management & Worker Provider Scoping (`src/sports_intelligence/workers/tasks/collect.py`)**:
+   - Scoped provider instantiation: Only instantiates `SearchProvider` when `collector_name == "research"`; sports and odds providers are not instantiated.
+   - Guaranteed cleanup: `search_provider.aclose()` invoked in `finally` block across all execution paths.
 
----
-
-# Live Tavily Validation (Completed)
-
-- **Tavily Live Adapter Status**: VERIFIED (PASS).
-- **Exact real Tavily API requests made**: 2 requests total (1 provider-level query check + 1 bounded collector run for real DB fixture).
-- **Real fixture used**: `8c9c59c9-9ad9-4683-9895-5db48d2a52b0` (Brentford vs Tottenham, kickoff 2026-08-22).
-- **Queries executed**:
-  1. `"Brentford vs Tottenham injury news"` (provider contract test)
-  2. `"Brentford injuries 2026-08-22"` (collector fixture test)
-- **Real response contract findings**:
-  - Tavily returns RFC 2822 / HTTP format date strings in `published_date` (e.g. `Sat, 22 Aug 2026 00:00:00 GMT`), which was not parsed by ISO-only parser.
-  - Fix implemented: Added RFC 2822 parsing via `email.utils.parsedate_to_datetime` in `_parse_published_at`, producing valid timezone-aware UTC datetimes.
-  - Also added result `id` extraction into `provider_metadata["tavily_id"]`.
-- **Quality sanity check**:
-  - Returned authoritative, domain-relevant sources (Goal.com, The Athletic / NYT, Reuters).
-  - Plausibly useful for team news / injuries: identified specific player availability (e.g. Kulusevski, Romero, Vicario, Maddison, Solanke for Tottenham, and Yarmoliuk, Van den Berg for Brentford).
-- **Database persistence**:
-  - `ResearchRun` created: `status=AVAILABLE`, `queries_count=1`, `documents_count=3`, `claims_count=8`.
-  - 3 `ResearchDocument` records persisted with genuine `retrieved_at`, parsed `published_at`, `content_hash`, and metadata.
-  - 8 `ResearchClaim` records persisted across `availability`, `suspension`, and `team_news`.
-- **Anti-leakage audit**:
-  - `get_research_for_fixture(as_of=now)` returned 3 documents and 8 claims.
-  - `get_research_for_fixture(as_of=past)` returned 0 documents and 0 claims.
-- **Secret safety audit**:
-  - Verified `RawProviderPayload` table has zero credentials stored.
-  - Verified `ResearchDocument` and `ResearchClaim` rows have zero credentials stored.
+6. **Structured Research States (`src/sports_intelligence/core/phases.py` & `collectors/`)**:
+   - `DISABLED`: When research is disabled globally or search provider is unconfigured.
+   - `PROVIDER_ERROR`: When provider queries fail with network/API exceptions and no results were obtained.
+   - `NO_USEFUL_RESULTS`: When provider returned 0 items or quota halted before any results.
+   - `EXTRACTION_UNAVAILABLE`: When documents were retrieved but claim extraction is disabled or failed.
+   - `AVAILABLE`: When documents and claims were successfully retrieved and extracted.
 
 ---
 
-# Verification (All passing locally)
+# Verification Suite Results
 
-- **Unit tests**: `uv run pytest -q -m "not integration"` → **300 passed, 66 deselected in 4.19s**
-- **Integration tests**: `TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration` → **66 passed, 300 deselected in 10.48s**
-- **Full test suite**: `uv run pytest -q` → **366 passed in 14.06s**
-- **Linter**: `uv run ruff check .` → **clean (All checks passed!)**
-- **Formatter**: `uv run ruff format --check .` → **clean (156 files already formatted)**
-- **Type checker**: `uv run mypy src` → **clean (Success: no issues found in 103 source files)**
-- **Alembic**: `uv run alembic check` → **clean (No new upgrade operations detected)**
-- **Docker Compose**: `docker compose config -q` and `docker compose --profile telegram config -q` → **clean (OK)**
-- **Secret check**: clean, zero credentials in code or Git.
+All tests run locally in Docker Compose environment (PostgreSQL 16 on port 5433, Redis 7 on port 6380):
+- **Full Test Suite**: `TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q` → **379 passed in 20.18s**
+- **Unit Suite**: `uv run pytest -q -m "not integration"` → **308 passed, 71 deselected in 12.75s**
+- **Integration Suite**: `uv run pytest -q -m integration` → **71 passed, 308 deselected in 18.29s**
+- **Linter**: `uv run ruff check .` → **All checks passed!**
+- **Formatter**: `uv run ruff format --check .` → **157 files already formatted**
+- **Type Checker**: `uv run mypy src` → **Success: no issues found in 104 source files**
+- **Migration Check**: `uv run alembic check` → **No new upgrade operations detected**
+- **Compose Configs**: `docker compose config -q` and `docker compose --profile telegram config -q` → **clean**
+- **Secret Safety**: Scanned diff and commits; zero credentials found.
+- **External Calls**: Zero real search provider requests during test suite execution.
 
 ---
 
 # Handoff
 
-Milestone M5 is complete, live validated, fully tested, and ready on branch `build/m5` for independent review.
-Do not merge `build/m5` to `main`. Do not start M6.
+Milestone M5.1 is complete and ready for independent acceptance review.
+Do NOT merge `build/m5` into `main`. Do NOT start M6.

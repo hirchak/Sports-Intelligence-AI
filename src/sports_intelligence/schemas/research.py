@@ -20,6 +20,7 @@ class ResearchClaimOut(BaseModel):
     conflicting_claim_id: uuid.UUID | None
     extraction_version: str
     metadata: dict[str, Any]
+    extracted_at: datetime
     created_at: datetime
 
 

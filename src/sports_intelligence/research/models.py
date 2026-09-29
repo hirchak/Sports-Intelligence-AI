@@ -16,6 +16,7 @@ class ExtractedClaimDTO:
     id: uuid.UUID = field(default_factory=uuid.uuid4)
     document_id: uuid.UUID | None = None
     team_id: uuid.UUID | None = None
+    extracted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     valid_from: datetime | None = None
     valid_until: datetime | None = None
     conflict_flag: bool = False

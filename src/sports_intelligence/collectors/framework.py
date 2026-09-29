@@ -285,16 +285,19 @@ async def run_collector(
             await ctx.locks.publish_result(lock_key, _refs_to_json([ref]), _ttl(ctx))
             return ref
 
-        # 4. Quota reservation BEFORE any external work.
-        decision = await ctx.quota.reserve(
-            provider=provider_name,
-            priority=collector.priority,
-            estimated_cost=estimated_cost,
-        )
-        if decision.denied:
-            raise QuotaUnavailableError(
-                f"quota denied for {name} ({decision.reason})", decision=decision
+        owns_quota = getattr(collector, "owns_quota", False)
+
+        # 4. Quota reservation BEFORE external work (skipped if collector owns quota).
+        if not owns_quota:
+            decision = await ctx.quota.reserve(
+                provider=provider_name,
+                priority=collector.priority,
+                estimated_cost=estimated_cost,
             )
+            if decision.denied:
+                raise QuotaUnavailableError(
+                    f"quota denied for {name} ({decision.reason})", decision=decision
+                )
 
         # 5. Provider fetch — telemetry starts BEFORE the network op.
         started_at = datetime.now(UTC)
@@ -307,17 +310,18 @@ async def run_collector(
         try:
             result = await _do()
         except Exception as exc:
-            await ctx.quota.record_failure(
-                provider=provider_name,
-                endpoint_category=name,
-                started_at=started_at,
-                exc=exc,
-                headers=getattr(exc, "quota_headers", None),
-                priority=collector.priority,
-                estimated_cost=estimated_cost,
-                fixture_id=inputs.get("fixture_id"),
-                league_id=inputs.get("league_id"),
-            )
+            if not owns_quota:
+                await ctx.quota.record_failure(
+                    provider=provider_name,
+                    endpoint_category=name,
+                    started_at=started_at,
+                    exc=exc,
+                    headers=getattr(exc, "quota_headers", None),
+                    priority=collector.priority,
+                    estimated_cost=estimated_cost,
+                    fixture_id=inputs.get("fixture_id"),
+                    league_id=inputs.get("league_id"),
+                )
             raise
 
         finished_at = datetime.now(UTC)
@@ -366,18 +370,19 @@ async def run_collector(
             )
         )
 
-        # 7. Request-ledger row with real telemetry.
-        await ctx.quota.record_success(
-            provider=provider_name,
-            endpoint_category=name,
-            started_at=started_at,
-            finished_at=finished_at,
-            headers=result.rate_headers,
-            priority=collector.priority,
-            estimated_cost=estimated_cost,
-            fixture_id=inputs.get("fixture_id"),
-            league_id=inputs.get("league_id"),
-        )
+        # 7. Request-ledger row with real telemetry (skipped if collector owns per-request quota).
+        if not owns_quota:
+            await ctx.quota.record_success(
+                provider=provider_name,
+                endpoint_category=name,
+                started_at=started_at,
+                finished_at=finished_at,
+                headers=result.rate_headers,
+                priority=collector.priority,
+                estimated_cost=estimated_cost,
+                fixture_id=inputs.get("fixture_id"),
+                league_id=inputs.get("league_id"),
+            )
 
         # 8. Publish REAL persisted refs for waiters; release lock.
         await ctx.locks.publish_result(lock_key, _refs_to_json(refs), _ttl(ctx))

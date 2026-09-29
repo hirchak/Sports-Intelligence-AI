@@ -2,20 +2,31 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M5 — COMPLETE (Web Research Subsystem implemented & fully verified; ready for review on `build/m5`)  
+**Current milestone:** M5.1 — COMPLETE (Web Research Subsystem correctness pass ready for independent review)  
 **Last updated:** 2026-09-29 (Antigravity via Gemini 3.8 Flash)  
-**Last known good commit:** see section 11
+**Last known good commit:** 0d0cd4a631c067a29c21ce584e806a47c534dc82 (M4 accepted HEAD)
 
 ---
 
 # 1. Current objective
 
-M4 (Automated Match Data Collection + Odds + Quota/Freshness) passed independent review and was merged to `main` via PR #6 (`2e4683a`), tagged `v0.5-m4`.
+M4 passed independent review (PASS / ACCEPTED, HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`).
 
-Milestone M5 (Web Research Subsystem) is fully implemented on branch `build/m5`, fully tested with 366 passing tests (300 unit + 66 integration), and ready for independent review.
+Milestone M5 independent review verdict: FAIL.
+A focused M5.1 correctness pass has been completed on branch `build/m5` addressing:
+1. Tavily retrieval-time capturing strictly after HTTP response (point-in-time anti-leakage).
+2. Claim-level temporal safety (`claim.extracted_at <= as_of`), index `ix_research_claims_fixture_extracted`, and Alembic migration 0007.
+3. Per-search-request quota accounting (`owns_quota = True`) and accurate request telemetry matching real HTTP calls.
+4. Conflict referential integrity with stable IDs and `DEFERRABLE INITIALLY DEFERRED` self-referential FK.
+5. SearchProvider resource cleanup in `_run_collect_job()` `finally` block across all failure/success modes without instantiating unrelated providers.
+6. Real structured research states (`DISABLED`, `NO_USEFUL_RESULTS`, `PROVIDER_ERROR`, `EXTRACTION_UNAVAILABLE`, `AVAILABLE`).
+7. Research run and historical view consistency contract (`latest_run` Option B vs `accumulated` Option A).
+8. 100% mocked offline tests; zero unintended external calls.
+
+Do NOT merge `build/m5` to `main`. Do NOT start M6.
+Development remains strictly LOCAL ONLY.
 
 No Hetzner deployment is authorized.
-
 No Hermes access/dependency is authorized.
 
 ---
@@ -430,24 +441,36 @@ All review items implemented:
 - **Graceful Degradation / Optionality**:
   - When `SEARCH_PROVIDER` is empty or disabled, or `RESEARCH_ENABLED=False`, zero external searches run, and the pipeline operates normally with empty research runs recorded as `NO_USEFUL_RESULTS`.
 
+## M5.1 — Corrective fixes (M5 review: FAIL)
+
+All review items implemented and independently verified:
+- **Tavily retrieval-time capturing after response**: `retrieved_at` captured strictly after awaiting HTTP completion (`response = await self._client.post(...)`). Verified by delay-injected clock test.
+- **Claim-level temporal safety**: Added timezone-aware `extracted_at` to `ResearchClaim`, composite index `ix_research_claims_fixture_extracted`, Alembic migration `0007_m51_claim_extracted_at_and_fk.py`, and point-in-time filtering `claim.extracted_at <= as_of`.
+- **Search quota & ledger matching real HTTP calls**: `ResearchCollector` owns per-search-request accounting (`owns_quota = True`). Framework outer quota reservation skipped; each query performs `reserve(cost=1)` and records telemetry in ledger. Quota stoppage halts queries gracefully; fresh research skips search with zero provider calls.
+- **Conflict referential integrity**: Preserves stable claim IDs end-to-end; added self-referential `DEFERRABLE INITIALLY DEFERRED` FK on `research_claims.conflicting_claim_id`; reciprocal references (`A.conflicting_claim_id == B.id` and `B.conflicting_claim_id == A.id`) directly queryable in PostgreSQL.
+- **SearchProvider resource cleanup**: Closed via `aclose()` in `_run_collect_job()` `finally` block across success, quota denial, provider failure, and DB persistence failure. Unrelated sports/odds providers are not instantiated for research tasks.
+- **Real structured research states**: Formally differentiates `DISABLED`, `PROVIDER_ERROR`, `NO_USEFUL_RESULTS`, `EXTRACTION_UNAVAILABLE`, and `AVAILABLE`.
+- **Historical view consistency**: Default Option B (`mode="latest_run"`) returns evidence strictly belonging to the latest run at or before `as_of` without mixing run statuses and documents; optional Option A (`mode="accumulated"`) returns historical accumulated claims.
+- **100% offline mock tests**: All automated tests run against mocks with zero real external search calls.
+
 ---
 
 # 3. In progress
 
-None. Milestone M5 implemented, fully verified, and ready for independent review.
+None. Milestone M5.1 implemented, fully verified, and ready for independent review.
 
 ---
 
-# 4. Acceptance tests passed (actually run, M5 state)
+# 4. Acceptance tests passed (actually run, M5.1 state)
 
-- `uv run pytest -q -m "not integration"` → **300 passed, 66 deselected in 4.18s**
+- `uv run pytest -q -m "not integration"` → **308 passed, 71 deselected in 12.75s**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
-  **66 passed, 300 deselected in 11.10s** (all M2/M3/M4 integration tests
-  plus M5 research collector, anti-leakage `as_of`, dedup, conflict flagging,
-  coalescing locks, freshness status, and disabled-mode zero provider calls)
-- Full test suite (`uv run pytest -q`) → **366 passed in 14.06s**
-- `uv run ruff check .` / `ruff format --check .` → clean
-- `uv run mypy src` → **Success: no issues found in 103 source files** (strict)
+  **71 passed, 308 deselected in 18.29s** (all M2/M3/M4/M5 integration tests
+  plus M5.1 reciprocal FK verification, anti-leakage `as_of` modes, exact 6 query
+  ledger entries, quota stoppage before 3rd query, and fresh research zero calls)
+- Full test suite (`uv run pytest -q`) → **379 passed in 20.18s**
+- `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 157 files formatted)
+- `uv run mypy src` → **Success: no issues found in 104 source files** (strict)
 - `uv run alembic check` → clean (No new upgrade operations detected)
 - `docker compose config -q` and `docker compose --profile telegram config -q` (+dev) → OK
 - Secret scan: clean (zero credentials committed; no secrets in tracked files)
@@ -578,18 +601,20 @@ Branch:
 - `build/m5` (M5 complete, awaiting review); base `main` at `2e4683a` (`v0.5-m4`)
 
 Commit:
-- `e0d18a7d599af0c559fb85d16f1623f211a4894c` (Milestone M5 HEAD)
+- (pending commit for M5.1 correctness pass)
 
 Working tree:
-- clean after commit
+- modifications staged for M5.1 commit
 
 ---
 
 # 12. Next action
 
-1. Push `build/m5` to remote repository.
-2. Await independent review of Milestone M5.
-3. Do not merge `build/m5` into `main`. Do not start M6.
+1. Commit M5.1 changes to `build/m5`.
+2. Push `build/m5` to remote repository.
+3. Verify remote GitHub Actions CI run.
+4. Await independent review of Milestone M5.1 on `build/m5`.
+5. Do not merge `build/m5` into `main`. Do not start M6.
 
 ---
 
@@ -604,7 +629,9 @@ Safe to begin M4: YES.
 **Final review verdict (2026-09-29): M4 PASS — M4 ACCEPTED.**
 Safe to begin M5: YES.
 
-**Current review target:** Milestone M5 (Web Research Subsystem) on `build/m5`.
+**Review verdict (2026-09-29): M5 FAIL — focused M5.1 required.**
+
+**Current review target:** Milestone M5.1 (Web Research Subsystem Correctness Pass) on `build/m5`.
 
 ---
 

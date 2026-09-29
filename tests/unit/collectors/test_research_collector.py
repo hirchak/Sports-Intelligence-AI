@@ -31,6 +31,10 @@ def _make_context(
     lock_mgr.release = AsyncMock()
 
     quota_mgr = MagicMock()
+    allowed_decision = MagicMock(denied=False, allowed=True, reason="ok")
+    quota_mgr.reserve = AsyncMock(return_value=allowed_decision)
+    quota_mgr.record_success = AsyncMock()
+    quota_mgr.record_failure = AsyncMock()
     quota_mgr.check_budget = AsyncMock(return_value=True)
     quota_mgr.record_request = AsyncMock()
     quota_mgr.observe = AsyncMock(return_value=(100, 10, MagicMock(value="NORMAL")))
@@ -57,6 +61,7 @@ def test_research_collector_metadata() -> None:
     assert collector.name == "research"
     assert collector.category == FreshnessCategory.RESEARCH
     assert collector.priority == Priority.P3
+    assert collector.owns_quota is True
 
 
 @pytest.mark.asyncio
@@ -93,10 +98,13 @@ async def test_research_collector_fetch_with_mock_provider() -> None:
     assert result.normalized["documents_count"] > 0
     assert result.normalized["status"] == ResearchState.AVAILABLE.value
     assert len(provider.history) > 0
+    # Per-request quota ledger called for each query
+    assert ctx.quota.reserve.call_count == result.normalized["queries_count"]
+    assert ctx.quota.record_success.call_count == result.normalized["queries_count"]
 
 
 @pytest.mark.asyncio
-async def test_research_collector_disabled_provider_returns_no_useful_results() -> None:
+async def test_research_collector_disabled_provider_returns_disabled_state() -> None:
     settings = Settings(
         _env_file=None,
         app_env="mock",
@@ -123,9 +131,83 @@ async def test_research_collector_disabled_provider_returns_no_useful_results() 
 
     result = await collector.fetch(ctx, fixture_id=fid, phase=ForecastPhase.MORNING.value)
 
-    assert result.normalized["status"] == ResearchState.NO_USEFUL_RESULTS.value
+    assert result.normalized["status"] == ResearchState.DISABLED.value
     assert result.normalized["documents_count"] == 0
     assert result.normalized["claims_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_research_collector_quota_stops_when_denied() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        search_provider="mock",
+        research_enabled=True,
+        research_max_queries_per_fixture=6,
+    )
+    fid = uuid.uuid4()
+    hid = uuid.uuid4()
+    aid = uuid.uuid4()
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+
+    fixture = Fixture(id=fid, home_team_id=hid, away_team_id=aid, kickoff_at=kickoff)
+    home_team = Team(id=hid, name="Arsenal")
+    away_team = Team(id=aid, name="Chelsea")
+
+    session = AsyncMock()
+    row_mock = MagicMock()
+    row_mock.first.return_value = (fixture, home_team, away_team)
+    session.execute.return_value = row_mock
+
+    provider = MockSearchProvider()
+    ctx = _make_context(settings=settings, session=session, provider=provider)
+
+    # Allow 2 queries, then deny 3rd
+    allowed = MagicMock(denied=False, allowed=True, reason="ok")
+    denied = MagicMock(denied=True, allowed=False, reason="budget exceeded")
+    ctx.quota.reserve.side_effect = [allowed, allowed, denied]
+
+    collector = ResearchCollector()
+    result = await collector.fetch(ctx, fixture_id=fid, phase=ForecastPhase.MORNING.value)
+
+    # Exactly 2 queries executed
+    assert len(provider.history) == 2
+    assert result.normalized["queries_count"] == 2
+    assert ctx.quota.record_success.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_research_collector_provider_error_state() -> None:
+    settings = Settings(
+        _env_file=None,
+        app_env="mock",
+        search_provider="mock",
+        research_enabled=True,
+    )
+    fid = uuid.uuid4()
+    hid = uuid.uuid4()
+    aid = uuid.uuid4()
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+
+    fixture = Fixture(id=fid, home_team_id=hid, away_team_id=aid, kickoff_at=kickoff)
+    home_team = Team(id=hid, name="Arsenal")
+    away_team = Team(id=aid, name="Chelsea")
+
+    session = AsyncMock()
+    row_mock = MagicMock()
+    row_mock.first.return_value = (fixture, home_team, away_team)
+    session.execute.return_value = row_mock
+
+    provider = MockSearchProvider(error_to_raise=RuntimeError("Search API down"))
+    ctx = _make_context(settings=settings, session=session, provider=provider)
+    collector = ResearchCollector()
+
+    result = await collector.fetch(ctx, fixture_id=fid, phase=ForecastPhase.MORNING.value)
+
+    assert result.normalized["status"] == ResearchState.PROVIDER_ERROR.value
+    assert result.normalized["documents_count"] == 0
+    assert result.normalized["claims_count"] == 0
+    assert ctx.quota.record_failure.call_count == 1
 
 
 @pytest.mark.asyncio

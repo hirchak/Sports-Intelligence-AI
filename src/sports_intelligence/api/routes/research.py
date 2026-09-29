@@ -24,6 +24,12 @@ async def fixture_research(
             description="Point-in-time timestamp for anti-leakage audit / historical replay",
         ),
     ] = None,
+    mode: Annotated[
+        str,
+        Query(
+            description="Research evidence retrieval mode: 'latest_run' (default) or 'accumulated'",
+        ),
+    ] = "latest_run",
 ) -> FixtureResearchOut:
     session_factory = request.app.state.session_factory
     if not isinstance(session_factory, async_sessionmaker):
@@ -34,6 +40,6 @@ async def fixture_research(
         if fixture is None:
             raise HTTPException(status_code=404, detail="fixture not found")
 
-        view = await get_research_for_fixture(session, fixture_id, as_of=as_of)
+        view = await get_research_for_fixture(session, fixture_id, as_of=as_of, mode=mode)
 
     return FixtureResearchOut.model_validate(view)

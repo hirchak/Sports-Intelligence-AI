@@ -88,9 +88,9 @@ async def _run_collect_job(
             await session.commit()
 
         redis = Redis.from_url(settings.redis_url)
-        sports_provider = build_sports_provider(settings)
-        odds_provider = build_odds_provider(settings)
+        search_provider = None
         if collector_name == "odds":
+            odds_provider = build_odds_provider(settings)
             if odds_provider is None:
                 raise RuntimeError(
                     "odds collector job refused: odds capability is "
@@ -106,6 +106,7 @@ async def _run_collect_job(
                 )
             provider = search_provider
         else:
+            sports_provider = build_sports_provider(settings)
             provider = sports_provider
         quota = QuotaManager(settings, factory, redis=redis)
         locks = CoalesceLockManager(redis, settings)
@@ -187,10 +188,9 @@ async def _run_collect_job(
         raise
     finally:
         cleanup_tasks = []
-        if sports_provider is not None:
-            cleanup_tasks.append(sports_provider.aclose())
-        if odds_provider is not None:
-            cleanup_tasks.append(odds_provider.aclose())
+        for p in (sports_provider, odds_provider, search_provider):
+            if p is not None and hasattr(p, "aclose"):
+                cleanup_tasks.append(p.aclose())
         for cleanup in cleanup_tasks:
             try:
                 await cleanup

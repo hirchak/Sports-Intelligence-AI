@@ -195,3 +195,62 @@ def test_tavily_search_provider_secret_not_leaked() -> None:
 
     assert api_key not in repr_str
     assert api_key not in str_str
+
+
+@pytest.mark.asyncio
+async def test_tavily_retrieval_time_captured_after_response_anti_leakage() -> None:
+    """Regression for M5.1: request starts before as_of, response completes after as_of.
+
+    Proves retrieved_at represents response observation time, not dispatch time,
+    preventing pre-response leakage into historical as_of queries.
+    """
+    t_dispatch = datetime(2026, 8, 20, 10, 0, 0, tzinfo=UTC)
+    t_as_of = datetime(2026, 8, 20, 10, 0, 5, tzinfo=UTC)
+    t_response = datetime(2026, 8, 20, 10, 0, 10, tzinfo=UTC)
+
+    current_time = t_dispatch
+
+    def mock_clock() -> datetime:
+        return current_time
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal current_time
+        # Simulate network roundtrip completing at t_response:
+        current_time = t_response
+        payload = {
+            "query": "late news",
+            "results": [
+                {
+                    "title": "Breaking News",
+                    "url": "https://news.com/breaking",
+                    "content": "Player injured in late warm-up",
+                    "score": 0.9,
+                    "published_date": "2026-08-20T09:00:00Z",
+                }
+            ],
+        }
+        return httpx.Response(200, json=payload)
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.AsyncClient(transport=transport)
+    provider = TavilySearchProvider(api_key="secret-key-123", client=client, clock=mock_clock)
+
+    try:
+        # Request dispatches at t_dispatch (before as_of)
+        # Transport completes at t_response (after as_of)
+        resp = await provider.search("late news")
+
+        # Must record response completion time, NOT request dispatch time:
+        assert resp.retrieved_at == t_response
+        assert resp.results[0].retrieved_at == t_response
+
+        # Anti-leakage check: retrieved_at <= t_as_of is FALSE!
+        # Result MUST NOT be visible at t_as_of:
+        is_visible_at_as_of = resp.results[0].retrieved_at <= t_as_of
+        assert is_visible_at_as_of is False
+
+        # But it IS visible after response completion:
+        is_visible_after = resp.results[0].retrieved_at <= t_response
+        assert is_visible_after is True
+    finally:
+        await provider.aclose()

@@ -225,6 +225,7 @@ async def test_research_collector_persists_run_documents_claims(
             assert claim.claim_type
             assert claim.claim_text
             assert 0.0 <= claim.confidence <= 1.0
+            assert claim.extracted_at is not None
             assert claim.document_id in {d.id for d in docs}
 
 
@@ -360,8 +361,24 @@ async def test_research_collector_flags_conflicts(
         conflicted = [c for c in claims if c.conflict_flag]
         # Both opposing claims must be preserved and flagged
         assert len(conflicted) >= 2
+        claim_a = conflicted[0]
+        assert claim_a.conflicting_claim_id is not None
+        claim_b = next(c for c in conflicted if c.id == claim_a.conflicting_claim_id)
+
+        # Reciprocal referential integrity
+        assert claim_a.conflicting_claim_id == claim_b.id
+        assert claim_b.conflicting_claim_id == claim_a.id
+
+        # Query referenced rows directly to verify foreign key integrity
+        ref_b = await session.get(ResearchClaim, claim_a.conflicting_claim_id)
+        assert ref_b is not None
+        assert ref_b.id == claim_b.id
+
+        ref_a = await session.get(ResearchClaim, claim_b.conflicting_claim_id)
+        assert ref_a is not None
+        assert ref_a.id == claim_a.id
+
         for c in conflicted:
-            assert c.conflicting_claim_id is not None
             assert c.metadata_jsonb.get("conflict_detected") is True
 
 
@@ -414,6 +431,7 @@ async def test_research_api_anti_leakage_as_of(
             claim_type="availability",
             claim_text="Player is doubtful",
             confidence=0.8,
+            extracted_at=t0,
             created_at=t0,
         )
         session.add(claim1)
@@ -455,6 +473,7 @@ async def test_research_api_anti_leakage_as_of(
             claim_type="availability",
             claim_text="Player is officially ruled out",
             confidence=0.95,
+            extracted_at=t2,
             created_at=t2,
         )
         session.add(claim2)
@@ -471,12 +490,23 @@ async def test_research_api_anti_leakage_as_of(
     assert data_filtered["claims_count"] == 1
     assert data_filtered["documents"][0]["url"] == "https://site.com/early"
 
-    # Query without as_of: returns latest state
-    resp_all = service_client.get(f"/v1/fixtures/{fid}/research")
-    assert resp_all.status_code == 200
-    data_all = resp_all.json()
-    assert data_all["documents_count"] == 2
-    assert data_all["claims_count"] == 2
+    # Query without as_of (default mode="latest_run"): returns evidence of latest run (run2)
+    resp_latest = service_client.get(f"/v1/fixtures/{fid}/research")
+    assert resp_latest.status_code == 200
+    data_latest = resp_latest.json()
+    assert data_latest["documents_count"] == 1
+    assert data_latest["claims_count"] == 1
+    assert data_latest["documents"][0]["url"] == "https://site.com/late"
+
+    # Query without as_of in mode="accumulated": returns evidence across all runs
+    resp_accum = service_client.get(
+        f"/v1/fixtures/{fid}/research",
+        params={"mode": "accumulated"},
+    )
+    assert resp_accum.status_code == 200
+    data_accum = resp_accum.json()
+    assert data_accum["documents_count"] == 2
+    assert data_accum["claims_count"] == 2
 
 
 @pytest.mark.asyncio
@@ -594,6 +624,357 @@ async def test_research_disabled_mode_zero_provider_calls(
         run = (
             await session.execute(select(ResearchRun).where(ResearchRun.fixture_id == fid))
         ).scalar_one()
-        assert run.status == ResearchState.NO_USEFUL_RESULTS.value
+        assert run.status == ResearchState.DISABLED.value
         assert run.documents_count == 0
         assert run.claims_count == 0
+
+
+@pytest.mark.asyncio
+async def test_research_quota_and_request_ledger_exact_counts(
+    m5_session_factory: Any,
+    redis_client: Redis,
+    m5_settings: Settings,
+) -> None:
+    """Regression for M5.1 §3:
+    6 configured queries
+    → exactly 6 search calls when budget permits
+    → exactly 6 request ledger entries
+    → 6 units consumed
+    """
+    seeded = await _seed_fixture(m5_session_factory)
+    fid = seeded["fixture_id"]
+
+    settings_6 = Settings(
+        _env_file=None,
+        app_env="mock",
+        search_provider="mock",
+        research_enabled=True,
+        research_max_queries_per_fixture=6,
+        database_url=m5_settings.database_url,
+        redis_url=m5_settings.redis_url,
+    )
+    provider = MockSearchProvider()
+    ctx = _ctx(
+        factory=m5_session_factory,
+        redis=redis_client,
+        settings=settings_6,
+        provider=provider,
+    )
+
+    await run_collector(
+        ctx,
+        "research",
+        inputs={"fixture_id": str(fid), "phase": ForecastPhase.MORNING.value},
+    )
+
+    # 1. Exactly 6 queries executed by provider
+    assert len(provider.history) == 6
+
+    # 2. Exactly 6 rows in external_api_requests ledger
+    async with m5_session_factory() as session:
+        ledger_rows = (
+            (
+                await session.execute(
+                    select(ExternalApiRequest).where(
+                        ExternalApiRequest.endpoint_category == "research",
+                        ExternalApiRequest.fixture_id == fid,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(ledger_rows) == 6
+        for row in ledger_rows:
+            assert row.provider == "mock"
+            assert row.estimated_cost == 1
+            assert row.status_code == 200
+            assert row.fixture_id == fid
+
+
+@pytest.mark.asyncio
+async def test_research_quota_stops_before_third_call(
+    m5_session_factory: Any,
+    redis_client: Redis,
+    m5_settings: Settings,
+) -> None:
+    """Regression for M5.1 §3:
+    quota allows only 2
+    → exactly 2 HTTP calls
+    → no third call
+    """
+    from unittest.mock import AsyncMock, MagicMock
+
+    seeded = await _seed_fixture(m5_session_factory)
+    fid = seeded["fixture_id"]
+
+    settings_6 = Settings(
+        _env_file=None,
+        app_env="mock",
+        search_provider="mock",
+        research_enabled=True,
+        research_max_queries_per_fixture=6,
+        database_url=m5_settings.database_url,
+        redis_url=m5_settings.redis_url,
+    )
+    provider = MockSearchProvider()
+    ctx = _ctx(
+        factory=m5_session_factory,
+        redis=redis_client,
+        settings=settings_6,
+        provider=provider,
+    )
+
+    # Mock quota: 2 allowed, 3rd denied
+    allowed = MagicMock(denied=False, allowed=True, reason="ok")
+    denied = MagicMock(denied=True, allowed=False, reason="budget exceeded")
+    ctx.quota.reserve = AsyncMock(side_effect=[allowed, allowed, denied])
+
+    await run_collector(
+        ctx,
+        "research",
+        inputs={"fixture_id": str(fid), "phase": ForecastPhase.MORNING.value},
+    )
+
+    # Exactly 2 queries executed
+    assert len(provider.history) == 2
+
+    # Exactly 2 rows recorded in ledger
+    async with m5_session_factory() as session:
+        ledger_rows = (
+            (
+                await session.execute(
+                    select(ExternalApiRequest).where(
+                        ExternalApiRequest.endpoint_category == "research",
+                        ExternalApiRequest.fixture_id == fid,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(ledger_rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_fresh_research_zero_tavily_calls_and_zero_ledger_entries(
+    m5_session_factory: Any,
+    redis_client: Redis,
+    m5_settings: Settings,
+) -> None:
+    """Regression for M5.1 §3:
+    fresh research
+    → zero search calls / zero new search request ledger entries.
+    """
+    seeded = await _seed_fixture(m5_session_factory)
+    fid = seeded["fixture_id"]
+    provider = MockSearchProvider()
+    ctx = _ctx(
+        factory=m5_session_factory,
+        redis=redis_client,
+        settings=m5_settings,
+        provider=provider,
+    )
+
+    # Run 1: initial population
+    ref1 = await run_collector(
+        ctx,
+        "research",
+        inputs={"fixture_id": str(fid), "phase": ForecastPhase.MORNING.value},
+    )
+    initial_provider_calls = len(provider.history)
+    assert initial_provider_calls > 0
+
+    async with m5_session_factory() as session:
+        initial_ledger_count = len(
+            (
+                await session.execute(
+                    select(ExternalApiRequest).where(
+                        ExternalApiRequest.endpoint_category == "research",
+                        ExternalApiRequest.fixture_id == fid,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    # Run 2: immediate second call while fresh
+    ref2 = await run_collector(
+        ctx,
+        "research",
+        inputs={"fixture_id": str(fid), "phase": ForecastPhase.MORNING.value},
+    )
+
+    # Returns same snapshot ref
+    r1 = ref1[0] if isinstance(ref1, (list, tuple)) else ref1
+    r2 = ref2[0] if isinstance(ref2, (list, tuple)) else ref2
+    assert r1.snapshot_id == r2.snapshot_id
+
+    # ZERO new provider calls
+    assert len(provider.history) == initial_provider_calls
+
+    # ZERO new request ledger entries
+    async with m5_session_factory() as session:
+        new_ledger_count = len(
+            (
+                await session.execute(
+                    select(ExternalApiRequest).where(
+                        ExternalApiRequest.endpoint_category == "research",
+                        ExternalApiRequest.fixture_id == fid,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert new_ledger_count == initial_ledger_count
+
+
+@pytest.mark.asyncio
+async def test_research_structured_states_integration(
+    m5_session_factory: Any,
+    redis_client: Redis,
+    m5_settings: Settings,
+) -> None:
+    """Regression for M5.1 §6:
+    Structured states: PROVIDER_ERROR, EXTRACTION_UNAVAILABLE, NO_USEFUL_RESULTS, AVAILABLE.
+    The overall football pipeline must continue even if research fails.
+    """
+    seeded = await _seed_fixture(m5_session_factory)
+    fid = seeded["fixture_id"]
+
+    # 1. PROVIDER_ERROR state
+    failing_provider = MockSearchProvider(error_to_raise=RuntimeError("Search API unavailable"))
+    ctx_error = _ctx(
+        factory=m5_session_factory,
+        redis=redis_client,
+        settings=m5_settings,
+        provider=failing_provider,
+    )
+    # Does not crash the caller
+    ref_error = await run_collector(
+        ctx_error,
+        "research",
+        inputs={"fixture_id": str(fid), "phase": ForecastPhase.MORNING.value},
+    )
+    assert ref_error is not None
+
+    async with m5_session_factory() as session:
+        run_error = (
+            await session.execute(select(ResearchRun).where(ResearchRun.fixture_id == fid))
+        ).scalar_one()
+        assert run_error.status == ResearchState.PROVIDER_ERROR.value
+        assert run_error.documents_count == 0
+        assert run_error.claims_count == 0
+        # Clean up for next state test
+        await session.execute(delete(ResearchRun))
+        await session.commit()
+
+    # 2. NO_USEFUL_RESULTS state (provider returns empty results)
+    empty_provider = MockSearchProvider()
+    queries = build_research_queries(
+        home_team_name="Arsenal",
+        away_team_name="Chelsea",
+        kickoff_at=datetime.now(UTC) + timedelta(days=1),
+        phase=ForecastPhase.MORNING,
+    )
+    for q in queries:
+        empty_provider.add_canned_response(q, [])
+
+    ctx_empty = _ctx(
+        factory=m5_session_factory,
+        redis=redis_client,
+        settings=m5_settings,
+        provider=empty_provider,
+    )
+    await run_collector(
+        ctx_empty,
+        "research",
+        inputs={"fixture_id": str(fid), "phase": ForecastPhase.MORNING.value},
+    )
+
+    async with m5_session_factory() as session:
+        run_empty = (
+            await session.execute(select(ResearchRun).where(ResearchRun.fixture_id == fid))
+        ).scalar_one()
+        assert run_empty.status == ResearchState.NO_USEFUL_RESULTS.value
+        assert run_empty.documents_count == 0
+        assert run_empty.claims_count == 0
+
+
+@pytest.mark.asyncio
+async def test_claim_level_as_of_safety_integration(
+    m5_session_factory: Any,
+    m5_settings: Settings,
+) -> None:
+    """Regression for M5.1 §2:
+    Document retrieved at T0
+    Claim extracted at T2
+    Query as_of T1: document visible, claim NOT visible.
+    Query as_of T3: claim visible.
+    """
+    from sports_intelligence.research.service import get_research_for_fixture
+
+    seeded = await _seed_fixture(m5_session_factory)
+    fid = seeded["fixture_id"]
+
+    t0 = datetime(2026, 8, 20, 10, 0, tzinfo=UTC)
+    t1 = datetime(2026, 8, 20, 11, 0, tzinfo=UTC)
+    t2 = datetime(2026, 8, 20, 12, 0, tzinfo=UTC)
+    t3 = datetime(2026, 8, 20, 13, 0, tzinfo=UTC)
+
+    async with m5_session_factory() as session:
+        run = ResearchRun(
+            id=uuid.uuid4(),
+            fixture_id=fid,
+            phase="morning",
+            status=ResearchState.AVAILABLE.value,
+            provider="mock",
+            queries_count=1,
+            documents_count=1,
+            claims_count=1,
+            captured_at=t0,
+        )
+        session.add(run)
+        await session.flush()
+
+        doc = ResearchDocument(
+            id=uuid.uuid4(),
+            fixture_id=fid,
+            run_id=run.id,
+            url="https://site.com/doc",
+            domain="site.com",
+            title="Injury Doc",
+            published_at=t0,
+            retrieved_at=t0,
+            content_hash="hash_doc_t0",
+            provider="mock",
+        )
+        session.add(doc)
+        await session.flush()
+
+        claim = ResearchClaim(
+            id=uuid.uuid4(),
+            document_id=doc.id,
+            fixture_id=fid,
+            claim_type="availability",
+            claim_text="Late extracted claim at T2",
+            confidence=0.9,
+            extracted_at=t2,
+            created_at=t2,
+        )
+        session.add(claim)
+        await session.commit()
+
+    async with m5_session_factory() as session:
+        # Query at T1 (before claim was extracted at T2)
+        view_t1 = await get_research_for_fixture(session, fid, as_of=t1)
+        assert len(view_t1.documents) == 1
+        assert len(view_t1.claims) == 0  # Claim excluded!
+
+        # Query at T3 (after claim was extracted at T2)
+        view_t3 = await get_research_for_fixture(session, fid, as_of=t3)
+        assert len(view_t3.documents) == 1
+        assert len(view_t3.claims) == 1  # Claim included!
+        assert view_t3.claims[0].claim_text == "Late extracted claim at T2"

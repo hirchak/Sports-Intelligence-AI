@@ -53,6 +53,7 @@ class ResearchCollector:
     name = "research"
     category = FreshnessCategory.RESEARCH
     priority = Priority.P3
+    owns_quota: bool = True
 
     def __init__(self, extractor: ClaimExtractor | None = None) -> None:
         self.extractor = extractor or RuleBasedClaimExtractor()
@@ -61,7 +62,7 @@ class ResearchCollector:
         return f"research:{fixture_id}"
 
     def cost_estimate(self, **_: Any) -> int:
-        return 6
+        return 1
 
     def _require_search_provider(self, ctx: CollectorContext) -> SearchProvider:
         provider = ctx.provider
@@ -101,7 +102,7 @@ class ResearchCollector:
                 normalized={
                     "fixture_id": str(fid),
                     "phase": phase,
-                    "status": ResearchState.NO_USEFUL_RESULTS.value,
+                    "status": ResearchState.DISABLED.value,
                     "provider": "disabled",
                     "queries": [],
                     "queries_count": 0,
@@ -149,18 +150,95 @@ class ResearchCollector:
         raw_items: list[SearchResultItem] = []
         latest_retrieved_at = datetime.now(UTC)
         rate_headers: dict[str, str] = {}
+        queries_executed: list[str] = []
+        provider_error: Exception | None = None
 
-        # 3. Execute bounded queries
+        # 3. Execute bounded queries with per-request quota protection & ledger
         for query in queries:
-            resp = await provider.search(
-                query, max_results=ctx.settings.research_max_results_per_query
+            # Per-query quota gate BEFORE dispatching HTTP request
+            decision = await ctx.quota.reserve(
+                provider=provider.name,
+                priority=self.priority,
+                estimated_cost=1,
             )
-            latest_retrieved_at = max(latest_retrieved_at, resp.retrieved_at)
-            if resp.rate_limit_headers:
-                rate_headers.update(resp.rate_limit_headers)
-            if resp.raw_payload:
-                all_raw_results.append(resp.raw_payload)
-            raw_items.extend(resp.results)
+            if decision.denied:
+                logger.warning(
+                    "search query quota denied; stopping further queries",
+                    extra={"query": query, "reason": decision.reason},
+                )
+                break
+
+            q_start = datetime.now(UTC)
+            try:
+                resp = await provider.search(
+                    query, max_results=ctx.settings.research_max_results_per_query
+                )
+                q_end = datetime.now(UTC)
+                await ctx.quota.record_success(
+                    provider=provider.name,
+                    endpoint_category="research",
+                    started_at=q_start,
+                    finished_at=q_end,
+                    headers=resp.rate_limit_headers,
+                    priority=self.priority,
+                    estimated_cost=1,
+                    fixture_id=fid,
+                )
+                queries_executed.append(query)
+                latest_retrieved_at = max(latest_retrieved_at, resp.retrieved_at)
+                if resp.rate_limit_headers:
+                    rate_headers.update(resp.rate_limit_headers)
+                if resp.raw_payload:
+                    all_raw_results.append(resp.raw_payload)
+                raw_items.extend(resp.results)
+            except Exception as exc:
+                q_end = datetime.now(UTC)
+                await ctx.quota.record_failure(
+                    provider=provider.name,
+                    endpoint_category="research",
+                    started_at=q_start,
+                    exc=exc,
+                    headers=getattr(exc, "quota_headers", None),
+                    priority=self.priority,
+                    estimated_cost=1,
+                    fixture_id=fid,
+                )
+                logger.warning(
+                    "research search query failed",
+                    extra={"query": query, "error": str(exc)},
+                    exc_info=True,
+                )
+                provider_error = exc
+                break
+
+        # If provider failed and no raw items were retrieved, record PROVIDER_ERROR
+        if provider_error is not None and not raw_items:
+            normalized = {
+                "fixture_id": str(fid),
+                "phase": phase,
+                "status": ResearchState.PROVIDER_ERROR.value,
+                "provider": provider.name,
+                "queries": queries_executed,
+                "queries_count": len(queries_executed),
+                "documents_count": 0,
+                "claims_count": 0,
+                "conflicts_count": 0,
+                "documents": [],
+                "details": {
+                    "error": str(provider_error),
+                    "error_class": provider_error.__class__.__name__,
+                },
+            }
+            return CollectorResult(
+                raw_payload={
+                    "queries": queries,
+                    "raw_responses": all_raw_results,
+                    "error": str(provider_error),
+                },
+                normalized=normalized,
+                rate_headers=rate_headers,
+                retrieved_at=latest_retrieved_at,
+            )
 
         # 4. Deduplicate candidate documents
         deduped_docs = deduplicate_search_results(raw_items)
@@ -168,32 +246,45 @@ class ResearchCollector:
         # 5. Extract claims for each document
         doc_claim_map: dict[str, list[ExtractedClaimDTO]] = {}
         all_claims: list[ExtractedClaimDTO] = []
+        extraction_unavailable = False
 
-        for doc in deduped_docs:
-            claims = await self.extractor.extract_claims(
-                doc,
-                home_team_id=home_team.id,
-                away_team_id=away_team.id,
-                home_team_name=home_team.name,
-                away_team_name=away_team.name,
-            )
-            doc_key = normalize_url(doc.url)
-            doc_claim_map[doc_key] = claims
-            all_claims.extend(claims)
+        extraction_enabled = getattr(ctx.settings, "research_claim_extraction_enabled", True)
+        if not extraction_enabled or self.extractor is None:
+            extraction_unavailable = True
+        else:
+            try:
+                for doc in deduped_docs:
+                    claims = await self.extractor.extract_claims(
+                        doc,
+                        home_team_id=home_team.id,
+                        away_team_id=away_team.id,
+                        home_team_name=home_team.name,
+                        away_team_name=away_team.name,
+                    )
+                    doc_key = normalize_url(doc.url)
+                    doc_claim_map[doc_key] = claims
+                    all_claims.extend(claims)
+            except Exception as exc:
+                logger.warning(
+                    "claim extraction failed or unavailable",
+                    extra={"error": str(exc)},
+                    exc_info=True,
+                )
+                extraction_unavailable = True
+                all_claims = []
 
         # 6. Conflict detection
         conflicted_claims = detect_conflicts(all_claims)
         conflicts_count = sum(1 for c in conflicted_claims if c.conflict_flag)
 
-        # Re-assign conflicted claims back to documents
-        # Map by claim text for lookup
-        conflicted_by_text = {c.claim_text: c for c in conflicted_claims}
+        # Re-assign conflicted claims back to documents mapped by stable claim ID (never text)
+        conflicted_by_id = {c.id: c for c in conflicted_claims}
 
         normalized_docs: list[dict[str, Any]] = []
         for doc in deduped_docs:
             doc_key = normalize_url(doc.url)
             original_claims = doc_claim_map.get(doc_key, [])
-            updated_claims = [conflicted_by_text.get(c.claim_text, c) for c in original_claims]
+            updated_claims = [conflicted_by_id.get(c.id, c) for c in original_claims]
             normalized_docs.append(
                 {
                     "url": doc.url,
@@ -208,6 +299,7 @@ class ResearchCollector:
                     "metadata": doc.provider_metadata,
                     "claims": [
                         {
+                            "id": str(c.id),
                             "claim_type": (
                                 c.claim_type.value
                                 if isinstance(c.claim_type, ClaimType)
@@ -216,6 +308,7 @@ class ResearchCollector:
                             "claim_text": c.claim_text,
                             "confidence": c.confidence,
                             "team_id": str(c.team_id) if c.team_id else None,
+                            "extracted_at": c.extracted_at.isoformat(),
                             "valid_from": c.valid_from.isoformat() if c.valid_from else None,
                             "valid_until": c.valid_until.isoformat() if c.valid_until else None,
                             "conflict_flag": c.conflict_flag,
@@ -231,7 +324,9 @@ class ResearchCollector:
             )
 
         # 7. Research status determination
-        if not deduped_docs or not all_claims:
+        if extraction_unavailable and deduped_docs:
+            status = ResearchState.EXTRACTION_UNAVAILABLE
+        elif not deduped_docs or not all_claims:
             status = ResearchState.NO_USEFUL_RESULTS
         else:
             status = ResearchState.AVAILABLE
@@ -241,8 +336,8 @@ class ResearchCollector:
             "phase": phase,
             "status": status.value,
             "provider": provider.name,
-            "queries": queries,
-            "queries_count": len(queries),
+            "queries": queries_executed,
+            "queries_count": len(queries_executed),
             "documents_count": len(deduped_docs),
             "claims_count": len(all_claims),
             "conflicts_count": conflicts_count,
@@ -328,11 +423,13 @@ class ResearchCollector:
 
             await session.flush()
 
-            # 3. Insert ResearchClaims
+            # 3. Insert ResearchClaims with stable IDs, extracted_at, and deferred FK for conflicts
             for doc_dict, doc_id in doc_items:
                 claims_data = doc_dict.get("claims", [])
                 for claim_dict in claims_data:
-                    claim_id = _uuid.uuid4()
+                    claim_id = (
+                        _uuid.UUID(str(claim_dict["id"])) if claim_dict.get("id") else _uuid.uuid4()
+                    )
                     team_id_raw = claim_dict.get("team_id")
                     team_id = _uuid.UUID(str(team_id_raw)) if team_id_raw else None
 
@@ -340,6 +437,12 @@ class ResearchCollector:
                     v_from = datetime.fromisoformat(v_from_str) if v_from_str else None
                     v_until_str = claim_dict.get("valid_until")
                     v_until = datetime.fromisoformat(v_until_str) if v_until_str else None
+
+                    ext_at_str = claim_dict.get("extracted_at")
+                    ext_at = datetime.fromisoformat(ext_at_str) if ext_at_str else captured_at
+
+                    conf_id_raw = claim_dict.get("conflicting_claim_id")
+                    conf_id = _uuid.UUID(str(conf_id_raw)) if conf_id_raw else None
 
                     claim_row = ResearchClaim(
                         id=claim_id,
@@ -349,14 +452,11 @@ class ResearchCollector:
                         claim_type=str(claim_dict.get("claim_type", "other")),
                         claim_text=str(claim_dict.get("claim_text", "")),
                         confidence=float(claim_dict.get("confidence", 0.8)),
+                        extracted_at=ext_at,
                         valid_from=v_from,
                         valid_until=v_until,
                         conflict_flag=bool(claim_dict.get("conflict_flag", False)),
-                        conflicting_claim_id=(
-                            _uuid.UUID(str(claim_dict["conflicting_claim_id"]))
-                            if claim_dict.get("conflicting_claim_id")
-                            else None
-                        ),
+                        conflicting_claim_id=conf_id,
                         extraction_version=str(claim_dict.get("extraction_version", "v1_rule")),
                         metadata_jsonb=claim_dict.get("metadata", {}),
                         created_at=datetime.now(UTC),

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from sports_intelligence.providers.search.base import (
@@ -19,12 +20,14 @@ class MockSearchProvider:
         canned_results: dict[str, list[SearchResultItem]] | None = None,
         error_to_raise: Exception | None = None,
         default_results_count: int = 2,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.canned_results: dict[str, list[SearchResultItem]] = canned_results or {}
         self.query_errors: dict[str, Exception] = {}
         self.error_to_raise = error_to_raise
         self.default_results_count = default_results_count
         self.calls: list[tuple[str, int]] = []
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     @property
     def history(self) -> list[str]:
@@ -54,7 +57,7 @@ class MockSearchProvider:
         if query in self.query_errors:
             raise self.query_errors[query]
 
-        now = datetime.now(UTC)
+        now = self._clock()
 
         if query in self.canned_results:
             results = self.canned_results[query][:max_results]

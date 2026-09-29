@@ -430,6 +430,7 @@ class ResearchClaim(Base):
 
     __tablename__ = "research_claims"
     __table_args__ = (
+        Index("ix_research_claims_fixture_extracted", "fixture_id", text("extracted_at DESC")),
         Index("ix_research_claims_fixture_created", "fixture_id", text("created_at DESC")),
         Index("ix_research_claims_document", "document_id"),
         Index("ix_research_claims_fixture_type", "fixture_id", "claim_type"),
@@ -448,11 +449,22 @@ class ResearchClaim(Base):
     claim_type: Mapped[str] = mapped_column(String(32), nullable=False)
     claim_text: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    extracted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     conflict_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     conflicting_claim_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), nullable=True
+        UUID(as_uuid=True),
+        ForeignKey(
+            "research_claims.id",
+            ondelete="SET NULL",
+            deferrable=True,
+            initially="DEFERRED",
+            name="fk_research_claims_conflicting_claim_id",
+        ),
+        nullable=True,
     )
     extraction_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1_rule")
     metadata_jsonb: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)

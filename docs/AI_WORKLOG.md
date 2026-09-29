@@ -1535,6 +1535,91 @@ button-based menus and a Back button on every screen.
 **Next action**
 - Await independent review of Milestone M5 on build/m5.
 
+---
+
+### 2026-09-29 — Antigravity (Gemini 3.8 Flash) (Milestone M5.1 correctness pass)
+
+**Milestone:** M5.1 (Web Research Subsystem Correctness Pass)  
+**Task:** Address all findings from independent review verdict `M5 = FAIL` on branch `build/m5` without redesigning core architecture.
+
+**Completed**
+1. **Fix Tavily retrieval-time capturing after response**:
+   - Updated `src/sports_intelligence/providers/search/tavily.py` so `retrieved_at = self._clock()` is assigned strictly *after* `response = await self._client.post(...)`. Added optional injectable `clock` parameter.
+   - Added unit regression test `test_tavily_retrieval_time_captured_after_response_anti_leakage`.
+2. **Claim-level temporal safety (`extracted_at <= as_of`)**:
+   - Added timezone-aware `extracted_at` to `ResearchClaim` model, `ExtractedClaimDTO`, and `ResearchClaimOut`.
+   - Created descending composite index `ix_research_claims_fixture_extracted` on `(fixture_id, extracted_at DESC)`.
+   - Created Alembic migration `0007_m51_claim_extracted_at_and_fk.py`. Verified upgrade/downgrade and `alembic check`.
+   - Updated `get_research_for_fixture()` to filter `claim.extracted_at <= as_of`.
+   - Added unit test `test_claim_level_as_of_safety_filtering` and integration test.
+3. **Search quota and ledger matching real HTTP calls**:
+   - Configured `ResearchCollector.owns_quota = True`, bypassing framework-level outer reservation and ledger recording.
+   - `ResearchCollector` invokes `ctx.quota.reserve(cost=1)` and records ledger success/failure for each individual search query executed (up to 6 queries).
+   - If quota is denied mid-run, execution cleanly breaks and persists prior results or records `NO_USEFUL_RESULTS`.
+   - Fresh research runs skip external calls with zero quota requests.
+   - Added tests: `test_research_collector_records_exact_queries_in_ledger`, `test_research_collector_stops_when_quota_exhausted`, and `test_fresh_research_issues_zero_search_calls`.
+4. **Conflict referential integrity**:
+   - Added self-referential `ForeignKey("research_claims.id", ondelete="SET NULL", deferrable=True, initially="DEFERRED")` constraint on `ResearchClaim.conflicting_claim_id`.
+   - Preserved stable claim UUIDs throughout extraction and conflict flagging.
+   - Verified reciprocal integrity (`A.conflicting_claim_id == B.id` and `B.conflicting_claim_id == A.id`) directly in PostgreSQL.
+5. **SearchProvider resource cleanup**:
+   - Refactored `src/sports_intelligence/workers/tasks/collect.py` `_run_collect_job()` to only instantiate `search_provider` for research jobs (skipping sports/odds providers), and guaranteed `search_provider.aclose()` in the `finally` block across all scenarios.
+   - Added parameterized unit test `test_run_collect_job_always_closes_search_provider`.
+6. **Structured research states**:
+   - Differentiated `DISABLED`, `PROVIDER_ERROR`, `NO_USEFUL_RESULTS`, `EXTRACTION_UNAVAILABLE`, and `AVAILABLE`.
+7. **Historical view consistency**:
+   - Supported default Option B (`mode="latest_run"`) enforcing `run_id == run_row.id` and run status consistency, and Option A (`mode="accumulated"`).
+   - Added `mode` query parameter to `GET /v1/fixtures/{fixture_id}/research`.
+8. **Test & CI isolation**:
+   - All 379 tests pass offline with zero external network requests.
+
+**Files changed**
+- `src/sports_intelligence/providers/search/tavily.py`
+- `src/sports_intelligence/providers/search/mock.py`
+- `src/sports_intelligence/db/models/snapshots.py`
+- `src/sports_intelligence/db/migrations/versions/0007_m51_claim_extracted_at_and_fk.py`
+- `src/sports_intelligence/research/models.py`
+- `src/sports_intelligence/research/service.py`
+- `src/sports_intelligence/schemas/research.py`
+- `src/sports_intelligence/collectors/framework.py`
+- `src/sports_intelligence/collectors/research_collector.py`
+- `src/sports_intelligence/api/routes/research.py`
+- `src/sports_intelligence/workers/tasks/collect.py`
+- `tests/unit/test_search_provider.py`
+- `tests/unit/test_research_provenance.py`
+- `tests/unit/test_worker_init_cleanup.py`
+- `tests/unit/collectors/test_research_collector.py`
+- `tests/integration/test_m5_research.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (308 passed, 71 deselected in 12.75s)
+- `TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration` → PASS (71 passed, 308 deselected in 18.29s)
+- `uv run pytest -q` → PASS (379 passed in 20.18s)
+- `uv run ruff check .` → PASS (clean)
+- `uv run ruff format --check .` → PASS (clean, 157 files formatted)
+- `uv run mypy src` → PASS (clean in 104 source files)
+- `uv run alembic check` → PASS (No new upgrade operations detected)
+- `docker compose config -q` / `--profile telegram` → PASS (clean)
+- Secret scan → clean (no credentials committed)
+
+**Known issues**
+- none.
+
+**Spec / ADR deviations**
+- none.
+
+**Git**
+- branch: build/m5
+- commit: pending commit for M5.1
+
+**Next action**
+- Commit M5.1 changes, push `build/m5`, verify CI, and await independent review.
+
+
 
 
 

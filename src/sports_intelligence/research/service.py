@@ -28,6 +28,7 @@ class ResearchClaimView:
     conflicting_claim_id: uuid.UUID | None
     extraction_version: str
     metadata: dict[str, Any]
+    extracted_at: datetime
     created_at: datetime
 
 
@@ -64,14 +65,22 @@ async def get_research_for_fixture(
     fixture_id: uuid.UUID,
     *,
     as_of: datetime | None = None,
+    mode: str = "latest_run",
 ) -> FixtureResearchView:
     """Read research evidence for a fixture with strict provenance & anti-leakage control.
 
+    Contract options:
+    - mode="latest_run" (Option B, default): Returns evidence strictly belonging to the
+      latest ResearchRun captured at or before `as_of`. Its documents have `run_id == run_row.id`,
+      and status matches `run_row.status`. This prevents combining status from one run with
+      documents from another run.
+    - mode="accumulated" (Option A): Returns all evidence observed for the fixture at or before
+      `as_of`, with status reflecting the latest run.
+
     Enforces:
-    - `retrieved_at <= as_of`
-    - `published_at <= as_of` (where publication date exists;
-      unknown dates stay None, never invented)
-    - documents or claims observed/published after `as_of` are excluded from historical replay.
+    - `retrieved_at <= as_of`: document response-observation time.
+    - `published_at <= as_of`: document publication date when known (unknown dates stay None).
+    - `extracted_at <= as_of`: claim extraction time (claims extracted after as_of are excluded).
     """
     as_of_aware = (
         as_of.astimezone(UTC)
@@ -100,6 +109,9 @@ async def get_research_for_fixture(
 
     # 2. Fetch documents satisfying strict as_of anti-leakage constraints
     doc_conditions = [ResearchDocument.fixture_id == fixture_id]
+    if mode == "latest_run":
+        doc_conditions.append(ResearchDocument.run_id == run_row.id)
+
     if as_of_aware is not None:
         doc_conditions.append(ResearchDocument.retrieved_at <= as_of_aware)
         doc_conditions.append(
@@ -130,14 +142,18 @@ async def get_research_for_fixture(
 
     doc_ids = [d.id for d in doc_rows]
 
-    # 3. Fetch claims linked to these documents
+    # 3. Fetch claims linked to these documents with claim-level as_of safety
+    claim_conditions = [
+        ResearchClaim.fixture_id == fixture_id,
+        ResearchClaim.document_id.in_(doc_ids),
+    ]
+    if as_of_aware is not None:
+        claim_conditions.append(ResearchClaim.extracted_at <= as_of_aware)
+
     claim_stmt = (
         select(ResearchClaim)
-        .where(
-            ResearchClaim.fixture_id == fixture_id,
-            ResearchClaim.document_id.in_(doc_ids),
-        )
-        .order_by(ResearchClaim.created_at.desc())
+        .where(*claim_conditions)
+        .order_by(ResearchClaim.extracted_at.desc(), ResearchClaim.created_at.desc())
     )
     claim_rows = (await session.execute(claim_stmt)).scalars().all()
 
@@ -157,6 +173,7 @@ async def get_research_for_fixture(
             conflicting_claim_id=c.conflicting_claim_id,
             extraction_version=c.extraction_version,
             metadata=c.metadata_jsonb,
+            extracted_at=c.extracted_at,
             created_at=c.created_at,
         )
         claim_views.append(view)
