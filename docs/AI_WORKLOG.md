@@ -1614,10 +1614,10 @@ button-based menus and a Back button on every screen.
 
 **Git**
 - branch: build/m5
-- commit: pending commit for M5.1
+- commit: 147862f (initial M5.1 commit)
 
 **Next action**
-- Commit M5.1 changes, push `build/m5`, verify CI, and await independent review.
+- Commit docs sync, push build/m5, verify CI, and await independent review.
 
 
 

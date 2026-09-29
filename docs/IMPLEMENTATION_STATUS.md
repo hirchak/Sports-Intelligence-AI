@@ -601,10 +601,10 @@ Branch:
 - `build/m5` (M5 complete, awaiting review); base `main` at `2e4683a` (`v0.5-m4`)
 
 Commit:
-- (pending commit for M5.1 correctness pass)
+- `147862f` (Milestone M5.1 HEAD)
 
 Working tree:
-- modifications staged for M5.1 commit
+- clean after commit
 
 ---
 
