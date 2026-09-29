@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid as _uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -29,6 +30,7 @@ from sports_intelligence.db.models import (
     ResearchRun,
     Team,
 )
+from sports_intelligence.providers.errors import RETRYABLE_PROVIDER_ERRORS
 from sports_intelligence.providers.search.base import (
     SearchProvider,
     SearchResultItem,
@@ -160,21 +162,6 @@ class ResearchCollector:
 
         # 3. Execute bounded queries with per-request quota protection & ledger
         MAX_SEARCH_ATTEMPTS = 3
-        import asyncio
-
-        from sports_intelligence.providers.errors import (
-            ProviderRateLimitError,
-            ProviderServerError,
-            ProviderTimeoutError,
-            ProviderTransportError,
-        )
-
-        RETRYABLE_PROVIDER_ERRORS = (
-            ProviderRateLimitError,
-            ProviderServerError,
-            ProviderTimeoutError,
-            ProviderTransportError,
-        )
 
         for query in queries:
             query_success = False
