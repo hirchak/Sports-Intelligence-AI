@@ -9,217 +9,101 @@ Update it before every milestone review.
 
 # Review status
 
-**Ready for review:** ACCEPTED (Milestone M4 passed independent review)  
+**Ready for review:** YES (Milestone M5 implemented, fully tested, ready for review)  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M4 (M4.4 accepted) — merging to main, tagging v0.5-m4  
-**Review target branch:** `build/m4` (merging to main)  
-**Review target commit:** `0d0cd4a631c067a29c21ce584e806a47c534dc82` — M4 accepted HEAD  
-**Previous accepted state:** `main` = `7d23c9d` (M3 accepted via PR #5)  
-**Review scope:** diff `main..build/m4` (M4 + M4.1 + M4.2 + M4.3 + M4.4)
+**Milestone:** M5 — Web Research Subsystem  
+**Review target branch:** `build/m5`  
+**Review target commit:** HEAD of `build/m5`  
+**Previous accepted state:** `main` = `2e4683a` (`v0.5-m4` accepted M4 merge)  
+**Review scope:** diff `main..build/m5` (Milestone M5 changes)
 
 ---
 
-# Independent review history
+# Milestone M5 Specification Alignment
 
-- M4 → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL**; M4.3 → **FAIL**;
-  M4.4 → **PASS / ACCEPTED** (accepted remote HEAD: `0d0cd4a631c067a29c21ce584e806a47c534dc82`).
+Implemented strictly per authoritative project specifications:
+- `08_FOOTBALL_ANALYTICS_PIPELINE.md`
+- `09_AGENT_CATALOG_AND_ORCHESTRATION.md`
+- `10_DATABASE_AND_DATA_LIFECYCLE.md`
+- `11_API_QUOTA_CACHING_STRATEGY.md`
+- `14_DATA_QUALITY_PROVENANCE_AND_LEAKAGE.md`
 
-# What changed in M4.4
-
-## 1. API-Football /teams/statistics normalization
-
-- Real v3 shape: `fixtures.{played,wins,draws,loses}.{home,away,total}`
-  (provider spells `loses`; normalized to `losses`);
-  `goals.for.total.{home,away,total}` / `goals.against.total.{...}`;
-  `clean_sheet.{home,away,total}`; `failed_to_score.{home,away,total}`.
-- Metrics: played/wins/draws/losses/goals_for/goals_against/
-  clean_sheets/failed_to_score/form; missing → None, never zero.
-- Contract-faithful SENTINEL_TEAM_STATS; every metric asserted +
-  missing-values test.
-
-## 2. Season identity pinned end-to-end
-
-- `PreMatchDecision.season_id` (from Fixture.season_id) flows through
-  `execute_plan()` into standings/team_stats inputs.
-- Exact Season resolver replaces the old `active=True LIMIT 1` helper:
-  fetches the exact Season row, verifies league ownership, parses the
-  year deterministically, refuses missing/mismatched identity.
-- Lock identity, freshness lookup (`StandingsCollector.latest_snapshot` and
-  `TeamStatisticsCollector.latest_snapshot` both filter by exact season_id,
-  returning (None, None) when season_id is None), provider `season=` and
-  persisted snapshot `season_id` all use the exact season.
-- Fixed `TeamStatisticsCollector.persist()` to omit invalid `source_fingerprint`
-  argument matching `TeamStatisticsSnapshot` schema.
-- Two-season same-league regression: fixture on season B → provider
-  season=2026, snapshot pinned to B uuid, fresh A never satisfies B,
-  A/B lock keys distinct.
-
-## 3. Stable TTL refresh opportunity
-
-- no snapshot → `due:missing`; fresh → scanner creates NO job (cheap
-  freshness check before create_or_get_job); stale →
-  `due:<captured+TTL>` stable until a new snapshot.
-- Framework freshness remains the race-safe double-check.
-- Acceptance flow regression: T0+20 no job; T0+31 job A; broker fail →
-  A FAILED; T0+35 same uuid requeued; T0+40 RUNNING no duplicate;
-  T0+41 new snapshot → next scan no job.
-- Lineup windows unchanged.
-
-## 4. Quota observations at response time
-
-- `QuotaBucket.observed_at` = `finished_at` (response observation
-  moment), never request start.
-- Overlap/order regression: later response becomes the authoritative
-  generation.
-
-# Verification
-
-- unit → **265 passed**; integration → **59 passed** (isolated
-  `sports_intel_test` + Redis db15, incl. alembic check)
-- ruff/format clean; strict mypy clean (87 files); compose OK;
-  secrets clean; no schema migration needed.
+### Architecture Boundaries & Invariants Enforced
+- **Zero Prediction / Probability Logic in M5**: Web research is an evidence collector and claim extractor only. MatchContext assembly and LLM prediction routing are reserved for M7.
+- **Graceful Degradation / Optionality**: Web research is fully optional. When `SEARCH_PROVIDER` is disabled or empty, or `RESEARCH_ENABLED=False`, zero external provider requests are made, and pre-match scan/fixtures pipelines operate normally.
+- **Strict Anti-Leakage / Provenance**: All research documents and claims are timestamped with `retrieved_at` and `published_at`. Point-in-time querying via `as_of` filters out any information retrieved or published after the audit cutoff (`retrieved_at <= as_of` and `published_at <= as_of`).
+- **Conflict Preservation**: Contradictory claims (e.g. player ruled out vs passed fitness test) are never deleted, overwritten, or silently merged. Both opposing claims are persisted, flagged with `conflict_flag=True`, cross-referenced via `conflicting_claim_id`, and documented with metadata for downstream Data Quality assessment.
+- **Zero Live Search API Calls in Tests/CI**: Fully tested offline with `MockSearchProvider`.
 
 ---
 
-# What changed in M4.3 (per FAIL item)
+# What Changed in M5
 
-## 1. Odds capability gating (no silent MOCK)
+## 1. Search Provider Boundary & Adapters
+- `src/sports_intelligence/providers/search/base.py`:
+  - `SearchProvider` async protocol (`search(query, max_results=5) -> SearchResponse`).
+  - DTOs: `SearchResultItem`, `SearchResponse`.
+- `src/sports_intelligence/providers/search/mock.py`:
+  - `MockSearchProvider`: deterministic offline provider with canned responses, query fallbacks, error simulation, query history tracking, and JSON-serializable raw payloads.
+- `src/sports_intelligence/providers/search/tavily.py`:
+  - `TavilySearchProvider`: production adapter with bounded timeouts, retries (up to 3 attempts with exponential backoff and jitter), 4xx non-retryable handling, canonical URL normalization, secret redaction, and rate limit header parsing.
+- `src/sports_intelligence/providers/search/factory.py`:
+  - Strict gating: refuses silent mock in `sandbox`/`live_local` unless `search_allow_mock_override=True`.
 
-- `build_odds_provider`: APP_ENV=mock + empty/mock → MockOddsProvider;
-  sandbox/live_local + empty → **None** (DISABLED); sandbox/live_local +
-  mock → requires `odds_allow_mock_override` else ProviderConfigError.
-- `Settings.odds_capability_enabled` drives the planner: the pre-match
-  scanner never enqueues odds when disabled (planned=1, created=0,
-  enqueued=0); `sports.collect` fails closed for odds jobs when
-  disabled.
-- Regression: live_local + api_football + odds_provider="" → zero odds
-  jobs, zero OddsSnapshotSet rows.
+## 2. Claim Extraction, Conflict Detection & Anti-Leakage
+- `src/sports_intelligence/research/query_builder.py`:
+  - `build_research_queries`: bounded (max 6), deterministic queries per fixture based on team names, kickoff date, and phase (`morning` preparation vs `prematch` lineup/fitness refresh).
+- `src/sports_intelligence/research/dedup.py`:
+  - `deduplicate_search_results`, `normalize_url` (strips tracking parameters, query fragments, trailing slashes), `content_sha256`.
+- `src/sports_intelligence/research/extractor.py`:
+  - `RuleBasedClaimExtractor` / `MockClaimExtractor`: extracts claims across 8 categories (`AVAILABILITY`, `SUSPENSION`, `ROTATION`, `LINEUP`, `MANAGER_STATEMENT`, `TACTICAL`, `TRAVEL`, `TEAM_NEWS`), assigns team ownership, confidence scores, and extraction metadata.
+- `src/sports_intelligence/research/conflict.py`:
+  - `detect_conflicts`: detects contradictory claims (e.g. absent vs present for the same subject/player or team); strictly preserves both claims, flags `conflict_flag=True`, links `conflicting_claim_id`, and attaches audit metadata.
+- `src/sports_intelligence/research/service.py`:
+  - `get_research_for_fixture`: anti-leakage audit service enforcing `as_of` temporal filtering (`retrieved_at <= as_of` and `published_at <= as_of`) for historical replay and point-in-time consistency.
 
-## 2. Provider market translation
+## 3. Database Persistence & Migrations
+- `src/sports_intelligence/db/models/snapshots.py`:
+  - Models: `ResearchRun`, `ResearchDocument`, `ResearchClaim` with descending composite indexes (`ix_research_runs_fixture_captured`, `ix_research_docs_fixture_retrieved`, `ix_research_claims_fixture_type`) and foreign keys.
+- `src/sports_intelligence/db/migrations/versions/0006_m5_research_documents_claims.py`:
+  - Clean upgrade/downgrade migration for research tables, indexes, and constraints. Verified by `alembic check`.
 
-- `OddsProvider.request_markets()` — provider owns the translation from
-  internal product markets to HTTP market keys; guarantees
-  `alternate_totals` is requested alongside `totals` (exact O/U 1.5/2.5).
-- Cost estimation (`collect.py`, `OddsCollector`) uses the ACTUAL
-  provider market set: 5 markets × 1 region → 5 credits reserved before
-  the network call.
-- Contract test captures the outgoing `markets=` query and asserts
-  alternate_totals presence.
+## 4. Collector & Workers Framework Integration
+- `src/sports_intelligence/collectors/research_collector.py`:
+  - Registered collector (`name="research"`, `category=FreshnessCategory.RESEARCH`, `priority=Priority.P3`), supports coalescing locks (`research:{fixture_id}`), raw payload storage in `raw_provider_payloads`, and snapshot persistence.
+- `src/sports_intelligence/collectors/pre_match_scan.py`:
+  - Pre-match scanner includes `FreshnessCategory.RESEARCH` in scan plan and TTL evaluations.
+- `src/sports_intelligence/workers/tasks/research.py`:
+  - Celery task routed to `research_io` queue.
 
-## 3. Fixture-level lineup refresh
-
-- `LineupCollector.refresh_due` aggregates BOTH fixture teams' latest
-  publication states: CONFIRMED stops polling only when both sides are
-  CONFIRMED; home CONFIRMED + away NOT_YET_PUBLISHED still refreshes the
-  next window; the requesting team_id in the job payload never
-  suppresses a needed later window.
-- Scenario integration test covers the full T20 flow.
-
-## 4. TTL refresh-opportunity identity
-
-- Opportunity = actual due generation: `latest_captured_at + effective
-  TTL` while fresh; `now` once stale; `due:missing` (stable) when no
-  snapshot exists yet.
-- Counterexample regression: job created while fresh, time advances
-  past the TTL inside the old global bucket → a new opportunity is
-  created (never suppressed by an unrelated bucket boundary).
-- Framework freshness remains the final safety check.
-
-## 5. Quota observation generations
-
-- Reservation counters are keyed to the observation GENERATION
-  (observed_at of the authoritative bucket); a newer observation starts
-  a fresh counter — reservations are "since this observation".
-- Regression: observed 100 → reserve 4 → new observation 96 → reserve 4
-  behaves as 96→92, not 96−4−4; concurrent reservations after a new
-  observation counted against the new generation.
-
-## 6. The Odds API quota limit
-
-- `parse_quota_headers("theoddsapi")` infers the daily limit from
-  `x-requests-used + x-requests-remaining` (8 + 492 → 500);
-  `x-requests-last` remains the actual last-call cost; degradation
-  percentages operate on the inferred 500-credit allowance.
-- Provider semantics documented in adapter/tests.
-
-## 7. FAILED job requeue
-
-- Collector jobs reuse the SAME job UUID within the same refresh
-  opportunity; a stranded FAILED job is re-enqueued via CAS
-  (FAILED → PENDING); RUNNING/SUCCEEDED never downgraded. Same logic
-  applied to scheduled discovery (`_run_schedule`).
-- Tests: broker-failure → job FAILED → next scan same opportunity
-  re-enqueues the same uuid; RUNNING job untouched by a later scan.
-
-## 8. Failure telemetry
-
-- `ProviderError.quota_headers` (safe rate-limit headers only) added;
-  API-Football 401/403/429/5xx and The Odds API 429/5xx populate it
-  plus `status_code`; framework passes them into `record_failure`.
-- Ledger test: 429 → status_code 429 + daily_remaining from safe
-  headers; no auth headers ever persisted.
-
-## 9. Scanner observability
-
-- `_dispatch_decision` returns planned / jobs_created / jobs_reused /
-  jobs_enqueued (+ per-category breakdown); reused jobs are never
-  reported as newly enqueued; Redis cleanup is finally-safe on enqueue
-  errors (test asserts counters after dedupe and requeue).
-
-# Kept unchanged (good M4.1/M4.2 work)
-
-scheduler wrapper, external-ID resolution, evidence linkage, coalescing
-winner publishing real persisted refs, sequential job attempts,
-completed-form inputs, DB-first reads, team-split persistence,
-no-vig completeness.
+## 5. REST API Routes
+- `src/sports_intelligence/api/routes/research.py`:
+  - `GET /v1/fixtures/{fixture_id}/research`: returns documents and claims with optional `as_of` query parameter.
+- `src/sports_intelligence/api/routes/status.py`:
+  - `GET /v1/fixtures/{fixture_id}/status`: reflects `research` category freshness state (`fresh`, `stale`, `unknown`) and last refresh timestamp.
 
 ---
 
-# Verification (actually run on this machine)
+# Verification Evidence (Local Execution)
 
-- `uv run pytest -q -m "not integration"` → **262 passed**
-- Integration suite (`sports_intel_test` + Redis db15) → **56 passed**
-  (incl. M4.3 file; alembic check + migration cycle; a one-time Redis
-  flush precedes the local run — counters live in Redis)
-- `uv run ruff check .` / `ruff format --check .` → clean
-- `uv run mypy src` → **no issues in 87 source files** (strict)
-- `docker compose config -q` (+telegram profile) → OK
-- Secret scan → clean
-
-# Known limitations (documented, intentional)
-
-1. Live provider smokes require local credentials; contract tests cover
-   normalization + failure telemetry; never blocks acceptance.
-2. Local integration runs flush Redis first (`make test-integration`)
-   so reservation counters never leak between runs; CI uses fresh
-   containers.
-
-# Scope guard respected
-
-No research, MatchContext, LLM, prediction, candidate ranking,
-settlement, live in-play, Hetzner, Hermes.
+- **Unit tests**: `uv run pytest -q -m "not integration"` → **300 passed, 66 deselected in 4.18s**
+- **Integration tests**: `TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" TEST_REDIS_URL="redis://localhost:6380/15" uv run pytest -q -m integration` → **66 passed, 300 deselected in 11.10s**
+- **Full test suite**: `uv run pytest -q` → **366 passed in 14.06s**
+- **Linter**: `uv run ruff check .` → **clean (All checks passed!)**
+- **Formatter**: `uv run ruff format --check .` → **clean (156 files already formatted)**
+- **Type checker**: `uv run mypy src` → **clean (Success: no issues found in 103 source files)**
+- **Alembic check**: `uv run alembic check` → **clean (No new upgrade operations detected)**
+- **Docker Compose**: `docker compose config -q` and `docker compose --profile telegram config -q` → **clean (OK)**
+- **Secret check**: clean, zero credentials in code or Git.
 
 ---
 
-# Suggested review order
+# Instructions for Independent Reviewer
 
-1. `AGENTS.md`, this file, `docs/CURRENT_TASK.md`
-2. Git diff `main..build/m4`
-3. Key files:
-   - `src/sports_intelligence/providers/odds/factory.py` (gating,
-     request_markets, failure headers)
-   - `src/sports_intelligence/collectors/refresh.py` (due generation)
-   - `src/sports_intelligence/collectors/quota.py` (observation
-     generations, inferred odds limit)
-   - `src/sports_intelligence/collectors/sports_collectors.py`
-     (fixture-level lineup refresh)
-   - `src/sports_intelligence/workers/tasks/pre_match.py`
-     (gating, counters, FAILED requeue)
-   - `src/sports_intelligence/workers/tasks/scheduling.py` (FAILED
-     requeue)
-   - `tests/integration/test_m4_collectors.py`, `tests/unit/test_odds_gating.py`
-
-# Next action after PASS
-
-Merge `build/m4` into `main`, tag `v0.5-m4`. Only then start M5 with
-explicit user approval.
+1. Verify git diff against `main` (`git diff main..build/m5`).
+2. Verify that no prediction, betting, or probability code exists in M5.
+3. Verify that `MockSearchProvider` is strictly used in CI/unit tests, with zero external network access.
+4. Verify anti-leakage temporal filtering (`as_of` queries) and conflict preservation logic.
+5. Verify schema synchronization (`alembic check`).
+6. Do NOT merge `build/m5` into `main` without explicit verdict.
+7. Do NOT start Milestone M6.

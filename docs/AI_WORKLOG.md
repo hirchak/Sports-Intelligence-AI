@@ -1359,5 +1359,118 @@ button-based menus and a Back button on every screen.
 **Next action**
 - Commit doc cleanup, push build/m4, merge into main via PR, tag v0.5-m4, create build/m5.
 
+---
+
+### 2026-09-29 10:00 +02:00 — Antigravity (Gemini 3.8 Flash)
+
+**Milestone:** M5
+**Task:** Milestone M5 Web Research Subsystem implementation, verification, and preparation for review
+
+**Completed**
+- Finalized accepted M4 state and merged `build/m4` to `main` via PR #6 (`2e4683a`), pushed tag `v0.5-m4`.
+- Created and switched to branch `build/m5`.
+- Implemented core freshness and phase definitions: `FreshnessCategory.RESEARCH`, `ResearchState`, `ClaimType`, and updated settings (`freshness_research_seconds`, `research_enabled`).
+- Implemented search provider boundary & adapters (`src/sports_intelligence/providers/search/`):
+  - `SearchProvider` Protocol, `SearchResultItem`, `SearchResponse`.
+  - `MockSearchProvider`: deterministic canned responses, token matching, error simulation, query history tracking, JSONB-safe datetime serialization.
+  - `TavilySearchProvider`: production-ready adapter with bounded timeouts, retries with backoff and jitter, 4xx non-retryable handling, canonical URL normalization, secret redaction, rate limit header parsing.
+  - `build_search_provider` factory: strict gating against silent mock in live environments without explicit override.
+- Implemented claim extraction, conflict detection & anti-leakage audit (`src/sports_intelligence/research/`):
+  - DTOs: `ExtractedClaimDTO`, `ResearchDocumentDTO`, `ResearchRunResultDTO`.
+  - `build_research_queries`: bounded (max 6), deterministic queries per fixture for MORNING and PREMATCH phases.
+  - `deduplicate_search_results`, `normalize_url` (strips tracking parameters, query fragments, trailing slashes), `content_sha256`.
+  - `RuleBasedClaimExtractor` / `MockClaimExtractor`: extracts claims across 8 categories, associates team IDs, assigns confidence scores.
+  - `detect_conflicts`: identifies contradictory presence/absence claims for the same subject or team; strictly preserves both claims, flags `conflict_flag=True`, links `conflicting_claim_id`, and attaches metadata.
+  - `get_research_for_fixture`: anti-leakage audit service enforcing `as_of` temporal cutoff (`retrieved_at <= as_of` and `published_at <= as_of`).
+- Implemented database models and migration (`src/sports_intelligence/db/`):
+  - `ResearchRun`, `ResearchDocument`, `ResearchClaim` models with descending composite indexes and foreign keys.
+  - Alembic migration `0006_m5_research_documents_claims.py` created, tested, and verified clean with `alembic check`.
+- Integrated collector and Celery workers:
+  - `ResearchCollector`: registered in framework (`name="research"`, `category=FreshnessCategory.RESEARCH`, `priority=Priority.P3`), supports coalescing locks (`research:{fixture_id}`), raw payload storage in `raw_provider_payloads`, and snapshot persistence.
+  - Pre-match scanner includes `FreshnessCategory.RESEARCH` in scan plan and TTL evaluations.
+  - Celery task `sports_intelligence.workers.tasks.research` routed to `research_io` queue.
+- Implemented REST API endpoints:
+  - `GET /v1/fixtures/{fixture_id}/research`: returns documents and claims with optional `as_of` query parameter.
+  - `GET /v1/fixtures/{fixture_id}/status`: reflects `research` freshness state and last refresh timestamp.
+- Added comprehensive unit and integration tests (300 unit + 66 integration = 366 passing tests).
+
+**Files changed**
+- Created:
+  - `src/sports_intelligence/api/routes/research.py`
+  - `src/sports_intelligence/collectors/research_collector.py`
+  - `src/sports_intelligence/db/migrations/versions/0006_m5_research_documents_claims.py`
+  - `src/sports_intelligence/providers/search/__init__.py`
+  - `src/sports_intelligence/providers/search/base.py`
+  - `src/sports_intelligence/providers/search/factory.py`
+  - `src/sports_intelligence/providers/search/mock.py`
+  - `src/sports_intelligence/providers/search/tavily.py`
+  - `src/sports_intelligence/research/conflict.py`
+  - `src/sports_intelligence/research/dedup.py`
+  - `src/sports_intelligence/research/extractor.py`
+  - `src/sports_intelligence/research/models.py`
+  - `src/sports_intelligence/research/query_builder.py`
+  - `src/sports_intelligence/research/service.py`
+  - `src/sports_intelligence/schemas/research.py`
+  - `src/sports_intelligence/workers/tasks/research.py`
+  - `tests/integration/test_m5_research.py`
+  - `tests/unit/collectors/test_research_collector.py`
+  - `tests/unit/test_research_conflict.py`
+  - `tests/unit/test_research_dedup.py`
+  - `tests/unit/test_research_extractor.py`
+  - `tests/unit/test_research_provenance.py`
+  - `tests/unit/test_research_query_builder.py`
+  - `tests/unit/test_search_gating.py`
+  - `tests/unit/test_search_provider.py`
+- Modified:
+  - `src/sports_intelligence/api/app.py`
+  - `src/sports_intelligence/api/routes/status.py`
+  - `src/sports_intelligence/collectors/framework.py`
+  - `src/sports_intelligence/collectors/freshness.py`
+  - `src/sports_intelligence/collectors/pre_match_scan.py`
+  - `src/sports_intelligence/collectors/quota.py`
+  - `src/sports_intelligence/core/config.py`
+  - `src/sports_intelligence/core/phases.py`
+  - `src/sports_intelligence/db/models/__init__.py`
+  - `src/sports_intelligence/db/models/snapshots.py`
+  - `src/sports_intelligence/providers/base.py`
+  - `src/sports_intelligence/research/__init__.py`
+  - `src/sports_intelligence/workers/celery_app.py`
+  - `src/sports_intelligence/workers/tasks/collect.py`
+  - `src/sports_intelligence/workers/tasks/pre_match.py`
+  - `tests/integration/test_m4_collectors.py`
+  - `tests/unit/collectors/test_freshness.py`
+  - `docs/CURRENT_TASK.md`
+  - `docs/IMPLEMENTATION_STATUS.md`
+  - `docs/REVIEW_HANDOFF.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (300 passed, 66 deselected in 4.18s)
+- `TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" TEST_REDIS_URL="redis://localhost:6380/15" uv run pytest -q -m integration` → PASS (66 passed, 300 deselected in 11.10s)
+- `uv run pytest -q` → PASS (366 passed in 14.06s)
+- `uv run ruff check .` → PASS (clean)
+- `uv run ruff format --check .` → PASS (clean, 156 files formatted)
+- `uv run mypy src` → PASS (clean in 103 source files)
+- `uv run alembic check` → PASS (No new upgrade operations detected)
+- `docker compose config -q` / `--profile telegram` → PASS (clean)
+- Secret scan → clean (no credentials committed)
+
+**Live integrations verified**
+- none (MOCK only, live search API keys not configured).
+
+**Known issues**
+- none.
+
+**Spec / ADR deviations**
+- none.
+
+**Git**
+- branch: build/m5
+- commit: [to be recorded upon commit]
+
+**Next action**
+- Commit and push `build/m5`.
+- Await independent review of Milestone M5.
+
+
 
 

@@ -103,6 +103,9 @@ async def _clean_m4_tables(m4_session_factory: Any) -> Iterator[None]:
         OddsSnapshotSet,
         ProviderEntityId,
         QuotaBucket,
+        ResearchClaim,
+        ResearchDocument,
+        ResearchRun,
         StandingSnapshot,
         TeamFormSnapshot,
         TeamStatisticsSnapshot,
@@ -110,6 +113,9 @@ async def _clean_m4_tables(m4_session_factory: Any) -> Iterator[None]:
 
     async with m4_session_factory() as session:
         for model in (
+            ResearchClaim,
+            ResearchDocument,
+            ResearchRun,
             OddsPrice,
             OddsSnapshotSet,
             AvailabilitySnapshot,

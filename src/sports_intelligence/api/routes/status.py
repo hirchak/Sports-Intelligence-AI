@@ -17,6 +17,7 @@ from sports_intelligence.db.models import (
     Fixture,
     LineupSnapshot,
     OddsSnapshotSet,
+    ResearchRun,
     StandingSnapshot,
     TeamStatisticsSnapshot,
 )
@@ -141,6 +142,17 @@ async def _fixture_freshness(
             "fresh"
             if not policy.is_stale(FreshnessCategory.ODDS, odds_captured, now)
             else ("stale" if odds_captured else "unknown")
+        ),
+    )
+
+    research_captured, _ = await _latest_snapshot(session, ResearchRun, fixture_id=fixture.id)
+    out["research"] = CategoryStatus(
+        captured_at=research_captured,
+        age_seconds=_age_seconds(research_captured, now),
+        state=(
+            "fresh"
+            if not policy.is_stale(FreshnessCategory.RESEARCH, research_captured, now, phase)
+            else ("stale" if research_captured else "unknown")
         ),
     )
     return out

@@ -17,6 +17,9 @@ from typing import Any
 
 from redis.asyncio import Redis
 
+from sports_intelligence.collectors import (
+    research_collector as _research_collector,  # noqa: F401
+)
 from sports_intelligence.collectors.framework import (
     CollectorContext,
     run_collector,
@@ -31,6 +34,7 @@ from sports_intelligence.core.phases import ForecastPhase
 from sports_intelligence.db.session import create_engine, create_session_factory
 from sports_intelligence.pipelines.discover_fixtures import update_job_status
 from sports_intelligence.providers.odds.factory import build_odds_provider
+from sports_intelligence.providers.search.factory import build_search_provider
 from sports_intelligence.providers.sports.factory import build_sports_provider
 from sports_intelligence.workers.celery_app import celery_app
 from sports_intelligence.workers.utils import record_job_attempt
@@ -93,6 +97,14 @@ async def _run_collect_job(
                     "DISABLED in this environment (no provider configured)"
                 )
             provider: Any = odds_provider
+        elif collector_name == "research":
+            search_provider = build_search_provider(settings)
+            if search_provider is None:
+                raise RuntimeError(
+                    "research collector job refused: research capability is "
+                    "DISABLED in this environment (no provider configured)"
+                )
+            provider = search_provider
         else:
             provider = sports_provider
         quota = QuotaManager(settings, factory, redis=redis)

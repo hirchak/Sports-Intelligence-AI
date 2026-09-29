@@ -52,3 +52,16 @@ def test_naive_datetime_is_normalized() -> None:
     now = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
     captured_naive = (now - timedelta(hours=6)).replace(tzinfo=None)
     assert not policy.is_stale(FreshnessCategory.STANDINGS, captured_naive, now)
+
+
+def test_research_freshness_ttl() -> None:
+    settings = _settings()
+    settings.freshness_research_seconds = 6 * 3600
+    settings.freshness_prematch_research_seconds = 90 * 60
+    policy = FreshnessPolicy(settings)
+    now = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+    captured = now - timedelta(hours=2)
+    assert not policy.is_stale(
+        FreshnessCategory.RESEARCH, captured, now, phase=ForecastPhase.MORNING
+    )
+    assert policy.is_stale(FreshnessCategory.RESEARCH, captured, now, phase=ForecastPhase.PREMATCH)

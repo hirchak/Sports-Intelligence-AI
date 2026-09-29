@@ -40,13 +40,14 @@ from sports_intelligence.core.logging import get_logger
 from sports_intelligence.core.phases import ForecastPhase, FreshnessCategory, Priority
 from sports_intelligence.db.repositories.discovery import store_raw_evidence
 from sports_intelligence.providers.base import OddsProvider, SportsDataProvider
+from sports_intelligence.providers.search.base import SearchProvider
 
 logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
 class CollectorContext:
-    provider: SportsDataProvider | OddsProvider
+    provider: SportsDataProvider | OddsProvider | SearchProvider
     quota: QuotaManager
     locks: CoalesceLockManager
     freshness: FreshnessPolicy

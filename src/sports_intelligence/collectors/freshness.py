@@ -25,6 +25,8 @@ class FreshnessPolicy:
                 return timedelta(seconds=self.settings.freshness_prematch_odds_seconds)
             if category == FreshnessCategory.LINEUPS:
                 return timedelta(seconds=self.settings.freshness_lineups_seconds)
+            if category == FreshnessCategory.RESEARCH:
+                return timedelta(seconds=self.settings.freshness_prematch_research_seconds)
         if category == FreshnessCategory.STANDINGS:
             return timedelta(seconds=self.settings.freshness_standings_seconds)
         if category == FreshnessCategory.TEAM_STATISTICS:
@@ -37,6 +39,8 @@ class FreshnessPolicy:
             return timedelta(seconds=self.settings.freshness_lineups_seconds)
         if category == FreshnessCategory.ODDS:
             return timedelta(seconds=self.settings.freshness_odds_seconds)
+        if category == FreshnessCategory.RESEARCH:
+            return timedelta(seconds=self.settings.freshness_research_seconds)
         return timedelta(hours=1)
 
     def is_stale(

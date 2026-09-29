@@ -8,12 +8,14 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
     Numeric,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -360,5 +362,100 @@ class OddsEventMapping(Base):
     away_team_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     commence_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     mapped_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ResearchRun(Base):
+    """Immutable research run snapshot metadata for a fixture."""
+
+    __tablename__ = "research_runs"
+    __table_args__ = (
+        Index("ix_research_runs_fixture_captured", "fixture_id", text("captured_at DESC")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    fixture_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fixtures.id", ondelete="CASCADE"), nullable=False
+    )
+    phase: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    queries_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    documents_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    claims_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    conflicts_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    details_jsonb: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ResearchDocument(Base):
+    """Source documents discovered during web research (immutable provenance evidence)."""
+
+    __tablename__ = "research_documents"
+    __table_args__ = (
+        Index("ix_research_documents_fixture_retrieved", "fixture_id", text("retrieved_at DESC")),
+        Index("ix_research_documents_fixture_published", "fixture_id", text("published_at DESC")),
+        Index("ix_research_documents_content_hash", "content_hash"),
+        Index("ix_research_documents_domain", "domain"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    fixture_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fixtures.id", ondelete="CASCADE"), nullable=False
+    )
+    run_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("research_runs.id", ondelete="SET NULL"), nullable=True
+    )
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    relevance_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    metadata_jsonb: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ResearchClaim(Base):
+    """Structured claims extracted from research documents."""
+
+    __tablename__ = "research_claims"
+    __table_args__ = (
+        Index("ix_research_claims_fixture_created", "fixture_id", text("created_at DESC")),
+        Index("ix_research_claims_document", "document_id"),
+        Index("ix_research_claims_fixture_type", "fixture_id", "claim_type"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("research_documents.id", ondelete="CASCADE"), nullable=False
+    )
+    fixture_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fixtures.id", ondelete="CASCADE"), nullable=False
+    )
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
+    )
+    claim_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    claim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    conflict_flag: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    conflicting_claim_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    extraction_version: Mapped[str] = mapped_column(String(32), nullable=False, default="v1_rule")
+    metadata_jsonb: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

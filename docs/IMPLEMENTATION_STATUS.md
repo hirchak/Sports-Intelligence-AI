@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M4 — ACCEPTED (M4.4 passed independent review; accepted HEAD: `0d0cd4a631c067a29c21ce584e806a47c534dc82`)  
+**Current milestone:** M5 — COMPLETE (Web Research Subsystem implemented & fully verified; ready for review on `build/m5`)  
 **Last updated:** 2026-09-29 (Antigravity via Gemini 3.8 Flash)  
 **Last known good commit:** see section 11
 
@@ -10,15 +10,9 @@
 
 # 1. Current objective
 
-M3 (Telegram base UI) passed independent final review and was merged to
-`main` via PR #5 (`7d23c9d`).
+M4 (Automated Match Data Collection + Odds + Quota/Freshness) passed independent review and was merged to `main` via PR #6 (`2e4683a`), tagged `v0.5-m4`.
 
-M4 review → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL**; M4.3 →
-**FAIL**; M4.4 → **PASS / ACCEPTED**. Accepted `build/m4` remote HEAD:
-`0d0cd4a631c067a29c21ce584e806a47c534dc82`.
-
-Proceeding through M4 finalization, merging `build/m4` to `main`, tagging
-`v0.5-m4`, creating branch `build/m5`, and starting Milestone M5 (Web Research).
+Milestone M5 (Web Research Subsystem) is fully implemented on branch `build/m5`, fully tested with 366 passing tests (300 unit + 66 integration), and ready for independent review.
 
 No Hetzner deployment is authorized.
 
@@ -408,29 +402,55 @@ All review items implemented:
   skips fresh snapshots, stale identity stable across scanner runs.
 - QuotaBucket.observed_at derived from response finished_at.
 
+## M5 — Web Research Subsystem (branch `build/m5`)
+
+- **Domain Models & DTOs** (`src/sports_intelligence/research/models.py`):
+  `ExtractedClaimDTO`, `ResearchDocumentDTO`, `ResearchRunResultDTO`.
+- **Search Provider Boundary** (`src/sports_intelligence/providers/search/`):
+  - Typed `SearchProvider` Protocol returning `SearchResponse` containing `SearchResultItem` lists.
+  - `MockSearchProvider`: deterministic offline provider with canned responses, query fallbacks, error injection, call history, and JSONB-safe serialization.
+  - `TavilySearchProvider`: production-ready adapter with bounded timeouts, retries (up to 3 attempts with exponential backoff and jitter), 4xx non-retryable handling, canonical URL normalization, secret redaction, and rate limit parsing.
+  - Strict provider factory (`build_search_provider`): gating based on `app_env`, `search_provider`, and `search_api_key`. Refuses silent mock in live environments without explicit override.
+- **Claim Extractor & Conflict Detection** (`src/sports_intelligence/research/`):
+  - `build_research_queries`: bounded (max 6), deterministic queries per fixture based on team names, kickoff date, and forecast phase (`MORNING` broad preparation vs `PREMATCH` lineup/fitness refresh).
+  - `deduplicate_search_results`, `normalize_url` (strips tracking parameters, query fragments, trailing slashes), `content_sha256`.
+  - `RuleBasedClaimExtractor` / `MockClaimExtractor`: extracts claims across 8 categories (`AVAILABILITY`, `SUSPENSION`, `ROTATION`, `LINEUP`, `MANAGER_STATEMENT`, `TACTICAL`, `TRAVEL`, `TEAM_NEWS`), assigns team ownership, confidence scores, and extraction metadata.
+  - `detect_conflicts`: detects contradictory claims (e.g. absent vs present for the same subject/player or team); strictly preserves both claims, flags `conflict_flag=True`, links `conflicting_claim_id`, and attaches audit metadata (never discards or merges contradictory claims).
+  - `get_research_for_fixture`: anti-leakage audit service enforcing `as_of` temporal filtering (`retrieved_at <= as_of` and `published_at <= as_of`) for historical replay and point-in-time consistency.
+- **Database Persistence & Migrations** (`src/sports_intelligence/db/`):
+  - Models: `ResearchRun`, `ResearchDocument`, `ResearchClaim` with descending composite indexes (`ix_research_runs_fixture_captured`, `ix_research_docs_fixture_retrieved`, `ix_research_claims_fixture_type`) and foreign keys.
+  - Alembic Migration `0006_m5_research_documents_claims.py`: clean downgrade and upgrade, fully verified by `alembic check`.
+- **Collector & Workers Framework** (`src/sports_intelligence/collectors/` & `workers/`):
+  - `ResearchCollector`: registered in framework (`name="research"`, `category=FreshnessCategory.RESEARCH`, `priority=Priority.P3`), supports coalescing locks (`research:{fixture_id}`), raw payload storage in `raw_provider_payloads`, and snapshot persistence.
+  - Pre-match scanner: includes `FreshnessCategory.RESEARCH` in scan plan and TTL evaluations.
+  - Celery tasks: `sports_intelligence.workers.tasks.research` routed to `research_io` queue.
+- **REST API Routes** (`src/sports_intelligence/api/`):
+  - `GET /v1/fixtures/{fixture_id}/research`: returns documents and claims with optional `as_of` query parameter.
+  - `GET /v1/fixtures/{fixture_id}/status`: reflects `research` category freshness state (`fresh`, `stale`, `unknown`) and last refresh timestamp.
+- **Graceful Degradation / Optionality**:
+  - When `SEARCH_PROVIDER` is empty or disabled, or `RESEARCH_ENABLED=False`, zero external searches run, and the pipeline operates normally with empty research runs recorded as `NO_USEFUL_RESULTS`.
+
 ---
 
 # 3. In progress
 
-None. M4 accepted (PASS); merging `build/m4` to `main`, tagging `v0.5-m4`, and starting M5.
+None. Milestone M5 implemented, fully verified, and ready for independent review.
 
 ---
 
-# 4. Acceptance tests passed (actually run, M4.4 state)
+# 4. Acceptance tests passed (actually run, M5 state)
 
-- `uv run pytest -q -m "not integration"` → **265 passed**
+- `uv run pytest -q -m "not integration"` → **300 passed, 66 deselected in 4.18s**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
-  **59 passed** (M2/M2.4 regressions, schema-drift `alembic check`,
-  migration cycle, M4 collectors, two-season isolation, TTL stable
-  opportunity flow, quota observation ordering, season pinning,
-  and team stats persistence/season isolation)
+  **66 passed, 300 deselected in 11.10s** (all M2/M3/M4 integration tests
+  plus M5 research collector, anti-leakage `as_of`, dedup, conflict flagging,
+  coalescing locks, freshness status, and disabled-mode zero provider calls)
+- Full test suite (`uv run pytest -q`) → **366 passed in 14.06s**
 - `uv run ruff check .` / `ruff format --check .` → clean
-- `uv run mypy src` → **no issues in 87 source files** (strict)
+- `uv run mypy src` → **Success: no issues found in 103 source files** (strict)
 - `uv run alembic check` → clean (No new upgrade operations detected)
-- `docker compose config -q` and `docker compose --profile telegram
-  config -q` (+dev) → OK
-- Secret scan: clean (no secrets in tracked files; token/user IDs only
-  in local `.env`, gitignored)
+- `docker compose config -q` and `docker compose --profile telegram config -q` (+dev) → OK
+- Secret scan: clean (zero credentials committed; no secrets in tracked files)
 
 ## M3-era live smoke (historical, still valid)
 
@@ -551,21 +571,21 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m4` (M4 accepted, merging to `main`); `main` = `7d23c9d` (M3 accepted via PR #5)
+- `build/m5` (M5 complete, awaiting review); base `main` at `2e4683a` (`v0.5-m4`)
 
 Commit:
-- `0d0cd4a631c067a29c21ce584e806a47c534dc82` (M4 accepted HEAD)
+- HEAD of `build/m5`
 
 Working tree:
-- clean
+- clean after commit
 
 ---
 
 # 12. Next action
 
-1. Merge `build/m4` into `main`, tag `v0.5-m4`.
-2. Create branch `build/m5` from accepted `main`.
-3. Implement Milestone M5 (Web Research).
+1. Push `build/m5` to remote repository.
+2. Await independent review of Milestone M5.
+3. Do not merge `build/m5` into `main`. Do not start M6.
 
 ---
 
@@ -579,6 +599,8 @@ Safe to begin M4: YES.
 
 **Final review verdict (2026-09-29): M4 PASS — M4 ACCEPTED.**
 Safe to begin M5: YES.
+
+**Current review target:** Milestone M5 (Web Research Subsystem) on `build/m5`.
 
 ---
 

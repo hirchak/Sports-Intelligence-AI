@@ -189,6 +189,13 @@ async def _dispatch_decision(
                 logger.info("odds collector skipped: odds capability disabled in this environment")
                 return
 
+            # M5: research disabled → scanner never enqueues research.
+            if name == "research" and not settings.research_capability_enabled:
+                logger.info(
+                    "research collector skipped: research capability disabled in this environment"
+                )
+                return
+
             # M4.4 §2: standings and team_stats require exact season identity.
             if name in ("standings", "team_stats") and not inputs.get("season_id"):
                 logger.warning(
@@ -273,7 +280,11 @@ async def _dispatch_decision(
                     from sports_intelligence.workers.tasks.collect import collect_task
 
                     payload = {k: v for k, v in inputs.items() if k != "phase"}
-                    collect_task.apply_async(args=[job_id, name, json.dumps(payload), phase_value])
+                    queue = "research_io" if name == "research" else "sports_io"
+                    collect_task.apply_async(
+                        args=[job_id, name, json.dumps(payload), phase_value],
+                        queue=queue,
+                    )
                     bucket["enqueued"] += 1
                 except Exception:
                     logger.error("collector job enqueue failed; marking job FAILED", exc_info=True)

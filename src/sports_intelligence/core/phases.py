@@ -18,13 +18,14 @@ class FreshnessCategory(StrEnum):
     AVAILABILITY = "availability"
     LINEUPS = "lineups"
     ODDS = "odds"
+    RESEARCH = "research"
 
 
 class Priority(StrEnum):
     P0 = "P0"  # settlement / critical pre-kickoff / manual
     P1 = "P1"  # pre-kickoff availability, pre-kickoff odds, lineups
     P2 = "P2"  # standings, team stats, form inputs
-    P3 = "P3"  # optional / experimental collectors
+    P3 = "P3"  # optional / experimental collectors / research
 
 
 class DegradationMode(StrEnum):
@@ -40,3 +41,25 @@ class AvailabilityState(StrEnum):
     UNKNOWN = "UNKNOWN"  # provider silent or absent (spec 14 §7)
     STALE = "STALE"  # snapshot older than freshness threshold
     CONFLICTED = "CONFLICTED"  # multiple sources disagree
+
+
+class ResearchState(StrEnum):
+    AVAILABLE = "AVAILABLE"
+    NO_USEFUL_RESULTS = "NO_USEFUL_RESULTS"
+    DISABLED = "DISABLED"
+    PROVIDER_ERROR = "PROVIDER_ERROR"
+    STALE = "STALE"
+    EXTRACTION_UNAVAILABLE = "EXTRACTION_UNAVAILABLE"
+
+
+class ClaimType(StrEnum):
+    AVAILABILITY = "availability"
+    SUSPENSION = "suspension"
+    ROTATION = "rotation"
+    LINEUP = "lineup"
+    MANAGER_STATEMENT = "manager_statement"
+    TACTICAL = "tactical"
+    SCHEDULE_CONGESTION = "schedule_congestion"
+    TRAVEL = "travel"
+    TEAM_NEWS = "team_news"
+    OTHER = "other"

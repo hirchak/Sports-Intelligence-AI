@@ -1,91 +1,78 @@
 # Current Task
 
-**Status:** ACCEPTED (Milestone M4 passed independent review)
-**Milestone:** M4 (M4.4 accepted) — finalization, merge to main, tag v0.5-m4, start M5
+**Status:** COMPLETE (Milestone M5 implemented, fully tested, ready for independent review)
+**Milestone:** M5 — Web Research Subsystem
+**Branch:** `build/m5`
 **Owner/agent:** Antigravity (Gemini 3.8 Flash)
-**Started at:** 2026-09-28
+**Started at:** 2026-09-29
 **Last updated:** 2026-09-29
 
 ---
 
-# Task
+# Milestone Objective
 
-Independent review of M4.3 returned **FAIL** with four focused
-correctness fixes. M4.4 on `build/m4` implements exactly those four
-items — working M4/M4.1/M4.2/M4.3 components are NOT redesigned.
+Implement the bounded, testable, anti-leakage pre-match web research subsystem per authoritative specifications:
+- `08_FOOTBALL_ANALYTICS_PIPELINE.md`
+- `09_AGENT_CATALOG_AND_ORCHESTRATION.md`
+- `10_DATABASE_AND_DATA_LIFECYCLE.md`
+- `11_API_QUOTA_CACHING_STRATEGY.md`
+- `14_DATA_QUALITY_PROVENANCE_AND_LEAKAGE.md`
 
-1. **Correct API-Football /teams/statistics normalization**:
-   - Real v3 shape: `fixtures.{played,wins,draws,loses}.{home,away,total}`
-     (note `loses` — normalized to `losses`);
-   - `goals.for.total.{home,away,total}` and
-     `goals.against.total.{home,away,total}` nested extraction;
-   - `clean_sheet.{home,away,total}` and
-     `failed_to_score.{home,away,total}` flat splits;
-   - Normalizes played/wins/draws/losses/goals_for/goals_against/
-     clean_sheets/failed_to_score/form; missing values remain None —
-     never fabricated zero;
-   - SENTINEL_TEAM_STATS updated to a sanitized contract-faithful
-     payload; every metric asserted (esp. losses, goals_for,
-     goals_against) + a missing-values test.
-2. **Pin season identity end-to-end**:
-   - `PreMatchDecision.season_id` added (from Fixture.season_id);
-   - `execute_plan()` passes the fixture's actual season_id to
-     standings/team_stats (never None);
-   - `_season_number(league_id)` (active=True LIMIT 1) replaced with an
-     exact Season resolver: fetches the exact Season, verifies it
-     belongs to the expected league, parses the year deterministically,
-     refuses missing/mismatched/ambiguous identity;
-   - standings/team_stats lock identity, freshness lookup (`StandingsCollector.latest_snapshot` and `TeamStatisticsCollector.latest_snapshot` both filter by exact season_id), provider
-     `season=` parameter and persisted snapshot `season_id` all use the
-     exact season;
-   - Integration regression: same league with season A=2025 and B=2026;
-     fixture on B → provider receives 2026; snapshot persisted with the
-     season-B uuid; a fresh season-A snapshot never satisfies season-B
-     freshness; A/B lock identities never collide.
-3. **Stable TTL refresh opportunity**:
-   - no snapshot → `due:missing`;
-   - snapshot fresh → the scanner creates NO collector job (cheap
-     freshness check before `create_or_get_job()`);
-   - snapshot stale → `due:<captured_at + effective_ttl>` — STABLE
-     until a new successful snapshot persists (never `due:now`);
-   - framework freshness remains the race-safe double-check;
-   - Acceptance flow regression: T0+20 fresh → no job; T0+31 stale →
-     job A; broker fails → A FAILED; T0+35 → SAME uuid A requeued;
-     T0+40 A RUNNING → no duplicate; successful snapshot at T0+41 →
-     next scan fresh → no job.
-   - Lineup t120/t60/t20 logic unchanged.
-4. **Quota observations at response observation time**:
-   - `QuotaBucket.observed_at` now derives from `finished_at` (the
-     response observation moment), never request `started_at`;
-   - Overlap/order regression: two overlapping requests — the LATER
-     response becomes the authoritative bucket/generation even if it
-     started earlier.
-
-# Verification (actually run)
-
-- `uv run pytest -q -m "not integration"` → **265 passed**
-- integration suite (`sports_intel_test` + Redis db15) → **59 passed**
-  (incl. new M4.4 tests: two-season isolation, TTL stable opportunity
-  acceptance flow, response-time observation ordering, season pinning,
-  and TeamStatisticsSnapshot kwargs & season_id persistence)
-- `uv run ruff check .` / `ruff format --check .` → clean
-- `uv run mypy src` → **no issues in 87 source files** (strict)
-- `uv run alembic check` → clean (No new upgrade operations detected)
-- `docker compose config -q` (+telegram profile) → OK
-- Secret scan → clean
-
-# Known limitations
-
-- No schema migration needed (M4.4 §"no schema migration unless
-  necessary").
-- No broad live API smoke; a bounded /teams/statistics smoke is allowed
-  only with local credentials (not run — no key).
-- Local integration runs flush Redis first (reservation counters), as in
-  M4.3.
+### Hard Guardrails & Discipline
+1. **Local Development Only**: No Hetzner, no SSH, no Hermes, no production deployments.
+2. **Subsystem Isolation**: Web research is an evidence-gathering subsystem only. No predictions, forecasts, betting logic, no-vig calculations, or MatchContext assembly are included in M5 (reserved for M7).
+3. **Graceful Degradation / Optionality**: Web research must be completely optional. When `SEARCH_PROVIDER` is disabled or empty, or `RESEARCH_ENABLED=False`, zero external searches run, and the pipeline continues normally.
+4. **Zero Live Search API Calls in Tests/CI**: Fully mocked offline execution via `MockSearchProvider`.
 
 ---
 
-# Completion
+# Subsystems Implemented
 
-- Status: ACCEPTED on `build/m4` at commit `0d0cd4a631c067a29c21ce584e806a47c534dc82`.
-- Review verdict: M4.4 PASS / ACCEPTED. Merging to main, tagging v0.5-m4, and transitioning to M5.
+1. **Search Provider Boundary & Adapters (`src/sports_intelligence/providers/search/`)**:
+   - `SearchProvider` Protocol: `search(query, max_results=5) -> SearchResponse`.
+   - DTOs: `SearchResultItem`, `SearchResponse`.
+   - `MockSearchProvider`: deterministic offline search provider with canned query responses, query token fallbacks, simulated errors, call history, and JSON-safe raw payload serialization.
+   - `TavilySearchProvider`: production-ready adapter for Tavily Search API with bounded timeouts, retries (up to 3 attempts with exponential backoff and jitter), 4xx non-retryable handling, canonical URL normalization, secret redaction in logging/payloads, and rate limit header parsing.
+   - Provider factory `build_search_provider()`: strict gating based on `app_env`, `search_provider`, and `search_api_key`. Refuses silent mock in live environments without explicit override.
+
+2. **Core Domain Models & Extractor (`src/sports_intelligence/research/`)**:
+   - `ExtractedClaimDTO`, `ResearchDocumentDTO`, `ResearchRunResultDTO`.
+   - `build_research_queries`: bounded (max 6), deterministic queries per fixture based on team names, kickoff date, and phase (`morning` preparation vs `prematch` lineup/fitness refresh).
+   - `deduplicate_search_results`, `normalize_url` (strips tracking parameters, query fragments, trailing slashes), `content_sha256`.
+   - `RuleBasedClaimExtractor` / `MockClaimExtractor`: extracts claims across 8 categories (`AVAILABILITY`, `SUSPENSION`, `ROTATION`, `LINEUP`, `MANAGER_STATEMENT`, `TACTICAL`, `TRAVEL`, `TEAM_NEWS`), assigns team ownership, confidence scores, and extraction metadata.
+   - `detect_conflicts`: detects contradictory claims (e.g. absent vs present for the same subject/player or team); strictly preserves both claims, flags `conflict_flag=True`, links `conflicting_claim_id`, and attaches audit metadata (never discards or merges contradictory claims).
+   - `get_research_for_fixture`: anti-leakage audit service enforcing `as_of` temporal filtering (`retrieved_at <= as_of` and `published_at <= as_of`) for historical replay and point-in-time consistency.
+
+3. **Database Persistence & Migrations (`src/sports_intelligence/db/`)**:
+   - Models: `ResearchRun`, `ResearchDocument`, `ResearchClaim` with descending composite indexes (`ix_research_runs_fixture_captured`, `ix_research_docs_fixture_retrieved`, `ix_research_claims_fixture_type`) and foreign keys.
+   - Alembic Migration `0006_m5_research_documents_claims.py`: clean downgrade and upgrade, fully verified by `alembic check`.
+
+4. **Collector & Pipeline Integration (`src/sports_intelligence/collectors/` & `workers/`)**:
+   - `ResearchCollector`: registered in framework (`name="research"`, `category=FreshnessCategory.RESEARCH`, `priority=Priority.P3`), supports coalescing locks (`research:{fixture_id}`), raw payload storage in `raw_provider_payloads`, and snapshot persistence.
+   - Pre-match scanner: includes `FreshnessCategory.RESEARCH` in scan plan and TTL evaluations.
+   - Celery tasks: `sports_intelligence.workers.tasks.research` routed to `research_io` queue.
+
+5. **REST API Routes (`src/sports_intelligence/api/`)**:
+   - `GET /v1/fixtures/{fixture_id}/research`: returns documents and claims with optional `as_of` query parameter.
+   - `GET /v1/fixtures/{fixture_id}/status`: reflects `research` category freshness state (`fresh`, `stale`, `unknown`) and last refresh timestamp.
+
+---
+
+# Verification (All passing locally)
+
+- **Unit tests**: `uv run pytest -q -m "not integration"` → **300 passed, 66 deselected in 4.18s**
+- **Integration tests**: `TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration` → **66 passed, 300 deselected in 11.10s**
+- **Full test suite**: `uv run pytest -q` → **366 passed in 14.06s**
+- **Linter**: `uv run ruff check .` → **clean (All checks passed!)**
+- **Formatter**: `uv run ruff format --check .` → **clean (156 files already formatted)**
+- **Type checker**: `uv run mypy src` → **clean (Success: no issues found in 103 source files)**
+- **Alembic**: `uv run alembic check` → **clean (No new upgrade operations detected)**
+- **Docker Compose**: `docker compose config -q` → **clean (OK)**
+- **Secret check**: clean, zero credentials in code or Git.
+
+---
+
+# Handoff
+
+Milestone M5 is complete, fully tested, and ready on branch `build/m5` for independent review.
+Do not merge `build/m5` to `main`. Do not start M6.
