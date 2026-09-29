@@ -73,13 +73,15 @@ async def test_tavily_search_provider_success() -> None:
                     "content": "Martin Odegaard has returned to full training.",
                     "score": 0.88,
                     "published_date": "2026-08-21T09:30:00Z",
+                    "id": "tav-item-1",
                 },
                 {
                     "title": "Chelsea Team News",
                     "url": "https://www.chelseafc.com/en/news/article/update",
                     "content": "Reece James is sidelined with a hamstring injury.",
                     "score": 0.82,
-                    "published_date": None,
+                    "published_date": "Sat, 22 Aug 2026 00:00:00 GMT",
+                    "id": "tav-item-2",
                 },
             ],
         }
@@ -104,6 +106,13 @@ async def test_tavily_search_provider_success() -> None:
         assert first.domain == "arsenal.com"
         assert first.published_at == datetime(2026, 8, 21, 9, 30, tzinfo=UTC)
         assert first.relevance_score == 0.88
+        assert first.provider_metadata.get("tavily_id") == "tav-item-1"
+        assert first.provider_metadata.get("rank") == 1
+
+        second = response.results[1]
+        assert second.published_at == datetime(2026, 8, 22, 0, 0, tzinfo=UTC)
+        assert second.provider_metadata.get("tavily_id") == "tav-item-2"
+        assert second.provider_metadata.get("rank") == 2
         assert response.quota_headers.get("x-ratelimit-remaining-requests") == "95"
     finally:
         await provider.aclose()

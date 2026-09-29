@@ -467,11 +467,15 @@ None. Milestone M5 implemented, fully verified, and ready for independent review
   M2.1: 1 request): real response, normalization, persistence, repeat
   idempotency, evidence history, rate-limit headers, `timezone` parameter.
   Full production use not yet exercised (single date, single league).
+- **Tavily search provider** — bounded live smoke (M5: 2 requests total):
+  1 provider-level query check + 1 collector-driven run for real fixture
+  (`Brentford vs Tottenham`). Verified HTTP contract, RFC 2822 publication date
+  parsing, ResearchDocument persistence, ResearchClaim extraction (8 claims),
+  anti-leakage `as_of` temporal query, and zero credential leakage.
 
 ## Mocked / not yet verified
 
 - Odds provider (interface only, M4)
-- Search provider (interface only, M5)
 - Runtime LLM providers (interface only, M7)
 
 ## Verified live (M3)

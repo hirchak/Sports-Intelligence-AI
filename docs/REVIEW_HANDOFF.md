@@ -86,8 +86,14 @@ Implemented strictly per authoritative project specifications:
 
 # Verification Evidence (Local Execution)
 
-- **Unit tests**: `uv run pytest -q -m "not integration"` → **300 passed, 66 deselected in 4.18s**
-- **Integration tests**: `TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" TEST_REDIS_URL="redis://localhost:6380/15" uv run pytest -q -m integration` → **66 passed, 300 deselected in 11.10s**
+- **Live Tavily Smoke**: VERIFIED (PASS)
+  - Exactly 2 real Tavily API requests executed (1 provider query check + 1 collector-driven run for real fixture `Brentford vs Tottenham`).
+  - RFC 2822 HTTP publication date parsing supported and verified (`_parse_published_at`).
+  - `ResearchRun` and 3 `ResearchDocument` records persisted; 8 `ResearchClaim` records extracted.
+  - Strict anti-leakage `as_of` temporal query verified (`as_of=now` → 3 docs / 8 claims; `as_of=past` → 0 docs / 0 claims).
+  - Secret scan: clean (zero credentials in `RawProviderPayload`, `ResearchDocument`, or Git diff).
+- **Unit tests**: `uv run pytest -q -m "not integration"` → **300 passed, 66 deselected in 4.19s**
+- **Integration tests**: `TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" TEST_REDIS_URL="redis://localhost:6380/15" uv run pytest -q -m integration` → **66 passed, 300 deselected in 10.48s**
 - **Full test suite**: `uv run pytest -q` → **366 passed in 14.06s**
 - **Linter**: `uv run ruff check .` → **clean (All checks passed!)**
 - **Formatter**: `uv run ruff format --check .` → **clean (156 files already formatted)**

@@ -4,6 +4,7 @@ import asyncio
 import re
 import urllib.parse
 from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 import httpx
@@ -89,6 +90,13 @@ def _parse_published_at(value: Any) -> datetime | None:
         # replace Z with +00:00 for fromisoformat compatibility
         iso_str = cleaned.replace("Z", "+00:00")
         dt = datetime.fromisoformat(iso_str)
+        return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
+    except (ValueError, TypeError):
+        pass
+
+    # Try RFC 2822 / HTTP format (e.g. "Sat, 22 Aug 2026 00:00:00 GMT" returned by Tavily):
+    try:
+        dt = parsedate_to_datetime(cleaned)
         return dt.astimezone(UTC) if dt.tzinfo else dt.replace(tzinfo=UTC)
     except (ValueError, TypeError):
         pass
@@ -255,6 +263,10 @@ class TavilySearchProvider:
             score = float(score_val) if isinstance(score_val, (int, float)) else None
             published_at = _parse_published_at(raw.get("published_date"))
 
+            provider_meta: dict[str, Any] = {"rank": len(items) + 1}
+            if raw.get("id"):
+                provider_meta["tavily_id"] = str(raw["id"])
+
             items.append(
                 SearchResultItem(
                     url=url,
@@ -264,7 +276,7 @@ class TavilySearchProvider:
                     retrieved_at=retrieved_at,
                     content=content,
                     score=score,
-                    provider_metadata={"rank": len(items) + 1},
+                    provider_metadata=provider_meta,
                 )
             )
 

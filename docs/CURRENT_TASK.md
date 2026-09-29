@@ -1,6 +1,6 @@
 # Current Task
 
-**Status:** COMPLETE (Milestone M5 implemented, fully tested, ready for independent review)
+**Status:** COMPLETE (Milestone M5 implemented, live validated with Tavily, fully tested, ready for independent review)
 **Milestone:** M5 — Web Research Subsystem
 **Branch:** `build/m5`
 **Owner/agent:** Antigravity (Gemini 3.8 Flash)
@@ -22,7 +22,7 @@ Implement the bounded, testable, anti-leakage pre-match web research subsystem p
 1. **Local Development Only**: No Hetzner, no SSH, no Hermes, no production deployments.
 2. **Subsystem Isolation**: Web research is an evidence-gathering subsystem only. No predictions, forecasts, betting logic, no-vig calculations, or MatchContext assembly are included in M5 (reserved for M7).
 3. **Graceful Degradation / Optionality**: Web research must be completely optional. When `SEARCH_PROVIDER` is disabled or empty, or `RESEARCH_ENABLED=False`, zero external searches run, and the pipeline continues normally.
-4. **Zero Live Search API Calls in Tests/CI**: Fully mocked offline execution via `MockSearchProvider`.
+4. **Zero Live Search API Calls in Normal Tests/CI**: Fully mocked offline execution via `MockSearchProvider` for all automated suites.
 
 ---
 
@@ -32,7 +32,7 @@ Implement the bounded, testable, anti-leakage pre-match web research subsystem p
    - `SearchProvider` Protocol: `search(query, max_results=5) -> SearchResponse`.
    - DTOs: `SearchResultItem`, `SearchResponse`.
    - `MockSearchProvider`: deterministic offline search provider with canned query responses, query token fallbacks, simulated errors, call history, and JSON-safe raw payload serialization.
-   - `TavilySearchProvider`: production-ready adapter for Tavily Search API with bounded timeouts, retries (up to 3 attempts with exponential backoff and jitter), 4xx non-retryable handling, canonical URL normalization, secret redaction in logging/payloads, and rate limit header parsing.
+   - `TavilySearchProvider`: production-ready adapter for Tavily Search API with bounded timeouts, retries (up to 3 attempts with exponential backoff and jitter), 4xx non-retryable handling, canonical URL normalization, secret redaction in logging/payloads, RFC 2822 date parsing, and rate limit header parsing.
    - Provider factory `build_search_provider()`: strict gating based on `app_env`, `search_provider`, and `search_api_key`. Refuses silent mock in live environments without explicit override.
 
 2. **Core Domain Models & Extractor (`src/sports_intelligence/research/`)**:
@@ -58,21 +58,49 @@ Implement the bounded, testable, anti-leakage pre-match web research subsystem p
 
 ---
 
+# Live Tavily Validation (Completed)
+
+- **Tavily Live Adapter Status**: VERIFIED (PASS).
+- **Exact real Tavily API requests made**: 2 requests total (1 provider-level query check + 1 bounded collector run for real DB fixture).
+- **Real fixture used**: `8c9c59c9-9ad9-4683-9895-5db48d2a52b0` (Brentford vs Tottenham, kickoff 2026-08-22).
+- **Queries executed**:
+  1. `"Brentford vs Tottenham injury news"` (provider contract test)
+  2. `"Brentford injuries 2026-08-22"` (collector fixture test)
+- **Real response contract findings**:
+  - Tavily returns RFC 2822 / HTTP format date strings in `published_date` (e.g. `Sat, 22 Aug 2026 00:00:00 GMT`), which was not parsed by ISO-only parser.
+  - Fix implemented: Added RFC 2822 parsing via `email.utils.parsedate_to_datetime` in `_parse_published_at`, producing valid timezone-aware UTC datetimes.
+  - Also added result `id` extraction into `provider_metadata["tavily_id"]`.
+- **Quality sanity check**:
+  - Returned authoritative, domain-relevant sources (Goal.com, The Athletic / NYT, Reuters).
+  - Plausibly useful for team news / injuries: identified specific player availability (e.g. Kulusevski, Romero, Vicario, Maddison, Solanke for Tottenham, and Yarmoliuk, Van den Berg for Brentford).
+- **Database persistence**:
+  - `ResearchRun` created: `status=AVAILABLE`, `queries_count=1`, `documents_count=3`, `claims_count=8`.
+  - 3 `ResearchDocument` records persisted with genuine `retrieved_at`, parsed `published_at`, `content_hash`, and metadata.
+  - 8 `ResearchClaim` records persisted across `availability`, `suspension`, and `team_news`.
+- **Anti-leakage audit**:
+  - `get_research_for_fixture(as_of=now)` returned 3 documents and 8 claims.
+  - `get_research_for_fixture(as_of=past)` returned 0 documents and 0 claims.
+- **Secret safety audit**:
+  - Verified `RawProviderPayload` table has zero credentials stored.
+  - Verified `ResearchDocument` and `ResearchClaim` rows have zero credentials stored.
+
+---
+
 # Verification (All passing locally)
 
-- **Unit tests**: `uv run pytest -q -m "not integration"` → **300 passed, 66 deselected in 4.18s**
-- **Integration tests**: `TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration` → **66 passed, 300 deselected in 11.10s**
+- **Unit tests**: `uv run pytest -q -m "not integration"` → **300 passed, 66 deselected in 4.19s**
+- **Integration tests**: `TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration` → **66 passed, 300 deselected in 10.48s**
 - **Full test suite**: `uv run pytest -q` → **366 passed in 14.06s**
 - **Linter**: `uv run ruff check .` → **clean (All checks passed!)**
 - **Formatter**: `uv run ruff format --check .` → **clean (156 files already formatted)**
 - **Type checker**: `uv run mypy src` → **clean (Success: no issues found in 103 source files)**
 - **Alembic**: `uv run alembic check` → **clean (No new upgrade operations detected)**
-- **Docker Compose**: `docker compose config -q` → **clean (OK)**
+- **Docker Compose**: `docker compose config -q` and `docker compose --profile telegram config -q` → **clean (OK)**
 - **Secret check**: clean, zero credentials in code or Git.
 
 ---
 
 # Handoff
 
-Milestone M5 is complete, fully tested, and ready on branch `build/m5` for independent review.
+Milestone M5 is complete, live validated, fully tested, and ready on branch `build/m5` for independent review.
 Do not merge `build/m5` to `main`. Do not start M6.

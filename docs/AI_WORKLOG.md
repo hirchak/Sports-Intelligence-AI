@@ -1470,6 +1470,72 @@ button-based menus and a Back button on every screen.
 **Next action**
 - Await independent review of Milestone M5.
 
+---
+
+### 2026-09-29 19:25 +02:00 — Antigravity (Gemini 3.8 Flash)
+
+**Milestone:** M5
+**Task:** Bounded live Tavily search provider validation, real response contract alignment, and final acceptance
+
+**Completed**
+- Validated secret safety: verified `SEARCH_PROVIDER=tavily` and `SEARCH_API_KEY` present locally in `.env` without printing or logging credentials.
+- Executed bounded live validation against Tavily API (exactly 2 requests total):
+  1. Provider-level query: `"Brentford vs Tottenham injury news"` (3 results returned, basic search depth, news topic).
+  2. Collector-driven research execution for real database fixture: `8c9c59c9-9ad9-4683-9895-5db48d2a52b0` (Brentford vs Tottenham, kickoff 2026-08-22 16:30 UTC), query: `"Brentford injuries 2026-08-22"`.
+- Verified real Tavily response contract:
+  - Discovered that Tavily returns RFC 2822 / HTTP formatted date strings in `published_date` (e.g., `"Sat, 22 Aug 2026 00:00:00 GMT"`), which failed ISO-only parsing and returned None.
+  - Fixed `_parse_published_at` in `src/sports_intelligence/providers/search/tavily.py` to parse RFC 2822 dates using `email.utils.parsedate_to_datetime`, producing correct timezone-aware UTC timestamps.
+  - Added extraction of result `id` into `provider_metadata["tavily_id"]`.
+  - Added unit test in `tests/unit/test_search_provider.py` asserting RFC 2822 date parsing and metadata propagation.
+- Verified database persistence & provenance:
+  - `ResearchRun` record created with `status=AVAILABLE`, `queries_count=1`, `documents_count=3`, `claims_count=8`, `provider=tavily`.
+  - 3 `ResearchDocument` records persisted with genuine `retrieved_at`, parsed `published_at`, `content_hash`, and metadata.
+  - 8 `ResearchClaim` records extracted across `availability`, `suspension`, and `team_news`.
+  - Provenance anti-leakage verified: `get_research_for_fixture(as_of=now)` returns 3 documents and 8 claims; `get_research_for_fixture(as_of=past)` returns 0 documents and 0 claims.
+- Secret safety audit:
+  - Checked `RawProviderPayload` table: verified zero occurrences of API key.
+  - Checked `ResearchDocument` and `ResearchClaim` rows: verified zero occurrences of API key.
+  - Checked Git diff: verified zero credentials.
+- Quality sanity check:
+  - Authoritative sources returned (Goal.com, The Athletic / NYTimes, Reuters).
+  - Plausibly useful for pre-match intelligence: identified specific player availability (e.g. Kulusevski, Romero, Vicario, Maddison, Solanke for Tottenham, and Yarmoliuk, Van den Berg for Brentford).
+
+**Files changed**
+- `src/sports_intelligence/providers/search/tavily.py`
+- `tests/unit/test_search_provider.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Verification**
+- `uv run pytest -q -m "not integration"` → PASS (300 passed, 66 deselected in 4.19s)
+- `TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" TEST_REDIS_URL="redis://localhost:6380/15" uv run pytest -q -m integration` → PASS (66 passed, 300 deselected in 10.48s)
+- `uv run pytest -q` → PASS (366 passed in 14.06s)
+- `uv run ruff check .` → PASS (clean)
+- `uv run ruff format --check .` → PASS (clean, 156 files formatted)
+- `uv run mypy src` → PASS (clean in 103 source files)
+- `uv run alembic check` → PASS (No new upgrade operations detected)
+- `docker compose config -q` / `--profile telegram` → PASS (clean)
+- Secret scan → clean (no credentials committed)
+
+**Live integrations verified**
+- Tavily search provider (M5: 2 real queries executed and verified end-to-end; secret safety verified; RFC 2822 date parsing aligned).
+
+**Known issues**
+- none.
+
+**Spec / ADR deviations**
+- none.
+
+**Git**
+- branch: build/m5
+- commit: [to be recorded upon commit]
+
+**Next action**
+- Commit, push `build/m5`, verify GitHub Actions CI, and stop for independent review.
+
+
 
 
 
