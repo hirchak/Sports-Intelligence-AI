@@ -2,8 +2,8 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M5.1 — COMPLETE (Web Research Subsystem correctness pass ready for independent review)  
-**Last updated:** 2026-09-29 (Antigravity via Gemini 3.8 Flash)  
+**Current milestone:** M5.2 — COMPLETE (Web Research correctness pass awaiting independent review)  
+**Last updated:** 2026-09-29 (Antigravity)  
 **Last known good commit:** 0d0cd4a631c067a29c21ce584e806a47c534dc82 (M4 accepted HEAD)
 
 ---
@@ -12,16 +12,24 @@
 
 M4 passed independent review (PASS / ACCEPTED, HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`).
 
-Milestone M5 independent review verdict: FAIL.
-A focused M5.1 correctness pass has been completed on branch `build/m5` addressing:
-1. Tavily retrieval-time capturing strictly after HTTP response (point-in-time anti-leakage).
-2. Claim-level temporal safety (`claim.extracted_at <= as_of`), index `ix_research_claims_fixture_extracted`, and Alembic migration 0007.
-3. Per-search-request quota accounting (`owns_quota = True`) and accurate request telemetry matching real HTTP calls.
-4. Conflict referential integrity with stable IDs and `DEFERRABLE INITIALLY DEFERRED` self-referential FK.
-5. SearchProvider resource cleanup in `_run_collect_job()` `finally` block across all failure/success modes without instantiating unrelated providers.
-6. Real structured research states (`DISABLED`, `NO_USEFUL_RESULTS`, `PROVIDER_ERROR`, `EXTRACTION_UNAVAILABLE`, `AVAILABLE`).
-7. Research run and historical view consistency contract (`latest_run` Option B vs `accumulated` Option A).
-8. 100% mocked offline tests; zero unintended external calls.
+Milestone M5 independent review verdict: **FAIL**.
+Milestone M5.1 independent review verdict: **FAIL**.
+M5.2 correctness pass completed on branch `build/m5`, awaiting independent review.
+
+M5.2 fixes (on top of accepted M5.1 work `30dd97a`):
+1. Retry orchestration moved to ResearchCollector — each HTTP attempt now gets its own quota reserve + ledger entry.
+2. `research_claim_extraction_enabled` added to Settings as a real config field (no more `getattr` fallback).
+3. API returns `DISABLED` state when capability is off and no run exists.
+4. `PROVIDER_ERROR` runs are immediately stale (`latest_snapshot()` returns `(None, None)` for them).
+5. Partial provider failure (some queries succeed, some fail) now correctly surfaces as `PROVIDER_ERROR` with diagnostics in `details_jsonb`.
+6. `?mode=` query parameter validated strictly as `Literal["latest_run", "accumulated"]`; invalid values → HTTP 422.
+
+**Review target HEAD:** `4f78e8402fc7d2e7b4f550d04b81e1ebf92399b4`
+
+**Review verdicts:**
+- M5 → FAIL
+- M5.1 → FAIL  
+- M5.2 → awaiting independent review
 
 Do NOT merge `build/m5` to `main`. Do NOT start M6.
 Development remains strictly LOCAL ONLY.
@@ -30,6 +38,7 @@ No Hetzner deployment is authorized.
 No Hermes access/dependency is authorized.
 
 ---
+
 
 # 2. Completed
 

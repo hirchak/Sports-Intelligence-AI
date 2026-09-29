@@ -49,6 +49,54 @@ Do not rewrite old entries except to correct a factual typo, and mark correction
 
 ---
 
+### 2026-09-29 20:33 CEST — Antigravity (Claude Sonnet 4.6)
+
+**Milestone:** M5.2  
+**Task:** Focused correctness pass — all 6 M5.2 review findings
+
+**Completed**
+1. **Per-HTTP-attempt quota/ledger**: removed retry loop from `TavilySearchProvider.search()` (now single-attempt). Moved 3-attempt retry orchestration to `ResearchCollector.fetch()` with `quota.reserve()` + `record_success/failure()` per physical HTTP attempt. Imported `RETRYABLE_PROVIDER_ERRORS` for correct retry classification.
+2. **`research_claim_extraction_enabled` as real Settings field**: added `research_claim_extraction_enabled: bool = True` to `Settings`; removed `getattr` fallback in collector; removed dead `self.extractor is None` branch; added `RESEARCH_CLAIM_EXTRACTION_ENABLED=true` to `.env.example`.
+3. **DISABLED state in read API**: `get_research_for_fixture()` accepts `capability_enabled: bool = True`; when no run exists and capability is disabled → returns `DISABLED` instead of `NO_USEFUL_RESULTS`. API route reads `request.app.state.settings`.
+4. **PROVIDER_ERROR not fresh**: `latest_snapshot()` selects `status` column; returns `(None, None)` for `PROVIDER_ERROR` runs, making them immediately stale for retry.
+5. **Partial failure visibility**: after query loop, `partial_failure = provider_error is not None and bool(raw_items)`; partial failure → `status = PROVIDER_ERROR` even if documents exist; diagnostics (`queries_planned`, `queries_attempted`, `queries_succeeded`, `failed_query_count`, `partial_failure`, `provider_error_class`) persisted in `details_jsonb`.
+6. **Typed mode validation**: `?mode=` changed from `str` to `Literal["latest_run", "accumulated"]` in API route and service; FastAPI returns HTTP 422 for invalid values.
+7. **Scratch patch scripts cleanup**: removed 11 `patch_*.py` files left in project root; fixed 5 E501 lint errors in test files; ran `ruff format`.
+
+**Files changed**
+- `src/sports_intelligence/providers/search/tavily.py` — removed retry loop
+- `src/sports_intelligence/collectors/research_collector.py` — retry orchestration, partial failure, latest_snapshot status check, extraction_enabled via settings
+- `src/sports_intelligence/core/config.py` — added `research_claim_extraction_enabled`
+- `src/sports_intelligence/research/service.py` — `capability_enabled` param, `Literal` mode type
+- `src/sports_intelligence/api/routes/research.py` — `Literal` mode, pass capability_enabled
+- `.env.example` — added `RESEARCH_CLAIM_EXTRACTION_ENABLED=true`
+- `tests/unit/test_search_provider.py` — new retry-per-attempt tests; E501 fixes
+- `tests/unit/collectors/test_research_collector.py` — new partial failure, PROVIDER_ERROR freshness, extraction_unavailable tests; E501 fixes
+- `tests/integration/test_m5_research.py` — new 422 mode, DISABLED API, partial failure integration tests; E501 fix
+- `docs/IMPLEMENTATION_STATUS.md`, `docs/CURRENT_TASK.md`, `docs/REVIEW_HANDOFF.md`, `docs/AI_WORKLOG.md`
+
+**Verification**
+- `uv run ruff check .` → All checks passed
+- `uv run ruff format --check .` → 157 files already formatted
+- `uv run mypy src` → Success: no issues found in 104 source files
+- `uv run pytest -q -m 'not integration'` → 312 passed
+- `pytest -q -m integration` (TEST_DATABASE_URL + TEST_REDIS_URL) → 74 passed
+
+**Known problems**
+- None
+
+**Spec / ADR deviations**
+- None
+
+**Git**
+- branch: `build/m5`
+- commits: `fea1e71` (M5.2 implementation), `4f78e84` (scratch cleanup + lint fixes)
+
+**Next action**
+- Stop for independent review of `build/m5` HEAD `4f78e8402fc7d2e7b4f550d04b81e1ebf92399b4`
+
+---
+
 ## Initial record
 
 ### 2026-08-20 — Project specification phase
