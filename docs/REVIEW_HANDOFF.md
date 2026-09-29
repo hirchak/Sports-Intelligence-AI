@@ -13,6 +13,7 @@ Update it before every milestone review.
 **Development phase:** LOCAL DEVELOPMENT ONLY  
 **Milestone:** M5.3 — Web Research Runtime Correctness Pass  
 **Review target branch:** `build/m5`  
+**Review target commit:** `8833d9e7c47a6dd7aeef9dd24d999b4bad214b59` (Milestone M5.3 HEAD)  
 **Previous reviewed remote HEAD:** `42f2277d8f7dde2f0b315c259f22c210da05cefb` (M5.2)  
 **Previous accepted state:** `main` = `2e4683a` (`v0.5-m4` accepted M4 merge)  
 **Previous review verdicts:**

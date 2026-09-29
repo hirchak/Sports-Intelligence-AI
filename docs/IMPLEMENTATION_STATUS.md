@@ -624,7 +624,7 @@ Branch:
 - `build/m5` (M5.3 complete, awaiting review); base `main` at `2e4683a` (`v0.5-m4`)
 
 Commit:
-- will reflect final M5.3 commit hash on `build/m5`
+- `8833d9e7c47a6dd7aeef9dd24d999b4bad214b59` (Milestone M5.3 HEAD)
 
 Working tree:
 - clean after commit
