@@ -9,22 +9,20 @@ Update it before every milestone review.
 
 # Review status
 
-**Ready for review:** YES  
+**Ready for review:** ACCEPTED (Milestone M4 passed independent review)  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Milestone:** M4.4 — focused correctness fixes (4 items) after M4.3
-review **FAIL**  
-**Review target branch:** `build/m4` (NOT merged to main)  
-**Review target commit:** `c82e726` — M4.4 focused correctness fixes (TeamStatisticsSnapshot & season freshness)  
+**Milestone:** M4 (M4.4 accepted) — merging to main, tagging v0.5-m4  
+**Review target branch:** `build/m4` (merging to main)  
+**Review target commit:** `0d0cd4a631c067a29c21ce584e806a47c534dc82` — M4 accepted HEAD  
 **Previous accepted state:** `main` = `7d23c9d` (M3 accepted via PR #5)  
-**Review scope:** diff `main..build/m4` (M4 + M4.1 + M4.2 + M4.3)
+**Review scope:** diff `main..build/m4` (M4 + M4.1 + M4.2 + M4.3 + M4.4)
 
 ---
 
 # Independent review history
 
-- M4 → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL**; M4.3 → **FAIL**
-  (four focused correctness fixes); M4.4 implemented on `build/m4`,
-  awaiting independent review.
+- M4 → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL**; M4.3 → **FAIL**;
+  M4.4 → **PASS / ACCEPTED** (accepted remote HEAD: `0d0cd4a631c067a29c21ce584e806a47c534dc82`).
 
 # What changed in M4.4
 

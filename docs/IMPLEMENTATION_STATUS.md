@@ -2,10 +2,8 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M4.4 — focused correctness fixes after M4.3
-review **FAIL** — awaiting independent re-review on `build/m4`
-(M3 accepted via PR #5; `main` = `7d23c9d`)  
-**Last updated:** 2026-09-28 (Antigravity via Gemini 3.8 Flash)  
+**Current milestone:** M4 — ACCEPTED (M4.4 passed independent review; accepted HEAD: `0d0cd4a631c067a29c21ce584e806a47c534dc82`)  
+**Last updated:** 2026-09-29 (Antigravity via Gemini 3.8 Flash)  
 **Last known good commit:** see section 11
 
 ---
@@ -16,9 +14,11 @@ M3 (Telegram base UI) passed independent final review and was merged to
 `main` via PR #5 (`7d23c9d`).
 
 M4 review → **FAIL**; M4.1 → **FAIL**; M4.2 → **FAIL**; M4.3 →
-**FAIL** (four focused correctness fixes). M4.4 is on `build/m4` and
-awaits independent re-review. Do not merge before acceptance; do not
-start M5.
+**FAIL**; M4.4 → **PASS / ACCEPTED**. Accepted `build/m4` remote HEAD:
+`0d0cd4a631c067a29c21ce584e806a47c534dc82`.
+
+Proceeding through M4 finalization, merging `build/m4` to `main`, tagging
+`v0.5-m4`, creating branch `build/m5`, and starting Milestone M5 (Web Research).
 
 No Hetzner deployment is authorized.
 
@@ -412,7 +412,7 @@ All review items implemented:
 
 # 3. In progress
 
-None. M4.4 implemented on `build/m4`; awaiting independent re-review.
+None. M4 accepted (PASS); merging `build/m4` to `main`, tagging `v0.5-m4`, and starting M5.
 
 ---
 
@@ -538,7 +538,7 @@ Cache:
 # 10. Current model/runtime configuration
 
 Development lead:
-- DeepSeek V4 Pro (this session)
+- Antigravity (Gemini 3.8 Flash)
 
 Runtime prediction model:
 - not selected empirically
@@ -551,21 +551,21 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m4` (M4 work); `main` = `7d23c9d` (M3 accepted via PR #5)
+- `build/m4` (M4 accepted, merging to `main`); `main` = `7d23c9d` (M3 accepted via PR #5)
 
 Commit:
-- `c82e726` (M4.4 focused correctness fixes & acceptance verification)
+- `0d0cd4a631c067a29c21ce584e806a47c534dc82` (M4 accepted HEAD)
 
 Working tree:
-- clean after the M4 commit
+- clean
 
 ---
 
 # 12. Next action
 
-1. Independent review of M4 (see `docs/REVIEW_HANDOFF.md`).
-2. After acceptance: merge `build/m4` into `main`, tag `v0.5-m4`.
-3. Only then start M5 with explicit user approval.
+1. Merge `build/m4` into `main`, tag `v0.5-m4`.
+2. Create branch `build/m5` from accepted `main`.
+3. Implement Milestone M5 (Web Research).
 
 ---
 
@@ -576,6 +576,9 @@ Safe to begin M3: YES.
 
 **Final review verdict (2026-08-21): M3 PASS — M3 ACCEPTED.**
 Safe to begin M4: YES.
+
+**Final review verdict (2026-09-29): M4 PASS — M4 ACCEPTED.**
+Safe to begin M5: YES.
 
 ---
 

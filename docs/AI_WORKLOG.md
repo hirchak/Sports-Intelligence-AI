@@ -1315,11 +1315,49 @@ button-based menus and a Back button on every screen.
 
 **Git**
 - branch: build/m4
-- commit: c82e726
+- commit: 0d0cd4a631c067a29c21ce584e806a47c534dc82
 
 **Next action**
-- Commit and push to origin/build/m4.
-- Verify CI run status.
-- Final independent review handoff.
+- Independent review PASS received.
+- Finalize documentation, merge build/m4 to main, tag v0.5-m4, create build/m5.
+
+---
+
+### 2026-09-29 08:50 +02:00 — Antigravity (Gemini 3.8 Flash)
+
+**Milestone:** M4 → M5 transition
+**Task:** M4 finalization, merge to main, tag v0.5-m4, create build/m5
+
+**Completed**
+- Independent review of M4 verdict: PASS / ACCEPTED (accepted remote HEAD: `0d0cd4a631c067a29c21ce584e806a47c534dc82`).
+- Updated persistent state docs (`CURRENT_TASK.md`, `IMPLEMENTATION_STATUS.md`, `REVIEW_HANDOFF.md`, `AI_WORKLOG.md`) to reflect accepted M4 state and actual accepted commit.
+- Cleaned stale development-agent/session references.
+- Documentation-only cleanup committed and ready for merge to main.
+
+**Files changed**
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Verification**
+- Git status clean; documentation aligned with accepted commit `0d0cd4a631c067a29c21ce584e806a47c534dc82`.
+
+**Live integrations verified**
+- none.
+
+**Known issues**
+- none.
+
+**Spec / ADR deviations**
+- none.
+
+**Git**
+- branch: build/m4
+- commit: [docs cleanup commit]
+
+**Next action**
+- Commit doc cleanup, push build/m4, merge into main via PR, tag v0.5-m4, create build/m5.
+
 
 

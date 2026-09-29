@@ -1,10 +1,10 @@
 # Current Task
 
-**Status:** COMPLETE (M4.4) — awaiting independent review
-**Milestone:** M4.4 — focused correctness fixes (4 items) after M4.3 review **FAIL**
+**Status:** ACCEPTED (Milestone M4 passed independent review)
+**Milestone:** M4 (M4.4 accepted) — finalization, merge to main, tag v0.5-m4, start M5
 **Owner/agent:** Antigravity (Gemini 3.8 Flash)
 **Started at:** 2026-09-28
-**Last updated:** 2026-09-28
+**Last updated:** 2026-09-29
 
 ---
 
@@ -87,6 +87,5 @@ items — working M4/M4.1/M4.2/M4.3 components are NOT redesigned.
 
 # Completion
 
-- Status: COMPLETE on `build/m4`. No merge to main; M5 not started.
-- Review verdict to record: M4 → FAIL; M4.1 → FAIL; M4.2 → FAIL;
-  M4.3 → FAIL; M4.4 awaiting independent review.
+- Status: ACCEPTED on `build/m4` at commit `0d0cd4a631c067a29c21ce584e806a47c534dc82`.
+- Review verdict: M4.4 PASS / ACCEPTED. Merging to main, tagging v0.5-m4, and transitioning to M5.
