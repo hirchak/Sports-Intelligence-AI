@@ -104,6 +104,21 @@ class Settings(BaseSettings):
     default_min_model_probability: float = 0.55
     default_min_edge: float = 0.05
 
+    # M6.1 Data Quality Policy
+    quality_weight_fixture_identity: float = 0.15
+    quality_weight_form: float = 0.20
+    quality_weight_season_stats: float = 0.15
+    quality_weight_availability: float = 0.15
+    quality_weight_odds: float = 0.15
+    quality_weight_research: float = 0.10
+    quality_weight_lineups: float = 0.10
+    quality_min_predict_score: float = 0.65
+    quality_band_excellent_min: float = 0.90
+    quality_band_good_min: float = 0.80
+    quality_band_usable_min: float = 0.65
+    quality_staleness_penalty: float = 0.05
+    quality_max_staleness_penalty: float = 0.20
+
     @field_validator("app_env", mode="before")
     @classmethod
     def normalize_app_env(cls, value: object) -> object:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import uuid
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -21,6 +21,7 @@ from sports_intelligence.db.models import (
     DataQualityReport,
     FeatureSnapshot,
     Fixture,
+    FixtureMetadataSnapshot,
     Job,
     JobAttempt,
     League,
@@ -29,6 +30,7 @@ from sports_intelligence.db.models import (
     OddsPrice,
     OddsSnapshotSet,
     ProviderEntityId,
+    RawProviderPayload,
     ResearchClaim,
     ResearchDocument,
     ResearchRun,
@@ -72,32 +74,40 @@ async def m6_session_factory(m6_settings: Settings) -> Iterator[Any]:
 
 @pytest.fixture(autouse=True)
 async def _clean_m6_tables(m6_session_factory: Any) -> Iterator[None]:
-    async with m6_session_factory() as session:
-        for model in (
-            MatchContextRecord,
-            FeatureSnapshot,
-            DataQualityReport,
-            JobAttempt,
-            Job,
-            LineupSnapshot,
-            AvailabilitySnapshot,
-            OddsPrice,
-            OddsSnapshotSet,
-            TeamFormSnapshot,
-            TeamStatisticsSnapshot,
-            StandingSnapshot,
-            ResearchClaim,
-            ResearchDocument,
-            ResearchRun,
-            ProviderEntityId,
-            Fixture,
-            Season,
-            League,
-            Team,
-        ):
-            await session.execute(delete(model))
-        await session.commit()
-    yield
+    async def _clean() -> None:
+        async with m6_session_factory() as session:
+            for model in (
+                MatchContextRecord,
+                FeatureSnapshot,
+                DataQualityReport,
+                JobAttempt,
+                Job,
+                LineupSnapshot,
+                AvailabilitySnapshot,
+                OddsPrice,
+                OddsSnapshotSet,
+                TeamFormSnapshot,
+                TeamStatisticsSnapshot,
+                StandingSnapshot,
+                ResearchClaim,
+                ResearchDocument,
+                ResearchRun,
+                ProviderEntityId,
+                FixtureMetadataSnapshot,
+                Fixture,
+                Season,
+                League,
+                Team,
+                RawProviderPayload,
+            ):
+                await session.execute(delete(model))
+            await session.commit()
+
+    await _clean()
+    try:
+        yield
+    finally:
+        await _clean()
 
 
 async def _seed_test_fixture(
@@ -592,3 +602,477 @@ async def test_api_endpoints_quality_and_context(
         unknown_id = uuid.uuid4()
         nf_resp = client.get(f"/v1/fixtures/{unknown_id}/context")
         assert nf_resp.status_code == 404
+
+
+async def test_mutable_fixture_metadata_future_anti_leakage(m6_session_factory: Any) -> None:
+    """M6.1 §1: Point-in-time selector respects immutable fixture observations.
+    T0 (10:00): status=NS, kickoff=20:00, venue=Stadium A, round=Round 1
+    T2 (14:00): updated to status=POSTPONED, kickoff=21:00, venue=Stadium B, round=Round 2
+    as_of = T1 (12:00) MUST contain only T0 metadata.
+    as_of = T3 (15:00) MUST contain T2 metadata.
+    Old context and hash must never mutate.
+    """
+    t0 = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+    t1 = datetime(2026, 8, 22, 12, 0, tzinfo=UTC)
+    t2 = datetime(2026, 8, 22, 14, 0, tzinfo=UTC)
+    t3 = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+    kickoff_t0 = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    kickoff_t2 = datetime(2026, 8, 22, 21, 0, tzinfo=UTC)
+
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff_t0)
+    fid = ids["fixture_id"]
+    lid = ids["league_id"]
+    sid = ids["season_id"]
+    hid = ids["home_team_id"]
+    aid = ids["away_team_id"]
+
+    meta_t0_id = uuid.uuid4()
+    meta_t2_id = uuid.uuid4()
+
+    async with m6_session_factory() as session:
+        # Observation 1 at T0
+        meta_t0 = FixtureMetadataSnapshot(
+            id=meta_t0_id,
+            fixture_id=fid,
+            provider="api_football",
+            captured_at=t0,
+            league_id=lid,
+            season_id=sid,
+            home_team_id=hid,
+            away_team_id=aid,
+            observed_home_team_name="Home FC",
+            observed_away_team_name="Away FC",
+            kickoff_at=kickoff_t0,
+            venue="Stadium A",
+            round="Round 1",
+            status="NS",
+        )
+        # Observation 2 at T2
+        meta_t2 = FixtureMetadataSnapshot(
+            id=meta_t2_id,
+            fixture_id=fid,
+            provider="api_football",
+            captured_at=t2,
+            league_id=lid,
+            season_id=sid,
+            home_team_id=hid,
+            away_team_id=aid,
+            observed_home_team_name="Home FC",
+            observed_away_team_name="Away FC",
+            kickoff_at=kickoff_t2,
+            venue="Stadium B",
+            round="Round 2",
+            status="POSTPONED",
+        )
+        session.add_all([meta_t0, meta_t2])
+
+        # Update mutable Fixture to T2 values
+        fix = await session.get(Fixture, fid)
+        assert fix is not None
+        fix.kickoff_at = kickoff_t2
+        fix.venue = "Stadium B"
+        fix.round = "Round 2"
+        fix.status = "POSTPONED"
+        await session.commit()
+
+    # Build context at T1 (between T0 and T2)
+    async with m6_session_factory() as session:
+        rec_t1, q_t1, f_t1, ctx_t1 = await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t1,
+        )
+
+    # Verify T1 context only contains T0 observation
+    assert ctx_t1.fixture_identity["venue"] == "Stadium A"
+    assert ctx_t1.fixture_identity["round"] == "Round 1"
+    assert ctx_t1.fixture_identity["status"] == "NS"
+    assert ctx_t1.fixture_identity["kickoff_at"] == kickoff_t0.isoformat()
+    assert ctx_t1.source_manifest["sources"]["fixture_metadata"]["snapshot_id"] == str(meta_t0_id)
+    hash_t1 = rec_t1.context_hash
+
+    # Build context at T3 (after T2)
+    async with m6_session_factory() as session:
+        rec_t3, q_t3, f_t3, ctx_t3 = await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t3,
+        )
+
+    # Verify T3 context contains T2 observation
+    assert ctx_t3.fixture_identity["venue"] == "Stadium B"
+    assert ctx_t3.fixture_identity["round"] == "Round 2"
+    assert ctx_t3.fixture_identity["status"] == "POSTPONED"
+    assert ctx_t3.fixture_identity["kickoff_at"] == kickoff_t2.isoformat()
+    assert ctx_t3.source_manifest["sources"]["fixture_metadata"]["snapshot_id"] == str(meta_t2_id)
+
+    # Verify old T1 context record in DB never mutated
+    async with m6_session_factory() as session:
+        reloaded_t1 = await session.get(MatchContextRecord, rec_t1.id)
+        assert reloaded_t1 is not None
+        assert reloaded_t1.context_hash == hash_t1
+        assert reloaded_t1.context_jsonb["fixture_identity"]["venue"] == "Stadium A"
+
+
+async def test_form_window_size_and_scope_filtering(m6_session_factory: Any) -> None:
+    """M6.1 §6: Selector strictly filters window_size=10 and scope='overall'."""
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+    hid = ids["home_team_id"]
+
+    t_correct = datetime(2026, 8, 22, 8, 0, tzinfo=UTC)
+    t_wrong_window = datetime(2026, 8, 22, 9, 0, tzinfo=UTC)
+    t_wrong_scope = datetime(2026, 8, 22, 9, 30, tzinfo=UTC)
+
+    form_correct_id = uuid.uuid4()
+    async with m6_session_factory() as session:
+        # Older row with window=10, scope=overall
+        f_correct = TeamFormSnapshot(
+            id=form_correct_id,
+            team_id=hid,
+            as_of=t_correct,
+            window_size=10,
+            scope="overall",
+            metrics_jsonb={
+                "outcomes": [{"result": "W", "goals_for": 2, "goals_against": 0}],
+                "ppg": 2.0,
+            },
+            source_fingerprint="fp-correct",
+        )
+        # Newer row with window=5, scope=overall
+        f_wrong_w = TeamFormSnapshot(
+            team_id=hid,
+            as_of=t_wrong_window,
+            window_size=5,
+            scope="overall",
+            metrics_jsonb={
+                "outcomes": [{"result": "L", "goals_for": 0, "goals_against": 1}],
+                "ppg": 0.0,
+            },
+            source_fingerprint="fp-wrong-w",
+        )
+        # Newer row with window=10, scope=home
+        f_wrong_s = TeamFormSnapshot(
+            team_id=hid,
+            as_of=t_wrong_scope,
+            window_size=10,
+            scope="home",
+            metrics_jsonb={
+                "outcomes": [{"result": "D", "goals_for": 1, "goals_against": 1}],
+                "ppg": 1.0,
+            },
+            source_fingerprint="fp-wrong-s",
+        )
+        session.add_all([f_correct, f_wrong_w, f_wrong_s])
+        await session.commit()
+
+    # Build context at 10:00
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+    async with m6_session_factory() as session:
+        rec, q, f, ctx = await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+        )
+
+    # Must have selected the window=10, scope=overall snapshot
+    manifest = ctx.source_manifest["sources"]
+    assert manifest["home_team_form"]["snapshot_id"] == str(form_correct_id)
+    assert manifest["home_team_form"]["details"]["window_size"] == 10
+    assert manifest["home_team_form"]["details"]["scope"] == "overall"
+
+
+async def test_concurrent_context_build_idempotency(m6_session_factory: Any) -> None:
+    """M6.1 §16: 10 concurrent builders for same fixture, phase, and as_of safely dedupe."""
+    import asyncio
+
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
+    async def run_worker() -> tuple[str, str, str, str]:
+        async with m6_session_factory() as session:
+            rec, q, f, ctx = await build_and_persist_match_context(
+                session,
+                fixture_id=fid,
+                forecast_phase=ForecastPhase.MORNING,
+                as_of=t_as_of,
+            )
+            return str(rec.id), rec.context_hash, str(q.id), str(f.id)
+
+    # Run 10 concurrent builders simultaneously
+    results = await asyncio.gather(*[run_worker() for _ in range(10)])
+
+    first_res = results[0]
+    for res in results:
+        assert res == first_res
+
+    # Verify exactly 1 record in each table in DB
+    async with m6_session_factory() as session:
+        contexts = (
+            (
+                await session.execute(
+                    select(MatchContextRecord).where(MatchContextRecord.fixture_id == fid)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        qualities = (
+            (
+                await session.execute(
+                    select(DataQualityReport).where(DataQualityReport.fixture_id == fid)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        features = (
+            (
+                await session.execute(
+                    select(FeatureSnapshot).where(FeatureSnapshot.fixture_id == fid)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        assert len(contexts) == 1
+        assert len(qualities) == 1
+        assert len(features) == 1
+
+
+async def test_stale_running_collector_blocks_context_build(
+    m6_session_factory: Any,
+    m6_settings: Settings,
+) -> None:
+    """M6.1 §13: If any required collector is RUNNING,
+    pre-match scan does NOT enqueue context build.
+    """
+    import hashlib
+
+    from sports_intelligence.collectors.framework import resolve
+    from sports_intelligence.collectors.freshness import FreshnessPolicy
+    from sports_intelligence.collectors.pre_match_scan import PreMatchDecision
+    from sports_intelligence.collectors.refresh import refresh_opportunity_suffix
+    from sports_intelligence.core.phases import FreshnessCategory
+    from sports_intelligence.workers.tasks.pre_match import _dispatch_decision
+
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+    lid = ids["league_id"]
+    sid = ids["season_id"]
+    hid = ids["home_team_id"]
+    aid = ids["away_team_id"]
+
+    now = kickoff - timedelta(hours=1)
+
+    # Plant stale odds snapshot (4 hours old)
+    stale_odds_id = uuid.uuid4()
+    async with m6_session_factory() as session:
+        odds_set = OddsSnapshotSet(
+            id=stale_odds_id,
+            fixture_id=fid,
+            provider="theoddsapi",
+            captured_at=now - timedelta(hours=4),
+            market_whitelist_jsonb=["h2h_1x2"],
+        )
+        session.add(odds_set)
+        await session.commit()
+
+    decision = PreMatchDecision(
+        fixture_id=str(fid),
+        league_id=str(lid),
+        home_team_id=str(hid),
+        away_team_id=str(aid),
+        season_id=str(sid),
+        kickoff_at=kickoff,
+        phase=ForecastPhase.PREMATCH,
+        categories_to_collect=(FreshnessCategory.ODDS,),
+    )
+
+    import sports_intelligence.collectors.odds_collector  # noqa: F401
+
+    odds_collector = resolve("odds")
+    lock_key = odds_collector.lock_key(fixture_id=str(fid), league_id=str(lid))
+    ttl = FreshnessPolicy(m6_settings).ttl_for(odds_collector.category, decision.phase)
+    opp = refresh_opportunity_suffix(
+        collector_name="odds",
+        kickoff_at=kickoff,
+        now=now,
+        windows_minutes=m6_settings.lineup_window_t_minutes,
+        ttl_seconds=int(ttl.total_seconds()),
+        latest_captured_at=now - timedelta(hours=4),
+    )
+    job_key = (
+        f"collect:odds:{hashlib.sha1(lock_key.encode()).hexdigest()[:20]}:"
+        f"{decision.phase.value}:{opp}"
+    )
+
+    async with m6_session_factory() as session:
+        running_job = Job(
+            job_type="collect:odds",
+            idempotency_key=job_key,
+            status=JobStatus.RUNNING.value,
+            scheduled_for=now,
+        )
+        session.add(running_job)
+        await session.commit()
+
+    result = await _dispatch_decision(m6_session_factory, decision, now=now)
+
+    assert result["has_in_flight_collectors"] is True
+    assert result["jobs_enqueued"] == 0
+
+
+async def test_failed_context_job_same_opportunity_retry(m6_session_factory: Any) -> None:
+    """M6.1 §15: Same context-build opportunity with Job in FAILED status retries
+    via CAS FAILED -> PENDING with same UUID.
+    """
+    from unittest.mock import patch
+
+    from sports_intelligence.collectors.pre_match_scan import PreMatchDecision
+    from sports_intelligence.pipelines.discover_fixtures import update_job_status
+    from sports_intelligence.workers.tasks.context import build_match_context_task
+    from sports_intelligence.workers.tasks.pre_match import _try_enqueue_context_build
+
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
+    decision = PreMatchDecision(
+        fixture_id=str(fid),
+        league_id=str(ids["league_id"]),
+        home_team_id=str(ids["home_team_id"]),
+        away_team_id=str(ids["away_team_id"]),
+        season_id=str(ids["season_id"]),
+        kickoff_at=kickoff,
+        phase=ForecastPhase.MORNING,
+        categories_to_collect=(),
+    )
+
+    enqueued_job_ids: list[str] = []
+
+    def mock_apply_async(*args: Any, **kwargs: Any) -> None:
+        enqueued_job_ids.append(kwargs["args"][0])
+
+    with patch.object(build_match_context_task, "apply_async", mock_apply_async):
+        # 1. First context build enqueue creates job in PENDING and enqueues task
+        await _try_enqueue_context_build(m6_session_factory, decision, as_of=t_as_of)
+        assert len(enqueued_job_ids) == 1
+        first_job_id = enqueued_job_ids[0]
+
+        # Simulate context build failure
+        async with m6_session_factory() as session:
+            await update_job_status(session, first_job_id, JobStatus.FAILED)
+            await session.commit()
+
+        # 2. Next scanner opportunity: re-enqueues same UUID with CAS FAILED -> PENDING
+        await _try_enqueue_context_build(m6_session_factory, decision, as_of=t_as_of)
+        assert len(enqueued_job_ids) == 2
+        assert enqueued_job_ids[1] == first_job_id
+
+        async with m6_session_factory() as session:
+            job = await session.get(Job, uuid.UUID(first_job_id))
+            assert job is not None
+            assert job.status == JobStatus.PENDING.value
+
+        # 3. If job is RUNNING or SUCCEEDED, it is NOT retried / downgraded
+        async with m6_session_factory() as session:
+            await update_job_status(session, first_job_id, JobStatus.RUNNING)
+            await session.commit()
+
+        await _try_enqueue_context_build(m6_session_factory, decision, as_of=t_as_of)
+        assert len(enqueued_job_ids) == 2  # No new enqueue
+
+        async with m6_session_factory() as session:
+            job = await session.get(Job, uuid.UUID(first_job_id))
+            assert job is not None
+            assert job.status == JobStatus.RUNNING.value
+
+
+async def test_api_endpoints_phase_validation(
+    m6_session_factory: Any,
+    m6_settings: Settings,
+) -> None:
+    """M6.1 §20: Invalid phase parameter returns HTTP 422."""
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
+    async with m6_session_factory() as session:
+        await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+        )
+
+    app = create_app(m6_settings)
+    with TestClient(app) as client:
+        # Valid phase -> 200
+        res_valid = client.get(f"/v1/fixtures/{fid}/context?phase=MORNING")
+        assert res_valid.status_code == 200
+
+        # Invalid phase -> 422
+        res_invalid_ctx = client.get(f"/v1/fixtures/{fid}/context?phase=INVALID_PHASE")
+        assert res_invalid_ctx.status_code == 422
+
+        res_invalid_qual = client.get(f"/v1/fixtures/{fid}/quality?phase=INVALID_PHASE")
+        assert res_invalid_qual.status_code == 422
+
+
+async def test_form_snapshot_raw_evidence_link(m6_session_factory: Any) -> None:
+    """M6.1 §18: Form snapshot links to raw_provider_payloads.id."""
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+    hid = ids["home_team_id"]
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
+    payload_id = uuid.uuid4()
+    form_id = uuid.uuid4()
+    async with m6_session_factory() as session:
+        raw_payload = RawProviderPayload(
+            id=payload_id,
+            provider="api_football",
+            endpoint_family="teams/statistics",
+            payload_hash="hash-form-raw",
+            payload={"fixtures": []},
+            first_seen_at=t_as_of - timedelta(hours=2),
+        )
+        session.add(raw_payload)
+        await session.flush()
+
+        form_snap = TeamFormSnapshot(
+            id=form_id,
+            team_id=hid,
+            as_of=t_as_of - timedelta(hours=2),
+            window_size=10,
+            scope="overall",
+            metrics_jsonb={"outcomes": []},
+            source_fingerprint="fp-form-link",
+            payload_id=payload_id,
+        )
+        session.add(form_snap)
+        await session.commit()
+
+    async with m6_session_factory() as session:
+        rec, q, f, ctx = await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+        )
+
+    form_prov = ctx.source_manifest["sources"]["home_team_form"]
+    assert form_prov["snapshot_id"] == str(form_id)
+    assert form_prov["payload_id"] == str(payload_id)

@@ -8,6 +8,7 @@ from sports_intelligence.db.models.context import (
 )
 from sports_intelligence.db.models.discovery import (
     Fixture,
+    FixtureMetadataSnapshot,
     League,
     ProviderEntityId,
     ProviderObservation,
@@ -39,6 +40,7 @@ __all__ = [
     "ExternalApiRequest",
     "FeatureSnapshot",
     "Fixture",
+    "FixtureMetadataSnapshot",
     "Job",
     "JobAttempt",
     "League",

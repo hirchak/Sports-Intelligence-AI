@@ -1874,6 +1874,76 @@ results:
 - Zero live external calls, zero credentials, zero LLM calls.
 known problems: None.
 spec/ADR deviations: None.
-Git commit hash if created: to be recorded
-next recommended action: Commit build/m6, push to remote, await independent review.
+Git commit hash if created: fff8df75c520696f6c25a14e19ded7b6711e7688
+next recommended action: Independent review (verdict: FAIL; focused M6.1 requested).
+
+---
+timestamp: 2026-09-30T10:40:00+02:00
+agent/model: Antigravity (Gemini 3.8 Flash)
+milestone: M6.1
+task: Milestone M6.1 correctness, provenance, freshness, and orchestration pass on build/m6
+files changed:
+- src/sports_intelligence/api/routes/context.py
+- src/sports_intelligence/collectors/sports_collectors.py
+- src/sports_intelligence/context/builder.py
+- src/sports_intelligence/context/models.py
+- src/sports_intelligence/context/provenance.py
+- src/sports_intelligence/context/selector.py
+- src/sports_intelligence/core/config.py
+- src/sports_intelligence/db/migrations/versions/0003_provider_evidence_history_and_indexes.py
+- src/sports_intelligence/db/migrations/versions/0009_m6_1_fixture_metadata_and_provenance.py
+- src/sports_intelligence/db/models/__init__.py
+- src/sports_intelligence/db/models/context.py
+- src/sports_intelligence/db/models/discovery.py
+- src/sports_intelligence/db/models/snapshots.py
+- src/sports_intelligence/db/repositories/discovery.py
+- src/sports_intelligence/features/builder.py
+- src/sports_intelligence/pipelines/discover_fixtures.py
+- src/sports_intelligence/quality/engine.py
+- src/sports_intelligence/research/service.py
+- src/sports_intelligence/workers/tasks/pre_match.py
+- tests/integration/test_m6_anti_leakage_and_context.py
+- tests/unit/context/test_context_schema_and_hash.py
+- tests/unit/features/test_features_math.py
+- tests/unit/quality/test_quality_engine.py
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/AI_WORKLOG.md
+- docs/REVIEW_HANDOFF.md
+behavior implemented:
+- Immutable Fixture Metadata Observation Model: created migration 0009 with fixture_metadata_snapshots tracking point-in-time kickoff, status, venue, round, league, season, team names, and payload_id. Updated discovery pipeline to persist snapshot on fixture discovery/update. Selector queries fixture_metadata_snapshots <= as_of.
+- Added payload_id ForeignKey to team_form_snapshots and linked in FormInputsCollector.
+- Provenance manifest updated to include fixture_metadata_snapshot, form payload_id, current and previous odds snapshot set IDs, and real research run ID with document/claim IDs.
+- Deterministic multi-bookmaker market consensus: calculated median odds and median no-vig probabilities per market/selection across bookmakers; odds movement calculated from delta of medians.
+- Form selection: strictly filtered to window_size == 10 and scope == "overall".
+- Provider-scoped external team ID mapping: matched standings and team statistics rows using provider-specific external team IDs.
+- Fixed form math: preserved missing != 0; missing goals_for does not count as failed to score; missing goals_against does not count as clean sheet; independent valid sample counts tracked.
+- Freshness-aware Data Quality Engine: evaluated snapshot age against configured phase TTLs at as_of, populating stale_sources and applying staleness penalties. Canonical lineup publication states handled (CONFIRMED=1.0, NOT_YET_PUBLISHED=0.40, UNSUPPORTED=0.50, PROVIDER_ERROR=0.20 + error record). Distinguished uncollected research (0.50 + warning) from NO_USEFUL_RESULTS (0.85). Persisted quality_policy dictionary with quality bands excellent/good/usable_with_warnings/abstain.
+- Feature-level provenance: mapped each derived feature group to contributing source snapshot IDs in feature_provenance_jsonb.
+- Context-build orchestration: scanner blocks context build if any collector is PENDING, RUNNING, or needs enqueue. Context build job uses source-generation key format. FAILED context jobs retry via CAS FAILED -> PENDING with same UUID without downgrading RUNNING or SUCCEEDED.
+- API validation: typed ForecastPhase enum query parameter on /quality and /context endpoints (HTTP 422 on invalid).
+commands/tests run:
+- uv run ruff check .
+- uv run ruff format --check .
+- uv run mypy src
+- uv run pytest -q -m 'not integration'
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q
+- DATABASE_URL=... uv run alembic check
+- docker compose config -q && docker compose --profile telegram config -q
+results:
+- Ruff: clean (all checks passed)
+- Ruff format: clean (173 files already formatted)
+- Mypy: clean (116 files checked, 0 errors)
+- Unit tests: 339 passed in 3.81s
+- Integration tests: 87 passed in 15.23s
+- Full pytest suite: 426 passed in 16.64s
+- Alembic check: clean, no schema drift
+- Docker compose: valid
+- Zero live external calls, zero credentials, zero LLM calls.
+known problems: None.
+spec/ADR deviations: None.
+Git commit hash if created: ecba462cb9059a5df30193dc2eb3e112f85d3aee
+next recommended action: Push build/m6, await independent review.
+
 

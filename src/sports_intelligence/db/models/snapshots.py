@@ -139,6 +139,11 @@ class TeamFormSnapshot(Base):
     scope: Mapped[str] = mapped_column(String(16), nullable=False)
     metrics_jsonb: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     source_fingerprint: Mapped[str] = mapped_column(String(255), nullable=False)
+    payload_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("raw_provider_payloads.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
 
 class AvailabilitySnapshot(Base):

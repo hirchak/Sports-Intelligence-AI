@@ -395,3 +395,232 @@ def test_standings_and_market_odds_and_movement_features() -> None:
     # Availability
     assert features.home_missing_players_count == 1
     assert features.home_availability_state == "KNOWN_PRESENT"
+
+
+def test_form_math_missing_goals_not_zero_or_fake_clean_sheet() -> None:
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+    fix_info = _fixture_info(kickoff)
+
+    # 3 outcomes:
+    # Outcome 0: W, gf=2, ga=None -> missing GA must NOT count as clean sheet!
+    # Outcome 1: L, gf=None, ga=3 -> missing GF must NOT count as failed to score!
+    # Outcome 2: D, gf=1, ga=1
+    home_outcomes = [
+        {
+            "outcome": "W",
+            "result": "W",
+            "goals_for": 2,
+            "goals_against": None,
+            "is_home": True,
+            "kickoff_utc": (kickoff - timedelta(days=3)).isoformat(),
+        },
+        {
+            "outcome": "L",
+            "result": "L",
+            "goals_for": None,
+            "goals_against": 3,
+            "is_home": False,
+            "kickoff_utc": (kickoff - timedelta(days=7)).isoformat(),
+        },
+        {
+            "outcome": "D",
+            "result": "D",
+            "goals_for": 1,
+            "goals_against": 1,
+            "is_home": True,
+            "kickoff_utc": (kickoff - timedelta(days=12)).isoformat(),
+        },
+    ]
+    home_form = TeamFormSnapshot(
+        team_id=fix_info.home_team_id,
+        as_of=kickoff - timedelta(hours=5),
+        window_size=10,
+        scope="overall",
+        metrics_jsonb={"outcomes": home_outcomes, "window_size": 10},
+        source_fingerprint="fp-home-form",
+    )
+    evidence = SelectedEvidence(
+        fixture_id=fix_info.fixture_id,
+        forecast_phase=ForecastPhase.MORNING,
+        as_of=kickoff - timedelta(hours=5),
+        fixture=fix_info,
+        standings=None,
+        home_team_stats=None,
+        away_team_stats=None,
+        home_form=home_form,
+        away_form=None,
+        home_availability=None,
+        away_availability=None,
+        home_lineup=None,
+        away_lineup=None,
+        odds_set=None,
+    )
+    features = build_features(evidence)
+    # Valid GF samples = 2 (matches 0 and 2: gf 2 + 1 = 3 / 2 = 1.5)
+    assert features.home_last10_goals_for_per_match == 1.5
+    # Valid GA samples = 2 (matches 1 and 2: ga 3 + 1 = 4 / 2 = 2.0)
+    assert features.home_last10_goals_against_per_match == 2.0
+    # Clean sheet count: match 0 has ga=None -> NOT clean sheet.
+    # match 1 has ga=3 -> not. match 2 has ga=1 -> not. Total CS = 0!
+    assert features.home_clean_sheet_rate == 0.0
+    # Scored in 2 matches out of 2 valid GF matches = 1.0
+    assert features.home_scored_rate == 1.0
+    assert features.home_conceded_rate == 1.0
+
+
+def test_multi_bookmaker_insertion_order_determinism() -> None:
+    from itertools import permutations
+
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+    fix_info = _fixture_info(kickoff)
+
+    set_id = uuid.uuid4()
+    odds_set = OddsSnapshotSet(
+        id=set_id,
+        fixture_id=fix_info.fixture_id,
+        provider="theoddsapi",
+        captured_at=kickoff - timedelta(hours=2),
+        market_whitelist_jsonb=["h2h_1x2"],
+    )
+    # 3 bookmakers: Bet365 (home=2.10, no_vig=0.45),
+    # Pinnacle (home=2.15, no_vig=0.46), Unibet (home=2.05, no_vig=0.44)
+    # Median home no_vig = 0.45.
+    p1 = OddsPrice(
+        snapshot_set_id=set_id,
+        bookmaker="bet365",
+        market="h2h_1x2",
+        selection="home",
+        decimal_odds=Decimal("2.10"),
+        implied_probability=Decimal("0.476190"),
+        no_vig_probability=Decimal("0.450000"),
+    )
+    p2 = OddsPrice(
+        snapshot_set_id=set_id,
+        bookmaker="pinnacle",
+        market="h2h_1x2",
+        selection="home",
+        decimal_odds=Decimal("2.15"),
+        implied_probability=Decimal("0.465116"),
+        no_vig_probability=Decimal("0.460000"),
+    )
+    p3 = OddsPrice(
+        snapshot_set_id=set_id,
+        bookmaker="unibet",
+        market="h2h_1x2",
+        selection="home",
+        decimal_odds=Decimal("2.05"),
+        implied_probability=Decimal("0.487805"),
+        no_vig_probability=Decimal("0.440000"),
+    )
+
+    results = []
+    for perm in permutations([p1, p2, p3]):
+        evidence = SelectedEvidence(
+            fixture_id=fix_info.fixture_id,
+            forecast_phase=ForecastPhase.PREMATCH,
+            as_of=kickoff - timedelta(hours=1),
+            fixture=fix_info,
+            standings=None,
+            home_team_stats=None,
+            away_team_stats=None,
+            home_form=None,
+            away_form=None,
+            home_availability=None,
+            away_availability=None,
+            home_lineup=None,
+            away_lineup=None,
+            odds_set=odds_set,
+            odds_prices=list(perm),
+        )
+        feats = build_features(evidence)
+        results.append(feats.market_home_no_vig)
+
+    # All permutations produce identical median consensus
+    for res in results:
+        assert res == 0.45
+
+
+def test_provider_scoped_team_identity() -> None:
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+    fix_id = uuid.uuid4()
+    h_id = uuid.uuid4()
+    a_id = uuid.uuid4()
+
+    # Home team has two external IDs: mock -> "999", api_football -> "42"
+    # Away team has two external IDs: mock -> "888", api_football -> "49"
+    fix_info = SelectedFixtureInfo(
+        fixture_id=fix_id,
+        league_id=uuid.uuid4(),
+        season_id=uuid.uuid4(),
+        home_team_id=h_id,
+        away_team_id=a_id,
+        kickoff_at=kickoff,
+        venue="Emirates Stadium",
+        round="Regular Season - 1",
+        status="NS",
+        league_slug="premier-league",
+        league_name="Premier League",
+        home_team_name="Arsenal",
+        away_team_name="Chelsea",
+        home_external_id="999",  # Default from mock
+        away_external_id="888",
+        home_provider_external_ids={"mock": "999", "api_football": "42"},
+        away_provider_external_ids={"mock": "888", "api_football": "49"},
+    )
+
+    # Standings snapshot is from "api_football"
+    standings = StandingSnapshot(
+        provider="api_football",
+        league_id=fix_info.league_id,
+        season_id=fix_info.season_id,
+        captured_at=kickoff - timedelta(hours=6),
+        source_fingerprint="fp-st",
+        rows_jsonb=[
+            {
+                "provider_team_id": 42,
+                "rank": 1,
+                "played": 10,
+                "points": 25,
+                "goals_for": 22,
+                "goals_against": 8,
+            },
+            {
+                "provider_team_id": 49,
+                "rank": 4,
+                "played": 10,
+                "points": 18,
+                "goals_for": 16,
+                "goals_against": 12,
+            },
+            {
+                "provider_team_id": 999,
+                "rank": 20,
+                "played": 10,
+                "points": 2,
+                "goals_for": 3,
+                "goals_against": 25,
+            },
+        ],
+    )
+
+    evidence = SelectedEvidence(
+        fixture_id=fix_id,
+        forecast_phase=ForecastPhase.MORNING,
+        as_of=kickoff - timedelta(hours=5),
+        fixture=fix_info,
+        standings=standings,
+        home_team_stats=None,
+        away_team_stats=None,
+        home_form=None,
+        away_form=None,
+        home_availability=None,
+        away_availability=None,
+        home_lineup=None,
+        away_lineup=None,
+        odds_set=None,
+    )
+
+    features = build_features(evidence)
+    # Must resolve to rank 1 (from api_football team_id 42), NOT rank 20 (from mock team_id 999)
+    assert features.home_league_position == 1
+    assert features.away_league_position == 4

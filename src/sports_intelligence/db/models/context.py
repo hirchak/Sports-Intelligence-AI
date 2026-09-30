@@ -50,6 +50,7 @@ class FeatureSnapshot(Base):
     source_manifest_jsonb: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict
     )
+    feature_provenance_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -62,6 +63,14 @@ class DataQualityReport(Base):
     __table_args__ = (
         Index("ix_data_quality_reports_fixture_as_of", "fixture_id", text("as_of DESC")),
         Index("ix_data_quality_reports_fixture_phase", "fixture_id", "forecast_phase"),
+        UniqueConstraint(
+            "fixture_id",
+            "forecast_phase",
+            "as_of",
+            "schema_version",
+            "source_fingerprint",
+            name="uq_data_quality_reports_identity",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -90,6 +99,8 @@ class DataQualityReport(Base):
     source_manifest_jsonb: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict
     )
+    source_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    quality_policy_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

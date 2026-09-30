@@ -1,4 +1,4 @@
-# Review Handoff
+# Review Handoff — Milestone M6.1
 
 Use this file when handing the repository to an independent reviewer, ChatGPT, Kimi, another engineer, or a fresh coding-agent session.
 
@@ -8,150 +8,139 @@ Update it before every milestone review.
 
 # Review Status
 
-**Milestone:** M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext  
-**Milestone Verdict:** READY FOR INDEPENDENT REVIEW  
+**Milestone:** M6.1 — Correctness, Provenance, Freshness, and Orchestration Pass  
+**Milestone Verdict:** COMPLETED, AWAITING INDEPENDENT REVIEW  
 **Branch:** `build/m6`  
 **Base Commit:** `fb256ecaf2ca1a97c64f1dba8d491cff6b935c91` (tag `v0.6-m5`, PR #7 merged into `main`)  
-**Previous Accepted Milestones:**
-- M4 → PASS / ACCEPTED (`0d0cd4a631c067a29c21ce584e806a47c534dc82`, PR #6 `2e4683a`, tag `v0.5-m4`)
-- M5 / M5.3 → PASS / ACCEPTED (`b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`, PR #7 `fb256ec`, tag `v0.6-m5`)
+**Reviewed M6 HEAD:** `fff8df75c520696f6c25a14e19ded7b6711e7688` (Verdict: FAIL)  
+**M6.1 HEAD:** `ecba462cb9059a5df30193dc2eb3e112f85d3aee`
 
 ---
 
-# Milestone M6 Architectural Boundaries & Scope
+# 26-Point Review Response & Architecture Evidence
 
-Per `00_MASTER_TECHNICAL_SPEC.md`, `14_DATA_QUALITY_PROVENANCE_AND_LEAKAGE.md`, `15_FORECASTING_METHODOLOGY_V1.md`, and `08_FOOTBALL_ANALYTICS_PIPELINE.md`:
+### 1. Final build/m6 Remote HEAD SHA
+- `ecba462cb9059a5df30193dc2eb3e112f85d3aee`
 
-- **Phase**: LOCAL DEVELOPMENT ONLY.
-- **Strict Determinism**: Zero LLM calls, zero model predictions, zero candidate ranking, zero betting recommendations.
-- **Offline Self-Containment**: Zero live external sports/search API calls during automated test execution.
-- **Strict Temporal Boundary (`as_of`)**: Pure point-in-time evidence selection. All DB queries strictly enforce `< = as_of`. Zero future record leakage.
-- **Immutable Context**: Every generated `MatchContext` is canonical JSON serialized, SHA-256 hashed, and immutable after creation.
-- **No Direct Merge**: Branch `build/m6` is submitted for independent acceptance review and is NOT merged into `main`.
+### 2. Immutable Fixture-Observation Solution
+- **Migration 0009**: Creates table `fixture_metadata_snapshots` tracking point-in-time fixture identity:
+  - `id`, `fixture_id`, `provider`, `provider_fixture_id`, `captured_at`, `league_id`, `season_id`, `home_team_id`, `away_team_id`, `observed_home_team_name`, `observed_away_team_name`, `kickoff_at`, `venue`, `round`, `status`, `payload_id` (ForeignKey to `raw_provider_payloads.id`), `source_version`.
+- **Discovery Pipeline Integration**: Whenever a fixture is discovered or updated (`discover_fixtures.py`), a `FixtureMetadataSnapshot` is recorded with `captured_at=retrieved_at` and `payload_id=raw_payload.id`.
+- **Point-in-Time Selector**: `select_evidence()` in `src/sports_intelligence/context/selector.py` selects the most recent `FixtureMetadataSnapshot` where `captured_at <= as_of`.
 
----
+### 3. Fixture Historical Anti-Leakage Behavior
+- Later changes in canonical `fixtures` or `teams` (e.g., rescheduled kickoff time, postponed status, venue change, name correction) do NOT affect historical contexts built with `as_of = T0` prior to those changes.
+- Verified in `tests/integration/test_m6_anti_leakage_and_context.py::test_strict_as_of_anti_leakage_boundary` and `test_fixture_metadata_snapshot_anti_leakage`.
 
-# Implemented Components
+### 4. Corrected Research Provenance
+- `FixtureResearchView` exposes real `ResearchRun.id` (not a placeholder).
+- `build_source_manifest()` includes:
+  - `run_id`, `status`, `selected_document_ids`, `selected_claim_ids`, `selected_urls`, `extraction_version`.
+- Every claim in `MatchContext.research_claims["claims"]` includes `document_id` and source reference.
 
-### 1. Form Inputs Collector Prerequisite Fix
-- Extended mock sports data provider to canned history of 10 fixtures (`src/sports_intelligence/providers/sports/mock.py`).
-- Updated `FormInputsCollector` default window size to 10 fixtures with `is_home` and `result` fields (`src/sports_intelligence/collectors/sports_collectors.py`).
-- Added `FreshnessCategory.TEAM_FORM` dispatch to `execute_plan()` in `src/sports_intelligence/collectors/pre_match_scan.py`.
+### 5. Corrected Odds / Current + Previous Provenance
+- Both current and previous odds snapshot set IDs are captured in `source_manifest["sources"]["odds"]` (`snapshot_set_id` and `previous_snapshot_set_id`).
+- Both are included in the SHA-256 `source_fingerprint`.
 
-### 2. Database Schema & Alembic Migration 0008
-- `src/sports_intelligence/db/models/context.py` & migration `0008_m6_match_context_features_quality.py`:
-  - `feature_snapshots`: versioned (`features_v1`), composite unique constraint `(fixture_id, forecast_phase, as_of)`.
-  - `data_quality_reports`: versioned (`quality_v1`), composite unique constraint `(fixture_id, forecast_phase, as_of)`, storing overall score, band (`gold`, `silver`, `bronze`, `abstain`), `can_predict`, and dimension scores.
-  - `match_contexts`: versioned (`context_v1`), composite unique constraint `(fixture_id, forecast_phase, as_of)`, storing immutable canonical document and SHA-256 `context_hash`.
-- Full migration verification: `alembic upgrade head`, `downgrade -1`, `upgrade head`, and `alembic check` report 0 schema drift.
+### 6. Multi-Bookmaker Deterministic Aggregation Policy
+- In `src/sports_intelligence/features/builder.py`:
+  - Per market and selection across available bookmakers in the snapshot:
+    - Consensus decimal odds: median of decimal odds.
+    - Consensus probability: median of no-vig probabilities computed per bookmaker via additive normalization.
+  - Odds movement: calculated strictly as `current_consensus_median - previous_consensus_median`.
+  - Independent of SQL row iteration order (`test_multi_bookmaker_insertion_order_determinism`).
+  - Bookmaker identities preserved in `market_snapshot["bookmakers"]`.
 
-### 3. Point-in-Time Evidence Selector (`src/sports_intelligence/context/selector.py`)
-- Executes point-in-time queries strictly filtered by `< = as_of` across 8 snapshot categories:
-  - Fixture identity
-  - Standings (strictly matched on `league_id` AND `season_id`)
-  - Team Statistics
-  - Team Form
-  - Player Availability
-  - Lineups
-  - Odds (most recent snapshot set `< = as_of` + previous set `< = as_of` to measure movement)
-  - Web Research (`get_research_for_fixture(mode="latest_run")`)
-- Proves zero temporal leakage in `tests/integration/test_m6_anti_leakage_and_context.py::test_strict_as_of_anti_leakage_boundary`.
+### 7. Form Identity & Provider Identity Fixes
+- `select_evidence()` strictly selects `TeamFormSnapshot` matching `window_size == 10` and `scope == "overall"`.
+- Provider-scoped external team ID mapping: standings rows and team stats are matched using external IDs scoped to `provider == snapshot.provider` via `get_home_external_id(provider)` and `get_away_external_id(provider)`.
 
-### 4. Source Provenance Manifest (`src/sports_intelligence/context/provenance.py`)
-- Emits machine-readable provenance manifest mapping each evidence category to table, snapshot ID, provider, captured_at, and payload reference.
-- Generates composite SHA-256 `source_fingerprint` capturing the complete state of underlying source data.
+### 8. Missingness Behavior in Form & Stats Math
+- In `src/sports_intelligence/features/builder.py`:
+  - `missing != 0.0`. Missing values in goals_for or goals_against do not default to 0.
+  - Missing goals_against does NOT count as a clean sheet.
+  - Missing goals_for does NOT count as failed to score.
+  - Independent counts of valid GF and valid GA matches are tracked.
 
-### 5. Deterministic Feature Builder V1 (`src/sports_intelligence/features/builder.py`)
-- Form metrics: PPG, GF/match, GA/match, scoring rate, conceding rate, clean sheet rate, home/away splits.
-- Schedule metrics: rest days, 7-day match congestion, 14-day match congestion.
-- Standings deltas: rank delta, points delta, goals-per-match deltas.
-- Availability: missing player counts, unknown status flags.
-- Market: implied probabilities, no-vig probabilities, odds movement deltas.
-- Missing data invariant: missing features remain strictly `None` (missing != 0.0), with missing reasons tracked in `missing_features`.
+### 9. Freshness-Aware Data Quality Behavior
+- `DataQualityEngine.evaluate()` assesses the age of each snapshot category against configured phase TTLs at the exact evaluation `as_of`.
+- Stale snapshots are appended to `stale_sources` and receive staleness penalties (e.g. 0.05 per stale source up to max 0.20).
+- Canonical lineup states handled in PREMATCH:
+  - `CONFIRMED` -> 1.0 score.
+  - `NOT_YET_PUBLISHED` -> 0.40 score.
+  - `UNSUPPORTED` -> 0.50 score.
+  - `PROVIDER_ERROR` -> 0.20 score + provider error record.
+- In MORNING phase: Lineups dimension is N/A and excluded from score denominator.
 
-### 6. Deterministic Data Quality Engine (`src/sports_intelligence/quality/engine.py`)
-- Evaluates 7 dimensions: `fixture_identity`, `form`, `season_stats`, `availability`, `odds`, `research`, `lineups`.
-- Phase-aware Lineups Policy:
-  - `MORNING` phase: Lineups are expected to be absent (N/A). Lineup weight is dynamically excluded from the score denominator (effective weight 0).
-  - `PREMATCH` phase: Lineups are evaluated based on confirmed/unconfirmed publication state.
-- Gating rules: `can_predict = False` if both odds and form are missing or critical inputs are absent.
-- Band mapping: `gold` (>= 0.85), `silver` (>= 0.70), `bronze` (>= 0.50), `abstain` (< 0.50).
-- Conflict & stale penalties applied deterministically.
+### 10. Persisted Quality Policy and Version
+- `quality_policy` dictionary stored on `DataQualityReport` and `MatchContext`:
+  - `policy_version`, `weights`, `min_predict_score`, `staleness_penalty`, `max_staleness_penalty`, `band_thresholds`.
+- Canonical quality bands: `excellent` (>= 0.85), `good` (>= 0.70), `usable_with_warnings` (>= 0.50), `abstain` (< 0.50).
 
-### 7. MatchContext V1 Schema & Canonical Hash (`src/sports_intelligence/context/models.py`, `builder.py`)
-- Strictly ordered 13 sections per spec:
-  1. `meta`
-  2. `source_manifest`
-  3. `data_quality`
-  4. `fixture_identity`
-  5. `standings`
-  6. `team_form`
-  7. `season_strength`
-  8. `schedule`
-  9. `availability`
-  10. `lineups`
-  11. `market_snapshot`
-  12. `research_claims`
-  13. `missing_features`
-- Canonical JSON serialization with SHA-256 `context_hash`.
-- Idempotent builder: repeat executions for same `(fixture_id, phase, as_of)` yield identical IDs and hashes without duplicate rows.
+### 11. Feature-Level Provenance
+- `build_feature_provenance(evidence)` maps every derived feature family (`form`, `schedule`, `standings`, `availability`, `market`, `research`, `lineups`) to contributing source snapshot IDs.
+- Stored in `FeatureSnapshot.feature_provenance_jsonb`.
 
-### 8. Celery Worker Task & Orchestration
-- Registered task `context.build_match_context` on queue `evaluation` (`src/sports_intelligence/workers/tasks/context.py`).
-- Pre-match scanner in `pre_match.py` triggers `_try_enqueue_context_build` once all required collector categories are fresh.
-- Records job attempt and updates job state to `SUCCEEDED`/`FAILED`.
+### 12. Context-Build Readiness Semantics
+- In `src/sports_intelligence/workers/tasks/pre_match.py`:
+  - Pre-match scanner tracks `has_in_flight_collectors` if any required collector job is `PENDING`, `RUNNING`, or has pending enqueues.
+  - Context build is ONLY triggered if `not has_in_flight_collectors and jobs_enqueued == 0`.
 
-### 9. Read-Only API Endpoints (`src/sports_intelligence/api/routes/context.py`)
-- `GET /v1/fixtures/{fixture_id}/quality`: returns data quality report, quality band, and dimension scores.
-- `GET /v1/fixtures/{fixture_id}/context`: returns complete immutable MatchContext document, context hash, and source timing.
-- Read-only DB queries, 0 external provider calls.
+### 13. Source-Generation Job Identity
+- Context build idempotency key format:
+  `context_build:{fixture_id}:{phase}:{schema_version}:{source_fingerprint}`
+- Guarantees deterministic per-source-generation job identity.
 
----
+### 14. FAILED Context-Job Retry Behavior
+- In `_try_enqueue_context_build`:
+  - If a job for the same source generation already exists in `FAILED` status, it is retried via CAS transition `FAILED -> PENDING` with the same UUID.
+  - Never downgrades `RUNNING` or `SUCCEEDED`.
 
-# Verification & Test Results
+### 15. Concurrent Builder Idempotency Result
+- Safe unique conflict handling across `feature_snapshots`, `data_quality_reports`, and `match_contexts`.
+- Tested with 5 concurrent builder tasks on the exact same fixture, phase, and as_of: all return identical records, source fingerprints, and context hashes without spurious failures (`test_concurrent_context_build_idempotency`).
 
-```text
-Full Test Suite: 408 passed in 14.20s
-- Unit tests: 328 passed, 80 deselected in 3.58s
-- Integration tests: 80 passed, 328 deselected in 13.42s
-Ruff Lint: All checks passed!
-Ruff Format: 172 files already formatted
-Mypy: Success: no issues found in 115 source files
-Alembic Check: No new upgrade operations detected (schema in sync)
-Docker Compose: Valid (standard and telegram profiles)
-```
+### 16. Strict MatchContext Schema Result
+- Defined typed Pydantic models for sections (`FixtureIdentitySection`, `TeamFormSection`, `DataQualitySection`, `FeaturesSection`, `MarketSnapshotSection`).
+- Deterministic canonical JSON serialization and SHA-256 `context_hash`.
 
----
+### 17. Migrations Created
+- `0009_m6_1_fixture_metadata_and_provenance.py`:
+  - Creates `fixture_metadata_snapshots`.
+  - Adds `team_form_snapshots.payload_id`.
+  - Adds `data_quality_reports.source_fingerprint` and `quality_policy_jsonb`.
+  - Adds `feature_snapshots.feature_provenance_jsonb`.
+  - Unique constraint `uq_data_quality_reports_identity` on `(fixture_id, forecast_phase, as_of)`.
 
-# Recommended Independent Review Verification Steps
+### 18. Unit Test Result
+- `uv run pytest -q -m 'not integration'` → **339 passed, 87 deselected in 3.81s**
 
-To independently verify this milestone on branch `build/m6`:
+### 19. Integration Test Result
+- `pytest -q -m integration` (with PostgreSQL and Redis service containers) → **87 passed, 339 deselected in 15.23s**
 
-1. **Verify git commit and branch state**:
-   ```bash
-   git branch --show-current   # build/m6
-   git log -n 5 --oneline
-   ```
-2. **Run lint and type checks**:
-   ```bash
-   uv run ruff check .
-   uv run ruff format --check .
-   uv run mypy src
-   ```
-3. **Verify Alembic migrations**:
-   ```bash
-   DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel' uv run alembic check
-   ```
-4. **Run unit tests**:
-   ```bash
-   uv run pytest -q -m 'not integration'
-   ```
-5. **Run full integration test suite**:
-   ```bash
-   TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q
-   ```
-6. **Verify Docker Compose**:
-   ```bash
-   docker compose config -q
-   docker compose --profile telegram config -q
-   ```
+### 20. Full Pytest Suite Result
+- `uv run pytest -q` → **426 passed in 16.64s**
+
+### 21. Alembic Migration Verification
+- `alembic upgrade head`, `downgrade base`, `upgrade head` verified.
+- `alembic check` → **No new upgrade operations detected** (models and migrations in 100% sync).
+
+### 22. Ruff / Format / Mypy
+- `uv run ruff check .` → **All checks passed!**
+- `uv run ruff format --check .` → **173 files already formatted**
+- `uv run mypy src` → **Success: no issues found in 116 source files**
+
+### 23. Docker Compose Verification
+- `docker compose config -q` → valid (exit code 0)
+- `docker compose --profile telegram config -q` → valid (exit code 0)
+
+### 24. Exact CI Result
+- Complete local reproduction of CI pipeline (unit, integration, lint, format, typecheck, migrations, compose) passes 100% green.
+
+### 25. Real External Calls Made
+- Exactly **0** real external calls made in Milestone M6.1. All tests and services run completely offline and self-contained with mock providers.
+
+### 26. Confirmation: M6 Not Merged / M7 Not Started
+- Branch remains `build/m6`.
+- `main` remains untouched at `fb256ecaf2ca1a97c64f1dba8d491cff6b935c91` (tag `v0.6-m5`).
+- Milestone M7 is **NOT** started. Zero LLM calls, zero predictions, zero ranking, zero betting recommendations exist.

@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -165,8 +166,64 @@ class ProviderObservation(Base):
     response_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class FixtureMetadataSnapshot(Base):
+    """Immutable point-in-time observation of fixture metadata from a provider."""
+
+    __tablename__ = "fixture_metadata_snapshots"
+    __table_args__ = (
+        Index(
+            "ix_fixture_metadata_snapshots_fixture_captured",
+            "fixture_id",
+            text("captured_at DESC"),
+        ),
+        Index(
+            "ix_fixture_metadata_snapshots_provider_external",
+            "provider",
+            "provider_fixture_id",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    fixture_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("fixtures.id", ondelete="CASCADE"), nullable=False
+    )
+    provider: Mapped[str] = mapped_column(String(32), nullable=False)
+    provider_fixture_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    league_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("leagues.id", ondelete="CASCADE"), nullable=False
+    )
+    season_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("seasons.id", ondelete="SET NULL"), nullable=True
+    )
+    home_team_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+    )
+    away_team_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), nullable=False
+    )
+    observed_home_team_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    observed_away_team_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    kickoff_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    venue: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    round: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    payload_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("raw_provider_payloads.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    source_version: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'v1'")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 __all__ = [
     "Fixture",
+    "FixtureMetadataSnapshot",
     "League",
     "ProviderEntityId",
     "ProviderObservation",

@@ -18,7 +18,8 @@ from sports_intelligence.core.phases import Priority
 from sports_intelligence.db.models import Job
 from sports_intelligence.db.repositories.discovery import (
     get_or_create_team_id,
-    store_raw_evidence,
+    record_fixture_metadata_snapshot,
+    store_raw_evidence_with_payload_id,
     upsert_fixture_id,
     upsert_league_with_mapping,
     upsert_season_id,
@@ -126,9 +127,10 @@ class FixtureDiscoveryService:
         teams_created = 0
         raw_payload_stored = False
 
+        payload_id: uuid.UUID | None = None
         async with self._session_factory() as session:
             if result.raw_payload is not None:
-                raw_payload_stored = await store_raw_evidence(
+                raw_payload_stored, payload_id = await store_raw_evidence_with_payload_id(
                     session,
                     provider=result.metadata.provider,
                     endpoint_family=result.metadata.endpoint_family,
@@ -176,7 +178,7 @@ class FixtureDiscoveryService:
                 )
                 teams_created += int(home_created) + int(away_created)
 
-                _, created = await upsert_fixture_id(
+                fixture_id, created = await upsert_fixture_id(
                     session,
                     provider=fixture.provider,
                     external_id=fixture.provider_fixture_id,
@@ -193,6 +195,26 @@ class FixtureDiscoveryService:
                     fixtures_created += 1
                 else:
                     fixtures_updated += 1
+
+                await record_fixture_metadata_snapshot(
+                    session,
+                    fixture_id=fixture_id,
+                    provider=fixture.provider,
+                    provider_fixture_id=str(fixture.provider_fixture_id),
+                    captured_at=result.metadata.retrieved_at,
+                    league_id=league_id,
+                    season_id=season_id,
+                    home_team_id=home_team_id,
+                    away_team_id=away_team_id,
+                    observed_home_team_name=fixture.home_team_name or "",
+                    observed_away_team_name=fixture.away_team_name or "",
+                    kickoff_at=fixture.kickoff_utc,
+                    venue=fixture.venue,
+                    round_name=fixture.round,
+                    status=fixture.status_short,
+                    payload_id=payload_id,
+                    source_version="v1",
+                )
 
             await session.commit()
 

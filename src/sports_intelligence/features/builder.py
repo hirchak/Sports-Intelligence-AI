@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import statistics
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -117,40 +118,56 @@ def _calc_form_metrics(
         return None, None, None, None, None, None
 
     points = 0
+    points_valid_count = 0
+
     gf_total = 0
-    ga_total = 0
+    gf_valid_count = 0
     scored_count = 0
+
+    ga_total = 0
+    ga_valid_count = 0
     conceded_count = 0
     clean_sheets = 0
 
     for m in sample:
         outcome = m.get("outcome") or m.get("result")
-        if outcome == "W":
-            points += 3
-        elif outcome == "D":
-            points += 1
-        elif outcome == "L":
-            points += 0
+        if outcome in ("W", "D", "L"):
+            points_valid_count += 1
+            if outcome == "W":
+                points += 3
+            elif outcome == "D":
+                points += 1
 
-        gf = int(m.get("goals_for", 0))
-        ga = int(m.get("goals_against", 0))
-        gf_total += gf
-        ga_total += ga
+        raw_gf = m.get("goals_for")
+        if raw_gf is not None:
+            try:
+                gf = int(raw_gf)
+                gf_total += gf
+                gf_valid_count += 1
+                if gf > 0:
+                    scored_count += 1
+            except (ValueError, TypeError):
+                pass
 
-        if gf > 0:
-            scored_count += 1
-        if ga > 0:
-            conceded_count += 1
-        if ga == 0:
-            clean_sheets += 1
+        raw_ga = m.get("goals_against")
+        if raw_ga is not None:
+            try:
+                ga = int(raw_ga)
+                ga_total += ga
+                ga_valid_count += 1
+                if ga > 0:
+                    conceded_count += 1
+                elif ga == 0:
+                    clean_sheets += 1
+            except (ValueError, TypeError):
+                pass
 
-    count = len(sample)
-    ppg = round(points / count, 4)
-    gf_pm = round(gf_total / count, 4)
-    ga_pm = round(ga_total / count, 4)
-    sc_rate = round(scored_count / count, 4)
-    cc_rate = round(conceded_count / count, 4)
-    cs_rate = round(clean_sheets / count, 4)
+    ppg = round(points / points_valid_count, 4) if points_valid_count > 0 else None
+    gf_pm = round(gf_total / gf_valid_count, 4) if gf_valid_count > 0 else None
+    ga_pm = round(ga_total / ga_valid_count, 4) if ga_valid_count > 0 else None
+    sc_rate = round(scored_count / gf_valid_count, 4) if gf_valid_count > 0 else None
+    cc_rate = round(conceded_count / ga_valid_count, 4) if ga_valid_count > 0 else None
+    cs_rate = round(clean_sheets / ga_valid_count, 4) if ga_valid_count > 0 else None
 
     return ppg, gf_pm, ga_pm, sc_rate, cc_rate, cs_rate
 
@@ -206,6 +223,32 @@ def _calc_schedule(
     m_14d = sum(1 for d in prior_dates if cutoff_14d <= d)
 
     return days_since, m_7d, m_14d
+
+
+def _median_no_vig(prices: list[Any], market: str, selection: str) -> float | None:
+    vals = [
+        float(p.no_vig_probability)
+        for p in prices
+        if getattr(p, "market", None) == market
+        and getattr(p, "selection", None) == selection
+        and getattr(p, "no_vig_probability", None) is not None
+    ]
+    if not vals:
+        return None
+    return round(float(statistics.median(vals)), 4)
+
+
+def _median_decimal_odds(prices: list[Any], market: str, selection: str) -> float | None:
+    vals = [
+        float(p.decimal_odds)
+        for p in prices
+        if getattr(p, "market", None) == market
+        and getattr(p, "selection", None) == selection
+        and getattr(p, "decimal_odds", None) is not None
+    ]
+    if not vals:
+        return None
+    return round(float(statistics.median(vals)), 4)
 
 
 def build_features(evidence: SelectedEvidence) -> DeterministicFeatures:
@@ -271,16 +314,20 @@ def build_features(evidence: SelectedEvidence) -> DeterministicFeatures:
     a_season_ga_pm: float | None = None
 
     if evidence.standings and isinstance(evidence.standings.rows_jsonb, list):
+        standings_prov = evidence.standings.provider
+        home_ext = evidence.fixture.get_home_external_id(standings_prov)
+        away_ext = evidence.fixture.get_away_external_id(standings_prov)
+
         for row in evidence.standings.rows_jsonb:
             if not isinstance(row, dict):
                 continue
             prov_id = str(row.get("provider_team_id"))
             team_name = row.get("team_name")
 
-            is_home_match = prov_id == str(evidence.fixture.home_external_id) or (
+            is_home_match = (home_ext is not None and prov_id == str(home_ext)) or (
                 team_name and team_name == evidence.fixture.home_team_name
             )
-            is_away_match = prov_id == str(evidence.fixture.away_external_id) or (
+            is_away_match = (away_ext is not None and prov_id == str(away_ext)) or (
                 team_name and team_name == evidence.fixture.away_team_name
             )
 
@@ -387,80 +434,32 @@ def build_features(evidence: SelectedEvidence) -> DeterministicFeatures:
     m_btts_n_nv: float | None = None
 
     if evidence.odds_set and evidence.odds_prices:
-        for p in evidence.odds_prices:
-            m = p.market
-            sel = p.selection
-            nv = float(p.no_vig_probability) if p.no_vig_probability is not None else None
-            if nv is None:
-                continue
-
-            if m == "h2h_1x2":
-                if sel == "home":
-                    m_home_nv = nv
-                elif sel == "draw":
-                    m_draw_nv = nv
-                elif sel == "away":
-                    m_away_nv = nv
-            elif m == "ou_15":
-                if sel == "over":
-                    m_o15_nv = nv
-                elif sel == "under":
-                    m_u15_nv = nv
-            elif m == "ou_25":
-                if sel == "over":
-                    m_o25_nv = nv
-                elif sel == "under":
-                    m_u25_nv = nv
-            elif m == "btts":
-                if sel == "yes":
-                    m_btts_y_nv = nv
-                elif sel == "no":
-                    m_btts_n_nv = nv
+        m_home_nv = _median_no_vig(evidence.odds_prices, "h2h_1x2", "home")
+        m_draw_nv = _median_no_vig(evidence.odds_prices, "h2h_1x2", "draw")
+        m_away_nv = _median_no_vig(evidence.odds_prices, "h2h_1x2", "away")
+        m_o15_nv = _median_no_vig(evidence.odds_prices, "ou_15", "over")
+        m_u15_nv = _median_no_vig(evidence.odds_prices, "ou_15", "under")
+        m_o25_nv = _median_no_vig(evidence.odds_prices, "ou_25", "over")
+        m_u25_nv = _median_no_vig(evidence.odds_prices, "ou_25", "under")
+        m_btts_y_nv = _median_no_vig(evidence.odds_prices, "btts", "yes")
+        m_btts_n_nv = _median_no_vig(evidence.odds_prices, "btts", "no")
     else:
         missing["odds"] = "No odds snapshot set <= as_of"
 
-    # Odds Movement
+    # Odds Movement (Consensus Median Movement)
     odds_move_home: float | None = None
     odds_move_over25: float | None = None
 
     if evidence.odds_prices and evidence.prev_odds_prices:
-        cur_home = next(
-            (
-                p.decimal_odds
-                for p in evidence.odds_prices
-                if p.market == "h2h_1x2" and p.selection == "home"
-            ),
-            None,
-        )
-        prev_home = next(
-            (
-                p.decimal_odds
-                for p in evidence.prev_odds_prices
-                if p.market == "h2h_1x2" and p.selection == "home"
-            ),
-            None,
-        )
+        cur_home = _median_decimal_odds(evidence.odds_prices, "h2h_1x2", "home")
+        prev_home = _median_decimal_odds(evidence.prev_odds_prices, "h2h_1x2", "home")
         if cur_home is not None and prev_home is not None:
-            odds_move_home = round(float(cur_home - prev_home), 4)
+            odds_move_home = round(cur_home - prev_home, 4)
 
-        cur_o25 = next(
-            (
-                p.decimal_odds
-                for p in evidence.odds_prices
-                if p.market == "ou_25" and p.selection == "over"
-            ),
-            None,
-        )
-        prev_o25 = next(
-            (
-                p.decimal_odds
-                for p in evidence.prev_odds_prices
-                if p.market == "ou_25" and p.selection == "over"
-            ),
-            None,
-        )
+        cur_o25 = _median_decimal_odds(evidence.odds_prices, "ou_25", "over")
+        prev_o25 = _median_decimal_odds(evidence.prev_odds_prices, "ou_25", "over")
         if cur_o25 is not None and prev_o25 is not None:
-            odds_move_over25 = round(float(cur_o25 - prev_o25), 4)
+            odds_move_over25 = round(cur_o25 - prev_o25, 4)
     else:
         missing["odds_movement"] = (
             "No prior odds snapshot available <= as_of for movement comparison"

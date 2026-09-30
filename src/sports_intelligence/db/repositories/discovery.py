@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from sports_intelligence.db.models import (
     Fixture,
+    FixtureMetadataSnapshot,
     League,
     ProviderEntityId,
     ProviderObservation,
@@ -275,7 +276,7 @@ async def _refresh_fixture(
         await session.flush()
 
 
-async def store_raw_evidence(
+async def store_raw_evidence_with_payload_id(
     session: AsyncSession,
     provider: str,
     endpoint_family: str,
@@ -283,7 +284,7 @@ async def store_raw_evidence(
     payload_hash: str,
     payload: dict[str, Any],
     retrieved_at: datetime,
-) -> bool:
+) -> tuple[bool, uuid.UUID]:
     content_id, content_created = await _upsert_raw_content(
         session, provider, endpoint_family, payload_hash, payload
     )
@@ -296,7 +297,70 @@ async def store_raw_evidence(
             retrieved_at=retrieved_at,
         )
     )
-    return content_created
+    return content_created, content_id
+
+
+async def store_raw_evidence(
+    session: AsyncSession,
+    provider: str,
+    endpoint_family: str,
+    request_fingerprint: str,
+    payload_hash: str,
+    payload: dict[str, Any],
+    retrieved_at: datetime,
+) -> bool:
+    created, _ = await store_raw_evidence_with_payload_id(
+        session,
+        provider=provider,
+        endpoint_family=endpoint_family,
+        request_fingerprint=request_fingerprint,
+        payload_hash=payload_hash,
+        payload=payload,
+        retrieved_at=retrieved_at,
+    )
+    return created
+
+
+async def record_fixture_metadata_snapshot(
+    session: AsyncSession,
+    *,
+    fixture_id: uuid.UUID,
+    provider: str,
+    provider_fixture_id: str | None,
+    captured_at: datetime,
+    league_id: uuid.UUID,
+    season_id: uuid.UUID | None,
+    home_team_id: uuid.UUID,
+    away_team_id: uuid.UUID,
+    observed_home_team_name: str,
+    observed_away_team_name: str,
+    kickoff_at: datetime,
+    venue: str | None,
+    round_name: str | None,
+    status: str,
+    payload_id: uuid.UUID | None = None,
+    source_version: str = "v1",
+) -> FixtureMetadataSnapshot:
+    snap = FixtureMetadataSnapshot(
+        fixture_id=fixture_id,
+        provider=provider,
+        provider_fixture_id=provider_fixture_id,
+        captured_at=captured_at,
+        league_id=league_id,
+        season_id=season_id,
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
+        observed_home_team_name=observed_home_team_name,
+        observed_away_team_name=observed_away_team_name,
+        kickoff_at=kickoff_at,
+        venue=venue,
+        round=round_name,
+        status=status,
+        payload_id=payload_id,
+        source_version=source_version,
+    )
+    session.add(snap)
+    return snap
 
 
 async def _upsert_raw_content(

@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext (AWAITING INDEPENDENT REVIEW)  
+**Current milestone:** M6.1 — Correctness, Provenance, Freshness, and Orchestration Pass (AWAITING INDEPENDENT REVIEW)  
 **Last updated:** 2026-09-30 (Antigravity)  
 **Last known good commit:** fb256ecaf2ca1a97c64f1dba8d491cff6b935c91 (tag v0.6-m5, PR #7 merged into main)
 
@@ -13,11 +13,12 @@
 Milestone review verdicts:
 - M4 → **PASS / ACCEPTED** (HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`, tagged `v0.5-m4`)
 - M5 / M5.3 → **PASS / ACCEPTED** (HEAD `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`, merged in PR #7 `fb256ecaf2ca1a97c64f1dba8d491cff6b935c91`, tagged `v0.6-m5`)
-- **M6 → READY FOR INDEPENDENT REVIEW** (branch `build/m6`)
+- M6 → **FAIL** (reviewed HEAD `fff8df75c520696f6c25a14e19ded7b6711e7688`)
+- **M6.1 → COMPLETED, AWAITING INDEPENDENT REVIEW** (branch `build/m6`)
 
 Phase A: Finalized accepted M5, merged to `main` via PR #7 (`fb256ec`), created and pushed annotated tag `v0.6-m5`, branched `build/m6`.
 
-Phase B: Fully implemented Milestone M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext V1.
+Phase B: Fully implemented Milestone M6.1 — Correctness, Provenance, Freshness, and Orchestration Pass on `build/m6`.
 
 Development remains strictly LOCAL ONLY.
 No Hetzner deployment is authorized.
@@ -650,10 +651,10 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m5` (M5.3 complete, awaiting review); base `main` at `2e4683a` (`v0.5-m4`)
+- `build/m6` (M6.1 complete, awaiting review); base `main` at `fb256ec` (`v0.6-m5`)
 
 Commit:
-- `8833d9e7c47a6dd7aeef9dd24d999b4bad214b59` (Milestone M5.3 HEAD)
+- `ecba462cb9059a5df30193dc2eb3e112f85d3aee` (Milestone M6.1 HEAD)
 
 Working tree:
 - clean after commit
@@ -662,11 +663,9 @@ Working tree:
 
 # 12. Next action
 
-1. Merge accepted `build/m5` into `main` via PR with CI verification.
-2. Fast-forward local `main` to `origin/main`.
-3. Create and push annotated tag `v0.6-m5`.
-4. Create branch `build/m6` from accepted `main`.
-5. Implement Milestone M6.
+1. Await independent acceptance review of `build/m6`.
+2. Do NOT merge `build/m6` into `main`.
+3. Do NOT start Milestone M7.
 
 ---
 
@@ -687,6 +686,12 @@ Safe to begin M5: YES.
 **Final review verdict (2026-09-29): M5.3 / M5 PASS — M5 ACCEPTED.**
 Accepted implementation remote HEAD: `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`.
 Safe to begin M6: YES (following merge and tag).
+
+**Review verdict (2026-09-30): M6 FAIL — focused M6.1 required.**
+Reviewed HEAD: `fff8df75c520696f6c25a14e19ded7b6711e7688`
+Verdict: FAIL
+M6.1: Correctness, Provenance, Freshness, and Orchestration Pass completed and AWAITING INDEPENDENT REVIEW.
+Quality Bands: `excellent` (>= 0.85), `good` (>= 0.70), `usable_with_warnings` (>= 0.50), `abstain` (< 0.50).
 
 ---
 

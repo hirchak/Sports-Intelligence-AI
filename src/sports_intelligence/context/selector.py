@@ -7,10 +7,12 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sports_intelligence.core.logging import get_logger
 from sports_intelligence.core.phases import ForecastPhase
 from sports_intelligence.db.models import (
     AvailabilitySnapshot,
     Fixture,
+    FixtureMetadataSnapshot,
     League,
     LineupSnapshot,
     OddsPrice,
@@ -22,6 +24,8 @@ from sports_intelligence.db.models import (
     TeamStatisticsSnapshot,
 )
 from sports_intelligence.research.service import FixtureResearchView, get_research_for_fixture
+
+logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -41,6 +45,20 @@ class SelectedFixtureInfo:
     away_team_name: str | None
     home_external_id: str | None
     away_external_id: str | None
+    home_provider_external_ids: dict[str, str] = field(default_factory=dict)
+    away_provider_external_ids: dict[str, str] = field(default_factory=dict)
+    fixture_metadata_snapshot_id: uuid.UUID | None = None
+    metadata_captured_at: datetime | None = None
+
+    def get_home_external_id(self, provider: str | None = None) -> str | None:
+        if provider and provider in self.home_provider_external_ids:
+            return self.home_provider_external_ids[provider]
+        return self.home_external_id
+
+    def get_away_external_id(self, provider: str | None = None) -> str | None:
+        if provider and provider in self.away_provider_external_ids:
+            return self.away_provider_external_ids[provider]
+        return self.away_external_id
 
 
 @dataclass(frozen=True)
@@ -49,16 +67,17 @@ class SelectedEvidence:
     forecast_phase: ForecastPhase
     as_of: datetime
     fixture: SelectedFixtureInfo
-    standings: StandingSnapshot | None
-    home_team_stats: TeamStatisticsSnapshot | None
-    away_team_stats: TeamStatisticsSnapshot | None
-    home_form: TeamFormSnapshot | None
-    away_form: TeamFormSnapshot | None
-    home_availability: AvailabilitySnapshot | None
-    away_availability: AvailabilitySnapshot | None
-    home_lineup: LineupSnapshot | None
-    away_lineup: LineupSnapshot | None
-    odds_set: OddsSnapshotSet | None
+    fixture_metadata: FixtureMetadataSnapshot | None = None
+    standings: StandingSnapshot | None = None
+    home_team_stats: TeamStatisticsSnapshot | None = None
+    away_team_stats: TeamStatisticsSnapshot | None = None
+    home_form: TeamFormSnapshot | None = None
+    away_form: TeamFormSnapshot | None = None
+    home_availability: AvailabilitySnapshot | None = None
+    away_availability: AvailabilitySnapshot | None = None
+    home_lineup: LineupSnapshot | None = None
+    away_lineup: LineupSnapshot | None = None
+    odds_set: OddsSnapshotSet | None = None
     odds_prices: list[OddsPrice] = field(default_factory=list)
     prev_odds_set: OddsSnapshotSet | None = None
     prev_odds_prices: list[OddsPrice] = field(default_factory=list)
@@ -85,7 +104,7 @@ async def select_evidence(
 
     # 1. Fixture Identity
     fix_stmt = (
-        select(Fixture, League, Team, Team)
+        select(Fixture, League, Team)
         .join(League, Fixture.league_id == League.id)
         .join(Team, Fixture.home_team_id == Team.id)
         .where(Fixture.id == fixture_id)
@@ -94,10 +113,11 @@ async def select_evidence(
     if fix_row is None:
         raise ValueError(f"Fixture {fixture_id} not found in database")
 
-    fixture_obj, league_obj, home_team_obj, _ = fix_row
+    fixture_obj, league_obj, home_team_obj = fix_row
+    home_name: str | None = home_team_obj.name if home_team_obj else None
     # Query away team
     away_team_obj = await session.get(Team, fixture_obj.away_team_id)
-    away_name = away_team_obj.name if away_team_obj else None
+    away_name: str | None = away_team_obj.name if away_team_obj else None
 
     # Resolve provider external IDs if present
     ext_stmt = select(ProviderEntityId).where(
@@ -107,6 +127,14 @@ async def select_evidence(
         ),
     )
     ext_rows = (await session.execute(ext_stmt)).scalars().all()
+    home_by_prov: dict[str, str] = {}
+    away_by_prov: dict[str, str] = {}
+    for e in ext_rows:
+        if e.internal_entity_id == fixture_obj.home_team_id:
+            home_by_prov[e.provider] = str(e.external_id)
+        elif e.internal_entity_id == fixture_obj.away_team_id:
+            away_by_prov[e.provider] = str(e.external_id)
+
     home_ext = next(
         (e.external_id for e in ext_rows if e.internal_entity_id == fixture_obj.home_team_id), None
     )
@@ -114,32 +142,71 @@ async def select_evidence(
         (e.external_id for e in ext_rows if e.internal_entity_id == fixture_obj.away_team_id), None
     )
 
+    # Query immutable point-in-time FixtureMetadataSnapshot <= as_of
+    meta_stmt = (
+        select(FixtureMetadataSnapshot)
+        .where(
+            FixtureMetadataSnapshot.fixture_id == fixture_id,
+            FixtureMetadataSnapshot.captured_at <= as_of_utc,
+        )
+        .order_by(FixtureMetadataSnapshot.captured_at.desc())
+        .limit(1)
+    )
+    meta_snapshot = (await session.execute(meta_stmt)).scalar_one_or_none()
+
+    if meta_snapshot is not None:
+        kickoff_at = meta_snapshot.kickoff_at
+        venue = meta_snapshot.venue
+        round_name = meta_snapshot.round
+        status = meta_snapshot.status
+        season_id = meta_snapshot.season_id or fixture_obj.season_id
+        home_name = meta_snapshot.observed_home_team_name
+        away_name = meta_snapshot.observed_away_team_name
+        meta_id = meta_snapshot.id
+        meta_captured = meta_snapshot.captured_at
+    else:
+        logger.warning(
+            "no fixture_metadata_snapshot found <= as_of; falling back to mutable fixture entity",
+            extra={"fixture_id": str(fixture_id), "as_of": as_of_utc.isoformat()},
+        )
+        kickoff_at = fixture_obj.kickoff_at
+        venue = fixture_obj.venue
+        round_name = fixture_obj.round
+        status = fixture_obj.status
+        season_id = fixture_obj.season_id
+        meta_id = None
+        meta_captured = None
+
     fixture_info = SelectedFixtureInfo(
         fixture_id=fixture_obj.id,
         league_id=league_obj.id,
-        season_id=fixture_obj.season_id,
+        season_id=season_id,
         home_team_id=fixture_obj.home_team_id,
         away_team_id=fixture_obj.away_team_id,
-        kickoff_at=fixture_obj.kickoff_at,
-        venue=fixture_obj.venue,
-        round=fixture_obj.round,
-        status=fixture_obj.status,
+        kickoff_at=kickoff_at,
+        venue=venue,
+        round=round_name,
+        status=status,
         league_slug=league_obj.slug,
         league_name=league_obj.name,
-        home_team_name=home_team_obj.name if home_team_obj else None,
+        home_team_name=home_name,
         away_team_name=away_name,
         home_external_id=home_ext,
         away_external_id=away_ext,
+        home_provider_external_ids=home_by_prov,
+        away_provider_external_ids=away_by_prov,
+        fixture_metadata_snapshot_id=meta_id,
+        metadata_captured_at=meta_captured,
     )
 
     # 2. Standings (exact league + season, captured_at <= as_of)
     standings: StandingSnapshot | None = None
-    if fixture_obj.season_id is not None:
+    if fixture_info.season_id is not None:
         st_stmt = (
             select(StandingSnapshot)
             .where(
-                StandingSnapshot.league_id == fixture_obj.league_id,
-                StandingSnapshot.season_id == fixture_obj.season_id,
+                StandingSnapshot.league_id == fixture_info.league_id,
+                StandingSnapshot.season_id == fixture_info.season_id,
                 StandingSnapshot.captured_at <= as_of_utc,
             )
             .order_by(StandingSnapshot.captured_at.desc())
@@ -150,13 +217,13 @@ async def select_evidence(
     # 3. Team Statistics (exact team + league + season, captured_at <= as_of)
     home_team_stats: TeamStatisticsSnapshot | None = None
     away_team_stats: TeamStatisticsSnapshot | None = None
-    if fixture_obj.season_id is not None:
+    if fixture_info.season_id is not None:
         home_ts_stmt = (
             select(TeamStatisticsSnapshot)
             .where(
-                TeamStatisticsSnapshot.team_id == fixture_obj.home_team_id,
-                TeamStatisticsSnapshot.league_id == fixture_obj.league_id,
-                TeamStatisticsSnapshot.season_id == fixture_obj.season_id,
+                TeamStatisticsSnapshot.team_id == fixture_info.home_team_id,
+                TeamStatisticsSnapshot.league_id == fixture_info.league_id,
+                TeamStatisticsSnapshot.season_id == fixture_info.season_id,
                 TeamStatisticsSnapshot.captured_at <= as_of_utc,
             )
             .order_by(TeamStatisticsSnapshot.captured_at.desc())
@@ -167,9 +234,9 @@ async def select_evidence(
         away_ts_stmt = (
             select(TeamStatisticsSnapshot)
             .where(
-                TeamStatisticsSnapshot.team_id == fixture_obj.away_team_id,
-                TeamStatisticsSnapshot.league_id == fixture_obj.league_id,
-                TeamStatisticsSnapshot.season_id == fixture_obj.season_id,
+                TeamStatisticsSnapshot.team_id == fixture_info.away_team_id,
+                TeamStatisticsSnapshot.league_id == fixture_info.league_id,
+                TeamStatisticsSnapshot.season_id == fixture_info.season_id,
                 TeamStatisticsSnapshot.captured_at <= as_of_utc,
             )
             .order_by(TeamStatisticsSnapshot.captured_at.desc())
@@ -177,11 +244,13 @@ async def select_evidence(
         )
         away_team_stats = (await session.execute(away_ts_stmt)).scalar_one_or_none()
 
-    # 4. Team Form (exact team, as_of <= requested as_of)
+    # 4. Team Form (exact team, as_of <= requested as_of, window_size=10, scope=overall)
     home_form_stmt = (
         select(TeamFormSnapshot)
         .where(
-            TeamFormSnapshot.team_id == fixture_obj.home_team_id,
+            TeamFormSnapshot.team_id == fixture_info.home_team_id,
+            TeamFormSnapshot.window_size == 10,
+            TeamFormSnapshot.scope == "overall",
             TeamFormSnapshot.as_of <= as_of_utc,
         )
         .order_by(TeamFormSnapshot.as_of.desc())
@@ -192,7 +261,9 @@ async def select_evidence(
     away_form_stmt = (
         select(TeamFormSnapshot)
         .where(
-            TeamFormSnapshot.team_id == fixture_obj.away_team_id,
+            TeamFormSnapshot.team_id == fixture_info.away_team_id,
+            TeamFormSnapshot.window_size == 10,
+            TeamFormSnapshot.scope == "overall",
             TeamFormSnapshot.as_of <= as_of_utc,
         )
         .order_by(TeamFormSnapshot.as_of.desc())
@@ -301,6 +372,7 @@ async def select_evidence(
         forecast_phase=forecast_phase,
         as_of=as_of_utc,
         fixture=fixture_info,
+        fixture_metadata=meta_snapshot,
         standings=standings,
         home_team_stats=home_team_stats,
         away_team_stats=away_team_stats,
@@ -316,3 +388,6 @@ async def select_evidence(
         prev_odds_prices=prev_odds_prices,
         research=research_view,
     )
+
+
+select_point_in_time_evidence = select_evidence

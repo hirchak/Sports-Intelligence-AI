@@ -56,6 +56,8 @@ class FixtureResearchView:
     documents_count: int
     claims_count: int
     conflicts_count: int
+    run_id: uuid.UUID | None = None
+    provider: str | None = None
     documents: list[ResearchDocumentView] = field(default_factory=list)
     claims: list[ResearchClaimView] = field(default_factory=list)
 
@@ -141,6 +143,8 @@ async def get_research_for_fixture(
             documents_count=0,
             claims_count=0,
             conflicts_count=0,
+            run_id=run_row.id,
+            provider=run_row.provider,
             documents=[],
             claims=[],
         )
@@ -211,6 +215,8 @@ async def get_research_for_fixture(
         documents_count=len(doc_views),
         claims_count=len(claim_views),
         conflicts_count=conflicts_count,
+        run_id=run_row.id,
+        provider=run_row.provider,
         documents=doc_views,
         claims=claim_views,
     )

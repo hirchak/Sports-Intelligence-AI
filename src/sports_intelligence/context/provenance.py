@@ -35,6 +35,41 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
     """Construct an auditable, machine-readable provenance manifest of all selected evidence."""
     sources: dict[str, ProvenanceRecord] = {}
 
+    # Fixture Metadata
+    if evidence.fixture_metadata is not None:
+        sources["fixture_metadata"] = ProvenanceRecord(
+            category="fixture_metadata",
+            table="fixture_metadata_snapshots",
+            snapshot_id=str(evidence.fixture_metadata.id),
+            provider=evidence.fixture_metadata.provider,
+            captured_at=evidence.fixture_metadata.captured_at.isoformat(),
+            payload_id=(
+                str(evidence.fixture_metadata.payload_id)
+                if evidence.fixture_metadata.payload_id
+                else None
+            ),
+            details={
+                "status": evidence.fixture_metadata.status,
+                "kickoff_at": evidence.fixture_metadata.kickoff_at.isoformat(),
+                "venue": evidence.fixture_metadata.venue,
+                "round": evidence.fixture_metadata.round,
+            },
+        )
+    else:
+        sources["fixture_metadata"] = ProvenanceRecord(
+            category="fixture_metadata",
+            table="fixtures",
+            snapshot_id=str(evidence.fixture.fixture_id),
+            provider="legacy_fallback",
+            captured_at=None,
+            details={
+                "status": evidence.fixture.status,
+                "kickoff_at": evidence.fixture.kickoff_at.isoformat(),
+                "venue": evidence.fixture.venue,
+                "round": evidence.fixture.round,
+            },
+        )
+
     # Standings
     if evidence.standings is not None:
         sources["standings"] = ProvenanceRecord(
@@ -87,6 +122,9 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
             snapshot_id=str(evidence.home_form.id),
             provider="form_inputs_collector",
             captured_at=evidence.home_form.as_of.isoformat(),
+            payload_id=(
+                str(evidence.home_form.payload_id) if evidence.home_form.payload_id else None
+            ),
             fingerprint=evidence.home_form.source_fingerprint,
             details={
                 "window_size": evidence.home_form.window_size,
@@ -102,6 +140,9 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
             snapshot_id=str(evidence.away_form.id),
             provider="form_inputs_collector",
             captured_at=evidence.away_form.as_of.isoformat(),
+            payload_id=(
+                str(evidence.away_form.payload_id) if evidence.away_form.payload_id else None
+            ),
             fingerprint=evidence.away_form.source_fingerprint,
             details={
                 "window_size": evidence.away_form.window_size,
@@ -175,7 +216,7 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
             },
         )
 
-    # Odds
+    # Odds (Current)
     if evidence.odds_set is not None:
         sources["odds"] = ProvenanceRecord(
             category="odds",
@@ -187,13 +228,29 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
             details={"prices_count": len(evidence.odds_prices)},
         )
 
+    # Odds (Previous for Movement)
+    if evidence.prev_odds_set is not None:
+        sources["prev_odds"] = ProvenanceRecord(
+            category="prev_odds",
+            table="odds_snapshot_sets",
+            snapshot_id=str(evidence.prev_odds_set.id),
+            provider=evidence.prev_odds_set.provider,
+            captured_at=evidence.prev_odds_set.captured_at.isoformat(),
+            payload_id=(
+                str(evidence.prev_odds_set.payload_id)
+                if evidence.prev_odds_set.payload_id
+                else None
+            ),
+            details={"prices_count": len(evidence.prev_odds_prices)},
+        )
+
     # Research
     if evidence.research is not None:
         sources["research"] = ProvenanceRecord(
             category="research",
             table="research_runs",
-            snapshot_id=str(evidence.research.fixture_id),
-            provider="web_research",
+            snapshot_id=str(evidence.research.run_id) if evidence.research.run_id else None,
+            provider=evidence.research.provider or "web_research",
             captured_at=(
                 evidence.research.last_captured_at.isoformat()
                 if evidence.research.last_captured_at
@@ -201,9 +258,16 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
             ),
             details={
                 "status": evidence.research.status,
+                "run_id": str(evidence.research.run_id) if evidence.research.run_id else None,
                 "documents_count": evidence.research.documents_count,
                 "claims_count": evidence.research.claims_count,
                 "conflicts_count": evidence.research.conflicts_count,
+                "document_ids": [str(d.id) for d in evidence.research.documents],
+                "claim_ids": [str(c.id) for c in evidence.research.claims],
+                "urls": [d.url for d in evidence.research.documents],
+                "extraction_versions": sorted(
+                    list({c.extraction_version for c in evidence.research.claims})
+                ),
             },
         )
 
@@ -216,3 +280,64 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
     fingerprint = hashlib.sha256(composite_str.encode("utf-8")).hexdigest()
 
     return SourceManifest(sources=sources, source_fingerprint=fingerprint)
+
+
+def build_feature_provenance(evidence: SelectedEvidence) -> dict[str, Any]:
+    """Map each feature family to the exact snapshot IDs from which it was computed."""
+    return {
+        "fixture_identity": {
+            "source_type": "fixture_metadata_snapshot" if evidence.fixture_metadata else "fixture",
+            "snapshot_id": (
+                str(evidence.fixture_metadata.id)
+                if evidence.fixture_metadata
+                else str(evidence.fixture.fixture_id)
+            ),
+        },
+        "form": {
+            "source_type": "team_form_snapshots",
+            "home_snapshot_id": str(evidence.home_form.id) if evidence.home_form else None,
+            "away_snapshot_id": str(evidence.away_form.id) if evidence.away_form else None,
+        },
+        "standings": {
+            "source_type": "standings_snapshots",
+            "snapshot_id": str(evidence.standings.id) if evidence.standings else None,
+        },
+        "team_statistics": {
+            "source_type": "team_statistics_snapshots",
+            "home_snapshot_id": (
+                str(evidence.home_team_stats.id) if evidence.home_team_stats else None
+            ),
+            "away_snapshot_id": (
+                str(evidence.away_team_stats.id) if evidence.away_team_stats else None
+            ),
+        },
+        "availability": {
+            "source_type": "availability_snapshots",
+            "home_snapshot_id": (
+                str(evidence.home_availability.id) if evidence.home_availability else None
+            ),
+            "away_snapshot_id": (
+                str(evidence.away_availability.id) if evidence.away_availability else None
+            ),
+        },
+        "lineups": {
+            "source_type": "lineup_snapshots",
+            "home_snapshot_id": (str(evidence.home_lineup.id) if evidence.home_lineup else None),
+            "away_snapshot_id": (str(evidence.away_lineup.id) if evidence.away_lineup else None),
+        },
+        "odds": {
+            "source_type": "odds_snapshot_sets",
+            "current_snapshot_set_id": str(evidence.odds_set.id) if evidence.odds_set else None,
+            "previous_snapshot_set_id": (
+                str(evidence.prev_odds_set.id) if evidence.prev_odds_set else None
+            ),
+        },
+        "research": {
+            "source_type": "research_runs",
+            "run_id": (
+                str(evidence.research.run_id)
+                if (evidence.research and evidence.research.run_id)
+                else None
+            ),
+        },
+    }

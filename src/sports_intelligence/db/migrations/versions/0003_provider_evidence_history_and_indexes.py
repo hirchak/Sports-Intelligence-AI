@@ -123,6 +123,7 @@ def downgrade() -> None:
         WHERE payload.id = obs.payload_id
         """
     )
+    op.execute("DELETE FROM raw_provider_payloads WHERE request_fingerprint IS NULL")
     op.alter_column(
         "raw_provider_payloads",
         "request_fingerprint",

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from sports_intelligence.core.phases import ForecastPhase
 from sports_intelligence.db.models import (
     DataQualityReport,
     FeatureSnapshot,
@@ -31,7 +32,7 @@ async def get_fixture_quality(
         Query(description="Point-in-time cutoff for historical quality evaluation"),
     ] = None,
     phase: Annotated[
-        str | None,
+        ForecastPhase | None,
         Query(description="Forecast phase filter (e.g. MORNING, PREMATCH)"),
     ] = None,
 ) -> DataQualityReportOut:
@@ -54,7 +55,7 @@ async def get_fixture_quality(
         if as_of_utc is not None:
             stmt = stmt.where(DataQualityReport.as_of <= as_of_utc)
         if phase is not None:
-            stmt = stmt.where(DataQualityReport.forecast_phase == phase.upper())
+            stmt = stmt.where(DataQualityReport.forecast_phase == phase.value)
         stmt = stmt.order_by(
             DataQualityReport.as_of.desc(), DataQualityReport.created_at.desc()
         ).limit(1)
@@ -75,7 +76,7 @@ async def get_fixture_context(
         Query(description="Point-in-time cutoff for historical context retrieval"),
     ] = None,
     phase: Annotated[
-        str | None,
+        ForecastPhase | None,
         Query(description="Forecast phase filter (e.g. MORNING, PREMATCH)"),
     ] = None,
 ) -> MatchContextDetailOut:
@@ -98,7 +99,7 @@ async def get_fixture_context(
         if as_of_utc is not None:
             stmt = stmt.where(MatchContextRecord.as_of <= as_of_utc)
         if phase is not None:
-            stmt = stmt.where(MatchContextRecord.forecast_phase == phase.upper())
+            stmt = stmt.where(MatchContextRecord.forecast_phase == phase.value)
         stmt = stmt.order_by(
             MatchContextRecord.as_of.desc(), MatchContextRecord.created_at.desc()
         ).limit(1)

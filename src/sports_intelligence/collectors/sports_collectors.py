@@ -822,6 +822,7 @@ class FormInputsCollector(_ResolverMixin):
             scope=scope,
             metrics_jsonb=dict(result.normalized),
             source_fingerprint=source_fingerprint,
+            payload_id=payload_id,
         )
         async with ctx.session_factory() as session, session.begin():
             session.add(snapshot)

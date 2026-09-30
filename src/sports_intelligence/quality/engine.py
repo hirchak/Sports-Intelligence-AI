@@ -1,12 +1,12 @@
-from __future__ import annotations
-
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import UTC
 from typing import Any
 
+from sports_intelligence.collectors.freshness import FreshnessPolicy
 from sports_intelligence.context.provenance import SourceManifest
 from sports_intelligence.context.selector import SelectedEvidence
-from sports_intelligence.core.phases import ForecastPhase, ResearchState
+from sports_intelligence.core.config import Settings
+from sports_intelligence.core.phases import ForecastPhase, FreshnessCategory, ResearchState
 from sports_intelligence.features.builder import DeterministicFeatures
 
 
@@ -19,6 +19,28 @@ class QualityWeights:
     odds: float = 0.15
     research: float = 0.10
     lineups: float = 0.10
+
+
+@dataclass(frozen=True)
+class QualityPolicy:
+    policy_version: str = "quality_policy_v1"
+    weights: QualityWeights = field(default_factory=QualityWeights)
+    min_predict_score: float = 0.65
+    band_thresholds: dict[str, float] = field(
+        default_factory=lambda: {
+            "excellent": 0.90,
+            "good": 0.80,
+            "usable_with_warnings": 0.65,
+        }
+    )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "policy_version": self.policy_version,
+            "weights": asdict(self.weights),
+            "min_predict_score": self.min_predict_score,
+            "band_thresholds": self.band_thresholds,
+        }
 
 
 @dataclass(frozen=True)
@@ -37,6 +59,8 @@ class QualityReportData:
     provider_errors: list[dict[str, Any]]
     stale_sources: list[str]
     source_manifest: dict[str, Any]
+    source_fingerprint: str | None = None
+    quality_policy: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -49,18 +73,24 @@ def evaluate_data_quality(
     *,
     weights: QualityWeights | None = None,
     min_predict_score: float = 0.65,
+    policy: QualityPolicy | None = None,
+    freshness_policy: FreshnessPolicy | None = None,
 ) -> QualityReportData:
     """Deterministic Data Quality Engine evaluating evidence completeness, freshness, and conflicts.
 
     Rules:
     - Pure calculation, zero external API calls.
+    - Evaluates point-in-time freshness against configured phase TTLs.
     - MORNING phase excludes Lineups dimension from score denominator (Lineups = N/A).
-    - PREMATCH phase evaluates confirmed/unconfirmed publication state.
-    - Missingness is explicit with reasons (unknown != healthy;
-      provider error != no useful results).
-    - Configurable dimension weights and prediction threshold.
+    - PREMATCH phase evaluates canonical publication states: CONFIRMED,
+      NOT_YET_PUBLISHED, UNSUPPORTED, PROVIDER_ERROR.
+    - Distinguishes not-collected research from NO_USEFUL_RESULTS.
+    - Configurable dimension weights, bands, and prediction threshold persisted with report.
     """
-    w = weights or QualityWeights()
+    q_policy = policy or QualityPolicy(
+        weights=weights or QualityWeights(), min_predict_score=min_predict_score
+    )
+    w = q_policy.weights
     scores: dict[str, float] = {}
     active_weights: dict[str, float] = {}
     critical_missing: list[str] = []
@@ -69,6 +99,118 @@ def evaluate_data_quality(
     conflicts: list[dict[str, Any]] = []
     provider_errors: list[dict[str, Any]] = []
     stale_sources: list[str] = []
+
+    as_of_aware = (
+        evidence.as_of.astimezone(UTC)
+        if evidence.as_of.tzinfo
+        else evidence.as_of.replace(tzinfo=UTC)
+    )
+
+    f_policy = freshness_policy if freshness_policy is not None else FreshnessPolicy(Settings())
+
+    # Evaluate Freshness at as_of
+    if evidence.standings is not None and f_policy.is_stale(
+        FreshnessCategory.STANDINGS,
+        evidence.standings.captured_at,
+        as_of_aware,
+        evidence.forecast_phase,
+    ):
+        stale_sources.append("standings")
+        warnings.append("Standings snapshot exceeds freshness TTL")
+
+    if evidence.home_team_stats is not None and f_policy.is_stale(
+        FreshnessCategory.TEAM_STATISTICS,
+        evidence.home_team_stats.captured_at,
+        as_of_aware,
+        evidence.forecast_phase,
+    ):
+        stale_sources.append("home_team_statistics")
+        warnings.append("Home team statistics snapshot exceeds freshness TTL")
+
+    if evidence.away_team_stats is not None and f_policy.is_stale(
+        FreshnessCategory.TEAM_STATISTICS,
+        evidence.away_team_stats.captured_at,
+        as_of_aware,
+        evidence.forecast_phase,
+    ):
+        stale_sources.append("away_team_statistics")
+        warnings.append("Away team statistics snapshot exceeds freshness TTL")
+
+    if evidence.home_form is not None and f_policy.is_stale(
+        FreshnessCategory.TEAM_FORM,
+        evidence.home_form.as_of,
+        as_of_aware,
+        evidence.forecast_phase,
+    ):
+        stale_sources.append("home_team_form")
+        warnings.append("Home team form snapshot exceeds freshness TTL")
+
+    if evidence.away_form is not None and f_policy.is_stale(
+        FreshnessCategory.TEAM_FORM,
+        evidence.away_form.as_of,
+        as_of_aware,
+        evidence.forecast_phase,
+    ):
+        stale_sources.append("away_team_form")
+        warnings.append("Away team form snapshot exceeds freshness TTL")
+
+    if evidence.home_availability is not None and f_policy.is_stale(
+        FreshnessCategory.AVAILABILITY,
+        evidence.home_availability.captured_at,
+        as_of_aware,
+        evidence.forecast_phase,
+    ):
+        stale_sources.append("home_availability")
+        warnings.append("Home availability snapshot exceeds freshness TTL")
+
+    if evidence.away_availability is not None and f_policy.is_stale(
+        FreshnessCategory.AVAILABILITY,
+        evidence.away_availability.captured_at,
+        as_of_aware,
+        evidence.forecast_phase,
+    ):
+        stale_sources.append("away_availability")
+        warnings.append("Away availability snapshot exceeds freshness TTL")
+
+    if evidence.odds_set is not None and f_policy.is_stale(
+        FreshnessCategory.ODDS,
+        evidence.odds_set.captured_at,
+        as_of_aware,
+        evidence.forecast_phase,
+    ):
+        stale_sources.append("odds")
+        warnings.append("Odds snapshot set exceeds freshness TTL")
+
+    if (
+        evidence.research is not None
+        and evidence.research.last_captured_at is not None
+        and f_policy.is_stale(
+            FreshnessCategory.RESEARCH,
+            evidence.research.last_captured_at,
+            as_of_aware,
+            evidence.forecast_phase,
+        )
+    ):
+        stale_sources.append("research")
+        warnings.append("Research snapshot exceeds freshness TTL")
+
+    if evidence.home_lineup is not None and f_policy.is_stale(
+        FreshnessCategory.LINEUPS,
+        evidence.home_lineup.captured_at,
+        as_of_aware,
+        evidence.forecast_phase,
+    ):
+        stale_sources.append("home_lineup")
+        warnings.append("Home lineup snapshot exceeds freshness TTL")
+
+    if evidence.away_lineup is not None and f_policy.is_stale(
+        FreshnessCategory.LINEUPS,
+        evidence.away_lineup.captured_at,
+        as_of_aware,
+        evidence.forecast_phase,
+    ):
+        stale_sources.append("away_lineup")
+        warnings.append("Away lineup snapshot exceeds freshness TTL")
 
     # 1. Fixture Identity
     fix = evidence.fixture
@@ -199,7 +341,10 @@ def evaluate_data_quality(
     # 6. Research
     if evidence.research is not None:
         r_status = evidence.research.status
-        if r_status == ResearchState.AVAILABLE.value:
+        if evidence.research.run_id is None and r_status == ResearchState.NO_USEFUL_RESULTS.value:
+            scores["research"] = 0.50
+            warnings.append("No research run has been collected for this fixture")
+        elif r_status == ResearchState.AVAILABLE.value:
             scores["research"] = 1.0
         elif r_status == ResearchState.NO_USEFUL_RESULTS.value:
             scores["research"] = 0.85
@@ -228,64 +373,71 @@ def evaluate_data_quality(
             )
     else:
         scores["research"] = 0.50
+        warnings.append("Research evidence not available")
     active_weights["research"] = w.research
 
     # 7. Lineups (Phase-dependent policy)
     if evidence.forecast_phase == ForecastPhase.MORNING:
         # MORNING policy: Lineups are N/A and excluded from denominator
-        scores["lineups"] = 1.0  # Or record 1.0 / N/A, weight is 0.0 so not counted in denominator
+        scores["lineups"] = 1.0
     else:
-        # PREMATCH policy: Evaluated per publication/freshness
+        # PREMATCH policy: Canonical states CONFIRMED, NOT_YET_PUBLISHED,
+        # UNSUPPORTED, PROVIDER_ERROR
         active_weights["lineups"] = w.lineups
-        if features.lineups_both_confirmed:
-            scores["lineups"] = 1.0
-        elif (
-            features.home_lineup_publication_state == "PUBLISHED"
-            and features.away_lineup_publication_state == "PUBLISHED"
-        ):
-            scores["lineups"] = 0.75
-            warnings.append("Lineups published but unconfirmed by one or both teams")
-        elif (
-            features.home_lineup_publication_state == "PUBLISHED"
-            or features.away_lineup_publication_state == "PUBLISHED"
-        ):
-            scores["lineups"] = 0.50
-            warnings.append("Lineup published for only one team")
-        else:
-            scores["lineups"] = 0.30
-            warnings.append("Lineups not yet published in PREMATCH phase")
+        h_pub = features.home_lineup_publication_state or "NOT_YET_PUBLISHED"
+        a_pub = features.away_lineup_publication_state or "NOT_YET_PUBLISHED"
 
-    # Conflict penalties
+        if "PROVIDER_ERROR" in (h_pub, a_pub):
+            scores["lineups"] = 0.20
+            provider_errors.append({"source": "lineups", "status": "PROVIDER_ERROR"})
+            warnings.append("Lineup collection encountered provider error")
+        elif "UNSUPPORTED" in (h_pub, a_pub):
+            scores["lineups"] = 0.50
+            warnings.append("Lineups are unsupported for this fixture or league")
+        elif features.lineups_both_confirmed or (h_pub == "CONFIRMED" and a_pub == "CONFIRMED"):
+            scores["lineups"] = 1.0
+        elif h_pub == "CONFIRMED" or a_pub == "CONFIRMED":
+            scores["lineups"] = 0.70
+            warnings.append("Lineup confirmed for only one team")
+        elif h_pub == "NOT_YET_PUBLISHED" and a_pub == "NOT_YET_PUBLISHED":
+            scores["lineups"] = 0.40
+            warnings.append("Lineups not yet published in PREMATCH phase")
+        else:
+            scores["lineups"] = 0.40
+            warnings.append(f"Unconfirmed lineup states: home={h_pub}, away={a_pub}")
+
+    # Penalties
     conflict_penalty = min(0.20, len(conflicts) * 0.05)
     provider_error_penalty = min(0.20, len(provider_errors) * 0.10)
+    staleness_penalty = min(0.20, len(stale_sources) * 0.05)
 
     total_weight = sum(active_weights.values())
     weighted_sum = sum(scores[dim] * active_weights[dim] for dim in active_weights)
     base_score = weighted_sum / total_weight if total_weight > 0 else 0.0
-    overall = max(0.0, min(1.0, base_score - conflict_penalty - provider_error_penalty))
+    overall = max(
+        0.0,
+        min(1.0, base_score - conflict_penalty - provider_error_penalty - staleness_penalty),
+    )
     overall_score = round(overall, 4)
 
-    # Determine Quality Band
-    if overall_score >= 0.90:
+    # Determine Quality Band per policy thresholds
+    band_th = q_policy.band_thresholds
+    if overall_score >= band_th.get("excellent", 0.90):
         band = "excellent"
-    elif overall_score >= 0.80:
+    elif overall_score >= band_th.get("good", 0.80):
         band = "good"
-    elif overall_score >= 0.65:
+    elif overall_score >= band_th.get("usable_with_warnings", 0.65):
         band = "usable_with_warnings"
     else:
         band = "abstain"
 
     # Critical missing checks
-    if scores["odds"] == 0.0 and scores["form"] == 0.0:
+    if scores.get("odds", 0.0) == 0.0 and scores.get("form", 0.0) == 0.0:
         critical_missing.append("both_odds_and_form_missing")
 
-    can_predict = (overall_score >= min_predict_score) and (len(critical_missing) == 0)
+    can_predict = (overall_score >= q_policy.min_predict_score) and (len(critical_missing) == 0)
 
-    as_of_str = (
-        evidence.as_of.astimezone(UTC).isoformat()
-        if evidence.as_of.tzinfo
-        else evidence.as_of.replace(tzinfo=UTC).isoformat()
-    )
+    as_of_str = as_of_aware.isoformat()
 
     return QualityReportData(
         schema_version="quality_v1",
@@ -302,4 +454,6 @@ def evaluate_data_quality(
         provider_errors=provider_errors,
         stale_sources=stale_sources,
         source_manifest=manifest.to_dict(),
+        source_fingerprint=manifest.source_fingerprint,
+        quality_policy=q_policy.to_dict(),
     )

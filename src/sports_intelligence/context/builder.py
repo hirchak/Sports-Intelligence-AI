@@ -6,10 +6,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from sports_intelligence.context.models import MatchContextV1
-from sports_intelligence.context.provenance import SourceManifest, build_source_manifest
+from sports_intelligence.context.provenance import (
+    SourceManifest,
+    build_feature_provenance,
+    build_source_manifest,
+)
 from sports_intelligence.context.selector import SelectedEvidence, select_evidence
 from sports_intelligence.core.phases import ForecastPhase
 from sports_intelligence.db.models import (
@@ -56,6 +61,12 @@ def assemble_match_context_v1(
         "away_team_name": fix.away_team_name,
         "home_external_id": fix.home_external_id,
         "away_external_id": fix.away_external_id,
+        "fixture_metadata_snapshot_id": (
+            str(fix.fixture_metadata_snapshot_id) if fix.fixture_metadata_snapshot_id else None
+        ),
+        "metadata_captured_at": (
+            fix.metadata_captured_at.isoformat() if fix.metadata_captured_at else None
+        ),
     }
 
     # 2. Team Form
@@ -146,10 +157,14 @@ def assemble_match_context_v1(
     # 9. Structured Research Claims
     claims_list: list[dict[str, Any]] = []
     if evidence.research:
+        doc_map = {d.id: d for d in evidence.research.documents}
         for c in evidence.research.claims:
+            doc = doc_map.get(c.document_id)
+            src_ref = f"{doc.domain}: {doc.url}" if doc else None
             claims_list.append(
                 {
                     "id": str(c.id),
+                    "document_id": str(c.document_id) if c.document_id else None,
                     "claim_type": c.claim_type,
                     "claim_text": c.claim_text,
                     "confidence": c.confidence,
@@ -159,10 +174,17 @@ def assemble_match_context_v1(
                         str(c.conflicting_claim_id) if c.conflicting_claim_id else None
                     ),
                     "extracted_at": c.extracted_at.isoformat(),
+                    "source_reference": src_ref,
                 }
             )
     research_claims = {
         "status": evidence.research.status if evidence.research else "NO_RUN",
+        "run_id": (
+            str(evidence.research.run_id)
+            if (evidence.research and evidence.research.run_id)
+            else None
+        ),
+        "provider": evidence.research.provider if evidence.research else None,
         "documents_count": evidence.research.documents_count if evidence.research else 0,
         "claims_count": evidence.research.claims_count if evidence.research else 0,
         "conflicts_count": evidence.research.conflicts_count if evidence.research else 0,
@@ -181,6 +203,7 @@ def assemble_match_context_v1(
                 "no_vig_probability": (
                     float(p.no_vig_probability) if p.no_vig_probability is not None else None
                 ),
+                "bookmaker": p.bookmaker,
             }
         )
     market_snapshot = {
@@ -301,29 +324,43 @@ async def build_and_persist_match_context(
         if existing_quality is not None and existing_features is not None:
             return existing_record, existing_quality, existing_features, context
 
-    # Persist DataQualityReport
-    quality_record = DataQualityReport(
-        fixture_id=fixture_id,
-        forecast_phase=forecast_phase.value,
-        as_of=as_of_utc,
-        schema_version=quality.schema_version,
-        overall_score=quality.overall_score,
-        quality_band=quality.quality_band,
-        can_predict=quality.can_predict,
-        dimensions_jsonb=quality.dimension_scores,
-        critical_missing_jsonb=quality.critical_missing,
-        missing_fields_jsonb=quality.missing_fields,
-        warnings_jsonb=quality.warnings,
-        conflicts_jsonb=quality.conflicts,
-        provider_errors_jsonb=quality.provider_errors,
-        stale_sources_jsonb=quality.stale_sources,
-        source_manifest_jsonb=quality.source_manifest,
+    # Persist DataQualityReport idempotently
+    quality_stmt = select(DataQualityReport).where(
+        DataQualityReport.fixture_id == fixture_id,
+        DataQualityReport.forecast_phase == forecast_phase.value,
+        DataQualityReport.as_of == as_of_utc,
+        DataQualityReport.schema_version == quality.schema_version,
+        DataQualityReport.source_fingerprint == manifest.source_fingerprint,
     )
-    session.add(quality_record)
-    await session.flush()
+    quality_record = (await session.execute(quality_stmt)).scalar_one_or_none()
+    if quality_record is None:
+        quality_record = DataQualityReport(
+            fixture_id=fixture_id,
+            forecast_phase=forecast_phase.value,
+            as_of=as_of_utc,
+            schema_version=quality.schema_version,
+            overall_score=quality.overall_score,
+            quality_band=quality.quality_band,
+            can_predict=quality.can_predict,
+            dimensions_jsonb=quality.dimension_scores,
+            critical_missing_jsonb=quality.critical_missing,
+            missing_fields_jsonb=quality.missing_fields,
+            warnings_jsonb=quality.warnings,
+            conflicts_jsonb=quality.conflicts,
+            provider_errors_jsonb=quality.provider_errors,
+            stale_sources_jsonb=quality.stale_sources,
+            source_manifest_jsonb=quality.source_manifest,
+            source_fingerprint=manifest.source_fingerprint,
+            quality_policy_jsonb=quality.quality_policy,
+        )
+        try:
+            async with session.begin_nested():
+                session.add(quality_record)
+                await session.flush()
+        except IntegrityError:
+            quality_record = (await session.execute(quality_stmt)).scalar_one()
 
-    # Persist FeatureSnapshot
-    # Check if a feature snapshot already exists with same identity
+    # Persist FeatureSnapshot idempotently
     feat_stmt = select(FeatureSnapshot).where(
         FeatureSnapshot.fixture_id == fixture_id,
         FeatureSnapshot.forecast_phase == forecast_phase.value,
@@ -341,11 +378,16 @@ async def build_and_persist_match_context(
             features_jsonb=features.to_dict(),
             source_fingerprint=manifest.source_fingerprint,
             source_manifest_jsonb=manifest.to_dict(),
+            feature_provenance_jsonb=build_feature_provenance(evidence),
         )
-        session.add(feature_record)
-        await session.flush()
+        try:
+            async with session.begin_nested():
+                session.add(feature_record)
+                await session.flush()
+        except IntegrityError:
+            feature_record = (await session.execute(feat_stmt)).scalar_one()
 
-    # Persist MatchContextRecord
+    # Persist MatchContextRecord idempotently
     context_record = MatchContextRecord(
         fixture_id=fixture_id,
         forecast_phase=forecast_phase.value,
@@ -356,7 +398,13 @@ async def build_and_persist_match_context(
         data_quality_report_id=quality_record.id,
         feature_snapshot_id=feature_record.id,
     )
-    session.add(context_record)
+    try:
+        async with session.begin_nested():
+            session.add(context_record)
+            await session.flush()
+    except IntegrityError:
+        context_record = (await session.execute(existing_stmt)).scalar_one()
+
     await session.commit()
     await session.refresh(context_record)
     await session.refresh(quality_record)

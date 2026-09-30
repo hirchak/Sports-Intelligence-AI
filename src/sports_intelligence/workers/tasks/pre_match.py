@@ -102,7 +102,10 @@ async def _run() -> dict[str, object]:
                 for key, value in counts.items():
                     bucket[key] += value
 
-            if result.get("jobs_enqueued", 0) == 0:
+            if (
+                not result.get("has_in_flight_collectors", False)
+                and result.get("jobs_enqueued", 0) == 0
+            ):
                 await _try_enqueue_context_build(factory, decision, as_of=started_at)
         except Exception:
             logger.exception(
@@ -179,7 +182,10 @@ async def _dispatch_decision(
             phase=decision.phase,
         )
 
+        has_in_flight_collectors = False
+
         async def _enqueue(name: str, **inputs: object) -> None:
+            nonlocal has_in_flight_collectors
             bucket = counters.setdefault(
                 name, {"planned": 0, "created": 0, "reused": 0, "enqueued": 0}
             )
@@ -293,10 +299,16 @@ async def _dispatch_decision(
                     enqueue_needed = True
                 else:
                     bucket["reused"] += 1
+                    status_val = (
+                        job.status.value if hasattr(job.status, "value") else str(job.status)
+                    )
+                    if status_val in (JobStatus.PENDING.value, JobStatus.RUNNING.value):
+                        has_in_flight_collectors = True
             else:
                 bucket["created"] += 1
 
             if enqueue_needed:
+                has_in_flight_collectors = True
                 try:
                     from sports_intelligence.workers.tasks.collect import collect_task
 
@@ -327,6 +339,7 @@ async def _dispatch_decision(
         "jobs_created": sum(b["created"] for b in counters.values()),
         "jobs_reused": sum(b["reused"] for b in counters.values()),
         "jobs_enqueued": sum(b["enqueued"] for b in counters.values()),
+        "has_in_flight_collectors": has_in_flight_collectors,
         "by_category": counters,
     }
 
@@ -337,10 +350,25 @@ async def _try_enqueue_context_build(
     *,
     as_of: datetime,
 ) -> None:
+    from sports_intelligence.context.provenance import build_source_manifest
+    from sports_intelligence.context.selector import select_evidence
     from sports_intelligence.workers.tasks.context import build_match_context_task
 
-    job_key = f"context_build:{decision.fixture_id}:{decision.phase.value}:{as_of:%Y%m%d%H}"
     try:
+        fid = uuid.UUID(decision.fixture_id)
+        async with factory() as session:
+            evidence = await select_evidence(
+                session,
+                fixture_id=fid,
+                forecast_phase=decision.phase,
+                as_of=as_of,
+            )
+        manifest = build_source_manifest(evidence)
+        schema_version = "match_context_v1"
+        job_key = (
+            f"context_build:{decision.fixture_id}:{decision.phase.value}:"
+            f"{schema_version}:{manifest.source_fingerprint}"
+        )
         async with factory() as session:
             job, created = await create_or_get_job(
                 session,
@@ -351,7 +379,17 @@ async def _try_enqueue_context_build(
             await session.commit()
             job_id = str(job.id)
 
-        if created:
+        enqueue_needed = created
+        if not created:
+            async with factory() as session:
+                requeued = await transition_job_status_if(
+                    session, job_id, JobStatus.FAILED, JobStatus.PENDING
+                )
+                await session.commit()
+            if requeued:
+                enqueue_needed = True
+
+        if enqueue_needed:
             build_match_context_task.apply_async(
                 args=[job_id, decision.fixture_id, decision.phase.value, as_of.isoformat()],
                 queue="evaluation",
