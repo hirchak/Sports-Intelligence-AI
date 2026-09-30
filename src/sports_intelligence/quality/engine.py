@@ -1,3 +1,5 @@
+import hashlib
+import json
 from dataclasses import asdict, dataclass, field
 from datetime import UTC
 from typing import Any
@@ -33,6 +35,35 @@ class QualityPolicy:
             "usable_with_warnings": 0.65,
         }
     )
+    staleness_penalty: float = 0.05
+    max_staleness_penalty: float = 0.20
+
+    def __post_init__(self) -> None:
+        w_dict = asdict(self.weights)
+        for k, v in w_dict.items():
+            if v < 0:
+                raise ValueError(f"Quality weight '{k}' must be >= 0, got {v}")
+        total = sum(w_dict.values())
+        if total <= 0:
+            raise ValueError(f"Total quality weight must be > 0, got {total}")
+        if not (0.0 <= self.min_predict_score <= 1.0):
+            raise ValueError(
+                f"min_predict_score must be between 0 and 1, got {self.min_predict_score}"
+            )
+        usable = self.band_thresholds.get("usable_with_warnings", 0.0)
+        good = self.band_thresholds.get("good", 0.0)
+        excellent = self.band_thresholds.get("excellent", 0.0)
+        if not (0.0 <= usable <= good <= excellent <= 1.0):
+            raise ValueError(
+                "Quality band thresholds must satisfy 0 <= usable <= good <= excellent <= 1, "
+                f"got usable={usable}, good={good}, excellent={excellent}"
+            )
+        if self.staleness_penalty < 0:
+            raise ValueError(f"staleness_penalty must be >= 0, got {self.staleness_penalty}")
+        if not (0.0 <= self.max_staleness_penalty <= 1.0):
+            raise ValueError(
+                f"max_staleness_penalty must be between 0 and 1, got {self.max_staleness_penalty}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -40,7 +71,39 @@ class QualityPolicy:
             "weights": asdict(self.weights),
             "min_predict_score": self.min_predict_score,
             "band_thresholds": self.band_thresholds,
+            "staleness_penalty": self.staleness_penalty,
+            "max_staleness_penalty": self.max_staleness_penalty,
         }
+
+    def policy_fingerprint(self) -> str:
+        data = self.to_dict()
+        canonical_json = json.dumps(data, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def build_quality_policy(settings: Settings) -> QualityPolicy:
+    weights = QualityWeights(
+        fixture_identity=settings.quality_weight_fixture_identity,
+        form=settings.quality_weight_form,
+        season_stats=settings.quality_weight_season_stats,
+        availability=settings.quality_weight_availability,
+        odds=settings.quality_weight_odds,
+        research=settings.quality_weight_research,
+        lineups=settings.quality_weight_lineups,
+    )
+    band_thresholds = {
+        "excellent": settings.quality_band_excellent_min,
+        "good": settings.quality_band_good_min,
+        "usable_with_warnings": settings.quality_band_usable_min,
+    }
+    return QualityPolicy(
+        policy_version="quality_policy_v1",
+        weights=weights,
+        min_predict_score=settings.quality_min_predict_score,
+        band_thresholds=band_thresholds,
+        staleness_penalty=settings.quality_staleness_penalty,
+        max_staleness_penalty=settings.quality_max_staleness_penalty,
+    )
 
 
 @dataclass(frozen=True)
@@ -61,6 +124,7 @@ class QualityReportData:
     source_manifest: dict[str, Any]
     source_fingerprint: str | None = None
     quality_policy: dict[str, Any] = field(default_factory=dict)
+    policy_fingerprint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -194,35 +258,59 @@ def evaluate_data_quality(
         stale_sources.append("research")
         warnings.append("Research snapshot exceeds freshness TTL")
 
-    if evidence.home_lineup is not None and f_policy.is_stale(
-        FreshnessCategory.LINEUPS,
-        evidence.home_lineup.captured_at,
-        as_of_aware,
-        evidence.forecast_phase,
-    ):
-        stale_sources.append("home_lineup")
-        warnings.append("Home lineup snapshot exceeds freshness TTL")
+    if evidence.forecast_phase != ForecastPhase.MORNING:
+        if evidence.home_lineup is not None and f_policy.is_stale(
+            FreshnessCategory.LINEUPS,
+            evidence.home_lineup.captured_at,
+            as_of_aware,
+            evidence.forecast_phase,
+        ):
+            stale_sources.append("home_lineup")
+            warnings.append("Home lineup snapshot exceeds freshness TTL")
 
-    if evidence.away_lineup is not None and f_policy.is_stale(
-        FreshnessCategory.LINEUPS,
-        evidence.away_lineup.captured_at,
-        as_of_aware,
-        evidence.forecast_phase,
-    ):
-        stale_sources.append("away_lineup")
-        warnings.append("Away lineup snapshot exceeds freshness TTL")
+        if evidence.away_lineup is not None and f_policy.is_stale(
+            FreshnessCategory.LINEUPS,
+            evidence.away_lineup.captured_at,
+            as_of_aware,
+            evidence.forecast_phase,
+        ):
+            stale_sources.append("away_lineup")
+            warnings.append("Away lineup snapshot exceeds freshness TTL")
 
     # 1. Fixture Identity
     fix = evidence.fixture
-    if fix.kickoff_at is None or fix.home_team_id is None or fix.away_team_id is None:
+    if (
+        fix.kickoff_at is None
+        or fix.home_team_id is None
+        or fix.away_team_id is None
+        or fix.fixture_metadata_snapshot_id is None
+        or fix.status == "METADATA_UNAVAILABLE"
+        or evidence.fixture_metadata is None
+    ):
         scores["fixture_identity"] = 0.0
-        critical_missing.append("fixture_core_identity")
-        missing_fields.append(
-            {
-                "field": "fixture_identity",
-                "reason": "Missing core IDs or kickoff",
-            }
-        )
+        if (
+            fix.fixture_metadata_snapshot_id is None
+            or fix.status == "METADATA_UNAVAILABLE"
+            or evidence.fixture_metadata is None
+        ):
+            critical_missing.append("fixture_metadata_missing")
+            missing_fields.append(
+                {
+                    "field": "fixture_metadata",
+                    "reason": "Missing immutable fixture metadata snapshot <= as_of",
+                }
+            )
+            warnings.append(
+                "Fixture metadata snapshot missing <= as_of; status is METADATA_UNAVAILABLE"
+            )
+        else:
+            critical_missing.append("fixture_core_identity")
+            missing_fields.append(
+                {
+                    "field": "fixture_identity",
+                    "reason": "Missing core IDs or kickoff",
+                }
+            )
     elif fix.season_id is None:
         scores["fixture_identity"] = 0.70
         warnings.append("Fixture season_id is missing; season stats unavailable")
@@ -409,7 +497,9 @@ def evaluate_data_quality(
     # Penalties
     conflict_penalty = min(0.20, len(conflicts) * 0.05)
     provider_error_penalty = min(0.20, len(provider_errors) * 0.10)
-    staleness_penalty = min(0.20, len(stale_sources) * 0.05)
+    staleness_penalty = min(
+        q_policy.max_staleness_penalty, len(stale_sources) * q_policy.staleness_penalty
+    )
 
     total_weight = sum(active_weights.values())
     weighted_sum = sum(scores[dim] * active_weights[dim] for dim in active_weights)
@@ -420,9 +510,15 @@ def evaluate_data_quality(
     )
     overall_score = round(overall, 4)
 
+    # Critical missing checks
+    if scores.get("odds", 0.0) == 0.0 and scores.get("form", 0.0) == 0.0:
+        critical_missing.append("both_odds_and_form_missing")
+
     # Determine Quality Band per policy thresholds
     band_th = q_policy.band_thresholds
-    if overall_score >= band_th.get("excellent", 0.90):
+    if len(critical_missing) > 0 or "fixture_metadata_missing" in critical_missing:
+        band = "abstain"
+    elif overall_score >= band_th.get("excellent", 0.90):
         band = "excellent"
     elif overall_score >= band_th.get("good", 0.80):
         band = "good"
@@ -430,10 +526,6 @@ def evaluate_data_quality(
         band = "usable_with_warnings"
     else:
         band = "abstain"
-
-    # Critical missing checks
-    if scores.get("odds", 0.0) == 0.0 and scores.get("form", 0.0) == 0.0:
-        critical_missing.append("both_odds_and_form_missing")
 
     can_predict = (overall_score >= q_policy.min_predict_score) and (len(critical_missing) == 0)
 
@@ -456,4 +548,5 @@ def evaluate_data_quality(
         source_manifest=manifest.to_dict(),
         source_fingerprint=manifest.source_fingerprint,
         quality_policy=q_policy.to_dict(),
+        policy_fingerprint=q_policy.policy_fingerprint(),
     )

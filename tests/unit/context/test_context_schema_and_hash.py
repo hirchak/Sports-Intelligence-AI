@@ -228,12 +228,19 @@ def test_research_provenance_and_claims_identity() -> None:
         evaluate_data_quality(evidence, build_features(evidence), manifest),
         manifest,
     )
-    assert ctx.research_claims["run_id"] == str(run_id)
-    assert len(ctx.research_claims["claims"]) == 1
-    c_out = ctx.research_claims["claims"][0]
-    assert c_out["document_id"] == str(doc_id)
-    assert c_out["source_reference"] == "theathletic.com: https://theathletic.com/arsenal-preview"
-    assert c_out["confidence"] == 0.85
+    assert ctx.research_claims.run_id == str(run_id)
+    assert len(ctx.research_claims.claims) == 1
+    c_out = ctx.research_claims.claims[0]
+    assert c_out.document_id == str(doc_id)
+    assert c_out.source_reference == "theathletic.com: https://theathletic.com/arsenal-preview"
+    assert c_out.confidence == 0.85
+    assert c_out.source is not None
+    assert c_out.source.document_id == str(doc_id)
+    assert c_out.source.url == "https://theathletic.com/arsenal-preview"
+    assert c_out.source.domain == "theathletic.com"
+    assert c_out.source.title == "Arsenal Pre-Match News"
+    assert c_out.source.content_hash == "hash-1234"
+    assert c_out.source.provider == "tavily"
 
 
 def test_previous_odds_in_provenance() -> None:

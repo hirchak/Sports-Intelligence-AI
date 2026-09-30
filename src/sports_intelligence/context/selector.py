@@ -51,13 +51,13 @@ class SelectedFixtureInfo:
     metadata_captured_at: datetime | None = None
 
     def get_home_external_id(self, provider: str | None = None) -> str | None:
-        if provider and provider in self.home_provider_external_ids:
-            return self.home_provider_external_ids[provider]
+        if provider:
+            return self.home_provider_external_ids.get(provider)
         return self.home_external_id
 
     def get_away_external_id(self, provider: str | None = None) -> str | None:
-        if provider and provider in self.away_provider_external_ids:
-            return self.away_provider_external_ids[provider]
+        if provider:
+            return self.away_provider_external_ids.get(provider)
         return self.away_external_id
 
 
@@ -125,6 +125,7 @@ async def select_evidence(
         ProviderEntityId.internal_entity_id.in_(
             [fixture_obj.home_team_id, fixture_obj.away_team_id]
         ),
+        ProviderEntityId.first_seen_at <= as_of_utc,
     )
     ext_rows = (await session.execute(ext_stmt)).scalars().all()
     home_by_prov: dict[str, str] = {}
@@ -159,36 +160,49 @@ async def select_evidence(
         venue = meta_snapshot.venue
         round_name = meta_snapshot.round
         status = meta_snapshot.status
-        season_id = meta_snapshot.season_id or fixture_obj.season_id
+        season_id = meta_snapshot.season_id
+        league_id = meta_snapshot.league_id
+        home_team_id = meta_snapshot.home_team_id
+        away_team_id = meta_snapshot.away_team_id
         home_name = meta_snapshot.observed_home_team_name
         away_name = meta_snapshot.observed_away_team_name
         meta_id = meta_snapshot.id
         meta_captured = meta_snapshot.captured_at
+        meta_league = await session.get(League, meta_snapshot.league_id)
+        league_slug = meta_league.slug if meta_league else league_obj.slug
+        league_name = meta_league.name if meta_league else league_obj.name
     else:
         logger.warning(
-            "no fixture_metadata_snapshot found <= as_of; falling back to mutable fixture entity",
+            "no fixture_metadata_snapshot found <= as_of; metadata unavailable",
             extra={"fixture_id": str(fixture_id), "as_of": as_of_utc.isoformat()},
         )
         kickoff_at = fixture_obj.kickoff_at
-        venue = fixture_obj.venue
-        round_name = fixture_obj.round
-        status = fixture_obj.status
-        season_id = fixture_obj.season_id
+        venue = None
+        round_name = None
+        status = "METADATA_UNAVAILABLE"
+        season_id = None
+        league_id = fixture_obj.league_id
+        home_team_id = fixture_obj.home_team_id
+        away_team_id = fixture_obj.away_team_id
+        home_name = None
+        away_name = None
         meta_id = None
         meta_captured = None
+        league_slug = league_obj.slug
+        league_name = league_obj.name
 
     fixture_info = SelectedFixtureInfo(
         fixture_id=fixture_obj.id,
-        league_id=league_obj.id,
+        league_id=league_id,
         season_id=season_id,
-        home_team_id=fixture_obj.home_team_id,
-        away_team_id=fixture_obj.away_team_id,
+        home_team_id=home_team_id,
+        away_team_id=away_team_id,
         kickoff_at=kickoff_at,
         venue=venue,
         round=round_name,
         status=status,
-        league_slug=league_obj.slug,
-        league_name=league_obj.name,
+        league_slug=league_slug,
+        league_name=league_name,
         home_team_name=home_name,
         away_team_name=away_name,
         home_external_id=home_ext,
@@ -342,10 +356,12 @@ async def select_evidence(
         odds_prices = list((await session.execute(prices_stmt)).scalars().all())
 
         # Find previous odds snapshot set strictly earlier than latest captured_at
+        # with matching provider
         prev_stmt = (
             select(OddsSnapshotSet)
             .where(
                 OddsSnapshotSet.fixture_id == fixture_id,
+                OddsSnapshotSet.provider == odds_set.provider,
                 OddsSnapshotSet.captured_at < odds_set.captured_at,
             )
             .order_by(OddsSnapshotSet.captured_at.desc())

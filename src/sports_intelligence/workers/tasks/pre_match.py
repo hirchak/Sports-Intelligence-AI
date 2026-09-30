@@ -350,11 +350,15 @@ async def _try_enqueue_context_build(
     *,
     as_of: datetime,
 ) -> None:
+    from sports_intelligence.context.builder import compute_build_config_fingerprint
     from sports_intelligence.context.provenance import build_source_manifest
     from sports_intelligence.context.selector import select_evidence
+    from sports_intelligence.core.config import get_settings
+    from sports_intelligence.quality.engine import build_quality_policy
     from sports_intelligence.workers.tasks.context import build_match_context_task
 
     try:
+        settings = get_settings()
         fid = uuid.UUID(decision.fixture_id)
         async with factory() as session:
             evidence = await select_evidence(
@@ -362,12 +366,21 @@ async def _try_enqueue_context_build(
                 fixture_id=fid,
                 forecast_phase=decision.phase,
                 as_of=as_of,
+                research_enabled=settings.research_capability_enabled,
             )
         manifest = build_source_manifest(evidence)
-        schema_version = "match_context_v1"
+        quality_policy = build_quality_policy(settings)
+        policy_fingerprint = quality_policy.policy_fingerprint()
+        build_config_fingerprint = compute_build_config_fingerprint(
+            context_schema_version="match_context_v1",
+            feature_schema_version="features_v1",
+            quality_schema_version="quality_v1",
+            policy_fingerprint=policy_fingerprint,
+            research_enabled=settings.research_capability_enabled,
+        )
         job_key = (
             f"context_build:{decision.fixture_id}:{decision.phase.value}:"
-            f"{schema_version}:{manifest.source_fingerprint}"
+            f"{manifest.source_fingerprint}:{build_config_fingerprint}"
         )
         async with factory() as session:
             job, created = await create_or_get_job(

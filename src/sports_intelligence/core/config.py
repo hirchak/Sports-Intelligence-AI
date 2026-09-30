@@ -178,6 +178,47 @@ class Settings(BaseSettings):
             raise ValueError(f"APP_ENV={self.app_env} requires: {', '.join(missing)}")
         return self
 
+    @model_validator(mode="after")
+    def validate_quality_settings(self) -> Settings:
+        weights = [
+            ("fixture_identity", self.quality_weight_fixture_identity),
+            ("form", self.quality_weight_form),
+            ("season_stats", self.quality_weight_season_stats),
+            ("availability", self.quality_weight_availability),
+            ("odds", self.quality_weight_odds),
+            ("research", self.quality_weight_research),
+            ("lineups", self.quality_weight_lineups),
+        ]
+        for name, w in weights:
+            if w < 0:
+                raise ValueError(f"Quality weight '{name}' must be >= 0, got {w}")
+        total = sum(w for _, w in weights)
+        if total <= 0:
+            raise ValueError(f"Total quality weight must be > 0, got {total}")
+        if not (0.0 <= self.quality_min_predict_score <= 1.0):
+            raise ValueError(
+                "quality_min_predict_score must be between 0 and 1, "
+                f"got {self.quality_min_predict_score}"
+            )
+        usable = self.quality_band_usable_min
+        good = self.quality_band_good_min
+        excellent = self.quality_band_excellent_min
+        if not (0.0 <= usable <= good <= excellent <= 1.0):
+            raise ValueError(
+                "Quality band thresholds must satisfy 0 <= usable <= good <= excellent <= 1, "
+                f"got usable={usable}, good={good}, excellent={excellent}"
+            )
+        if self.quality_staleness_penalty < 0:
+            raise ValueError(
+                f"quality_staleness_penalty must be >= 0, got {self.quality_staleness_penalty}"
+            )
+        if not (0.0 <= self.quality_max_staleness_penalty <= 1.0):
+            raise ValueError(
+                "quality_max_staleness_penalty must be between 0 and 1, "
+                f"got {self.quality_max_staleness_penalty}"
+            )
+        return self
+
     @property
     def is_mock_mode(self) -> bool:
         return self.app_env == "mock"

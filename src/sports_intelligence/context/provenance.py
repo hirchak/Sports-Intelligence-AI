@@ -49,6 +49,16 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
                 else None
             ),
             details={
+                "provider_fixture_id": evidence.fixture_metadata.provider_fixture_id,
+                "source_version": evidence.fixture_metadata.source_version,
+                "league_id": str(evidence.fixture_metadata.league_id),
+                "season_id": (
+                    str(evidence.fixture_metadata.season_id)
+                    if evidence.fixture_metadata.season_id
+                    else None
+                ),
+                "home_team_id": str(evidence.fixture_metadata.home_team_id),
+                "away_team_id": str(evidence.fixture_metadata.away_team_id),
                 "status": evidence.fixture_metadata.status,
                 "kickoff_at": evidence.fixture_metadata.kickoff_at.isoformat(),
                 "venue": evidence.fixture_metadata.venue,
@@ -58,16 +68,12 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
     else:
         sources["fixture_metadata"] = ProvenanceRecord(
             category="fixture_metadata",
-            table="fixtures",
-            snapshot_id=str(evidence.fixture.fixture_id),
-            provider="legacy_fallback",
+            table="fixture_metadata_snapshots",
+            snapshot_id=None,
+            provider=None,
             captured_at=None,
-            details={
-                "status": evidence.fixture.status,
-                "kickoff_at": evidence.fixture.kickoff_at.isoformat(),
-                "venue": evidence.fixture.venue,
-                "round": evidence.fixture.round,
-            },
+            payload_id=None,
+            details={"error": "fixture_metadata_missing", "authoritative": False},
         )
 
     # Standings
@@ -286,11 +292,9 @@ def build_feature_provenance(evidence: SelectedEvidence) -> dict[str, Any]:
     """Map each feature family to the exact snapshot IDs from which it was computed."""
     return {
         "fixture_identity": {
-            "source_type": "fixture_metadata_snapshot" if evidence.fixture_metadata else "fixture",
+            "source_type": "fixture_metadata_snapshot" if evidence.fixture_metadata else "none",
             "snapshot_id": (
-                str(evidence.fixture_metadata.id)
-                if evidence.fixture_metadata
-                else str(evidence.fixture.fixture_id)
+                str(evidence.fixture_metadata.id) if evidence.fixture_metadata else None
             ),
         },
         "form": {

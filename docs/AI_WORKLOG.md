@@ -1946,4 +1946,69 @@ spec/ADR deviations: None.
 Git commit hash if created: ecba462cb9059a5df30193dc2eb3e112f85d3aee
 next recommended action: Push build/m6, await independent review.
 
+---
+
+timestamp: 2026-09-30T21:18:00+02:00
+agent/model if known: Antigravity (Gemini 3.8 Flash)
+milestone: M6.2
+task: Milestone M6.2 Final Acceptance-Hardening Pass on build/m6
+files changed:
+- src/sports_intelligence/context/builder.py
+- src/sports_intelligence/context/models.py
+- src/sports_intelligence/context/provenance.py
+- src/sports_intelligence/context/selector.py
+- src/sports_intelligence/core/config.py
+- src/sports_intelligence/db/migrations/versions/0003_provider_evidence_history_and_indexes.py
+- src/sports_intelligence/db/migrations/versions/0009_m6_1_fixture_metadata_and_provenance.py
+- src/sports_intelligence/db/models/context.py
+- src/sports_intelligence/quality/engine.py
+- src/sports_intelligence/workers/tasks/context.py
+- src/sports_intelligence/workers/tasks/pre_match.py
+- tests/integration/test_m6_anti_leakage_and_context.py
+- tests/unit/context/test_context_schema_and_hash.py
+- tests/unit/features/test_features_math.py
+- tests/unit/quality/test_quality_config_validation.py
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/REVIEW_HANDOFF.md
+- docs/AI_WORKLOG.md
+behavior implemented:
+- Historical Migration 0003 Integrity: Restored 0003_provider_evidence_history_and_indexes.py byte-for-byte to match origin/main (SHA-256 verified 8573d9cc3790166c2b365c627b99b2789c314716839b0fa6da64dc3e184dafaf).
+- Authoritative Fixture Metadata & Historical Fallback Removal: When FixtureMetadataSnapshot is missing <= as_of, status is set to METADATA_UNAVAILABLE, venue=None, round=None, fixture_metadata_snapshot_id=None without falling back to mutable canonical Fixture status (e.g. FT). Quality flags fixture_metadata_missing in critical_missing, evaluating quality band to abstain and setting can_predict=False. When snapshot is present <= as_of, strictly uses its dimensions and resolves league using the snapshot's league_id.
+- Migration 0009 Legacy Baseline Backfill: Added backfill of legacy_baseline snapshot for pre-existing fixtures at clock_timestamp() (not backdated). Added policy_fingerprint column to data_quality_reports and bound in uq_data_quality_reports_identity unique constraint. Symmetrical downgrade cleanly drops constraint, columns, and tables.
+- Complete Fixture Provenance: Manifest includes snapshot_id, provider, captured_at, payload_id, provider_fixture_id, source_version, league_id, season_id, home_team_id, away_team_id. No fake legacy snapshot IDs.
+- Runtime Quality Settings Wiring: Context worker uses build_quality_policy(settings) and FreshnessPolicy(settings) constructed from real runtime Settings and passes them to build_and_persist_match_context. Uses configurable staleness_penalty and max_staleness_penalty directly in evaluation.
+- Strict Quality Configuration Validation: Enforced validation rules in Settings and QualityPolicy: all weights >= 0, total active weight > 0, 0 <= min_predict_score <= 1, monotonic 0 <= usable <= good <= excellent <= 1, staleness_penalty >= 0, 0 <= max_staleness_penalty <= 1.
+- Quality Policy Fingerprint & Identity: Policy SHA-256 fingerprint persisted in data_quality_reports.policy_fingerprint and bound in unique constraint. Separate policies for same fixture and as_of produce distinct reports without conflict.
+- Build Configuration Generation in Context Job Identity: Deterministic compute_build_config_fingerprint embedded in job key format context_build:{fixture_id}:{phase}:{source_fingerprint}:{build_config_fingerprint}.
+- Deterministic Market Snapshot Serialization: OddsPrice rows sorted by (market, selection, bookmaker, line, decimal_odds, id). Replaced singular bookmaker with bookmakers: list[str]. Verified identical canonical JSON and hash regardless of DB row insertion order.
+- Compatible Previous Odds Snapshot Requirement: Query strictly requires OddsSnapshotSet.provider == odds_set.provider and captured_at < odds_set.captured_at.
+- Strict Typed MatchContext Schema: Converted MatchContextV1 and all section models to Pydantic with ConfigDict(extra="forbid", frozen=True). Full context validated before canonical serialization, hash, and persistence.
+- Complete Structured Research Claim Source References: ResearchClaimSource object with document_id, url, domain, title, published_at, retrieved_at, content_hash, provider.
+- Historical Provider Mapping Semantics & Isolation: ProviderEntityId queries filter first_seen_at <= as_of_utc. get_home_external_id(provider) strictly returns None if provider is unmapped (no fallback).
+- MORNING Lineups Fully N/A: Excluded from score denominator, stale lineups do not enter stale_sources, and no staleness penalties or warnings are triggered.
+commands/tests run:
+- uv run ruff check .
+- uv run ruff format --check .
+- uv run mypy src
+- uv run pytest -q -m 'not integration'
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q
+- DATABASE_URL=... uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check
+- docker compose config -q && docker compose --profile telegram config -q
+results:
+- Ruff: clean (All checks passed!)
+- Ruff format: clean (174 files already formatted)
+- Mypy: clean (Success: no issues found in 116 source files)
+- Unit tests: 350 passed in 4.78s
+- Integration tests: 93 passed in 26.30s
+- Full pytest suite: 443 passed in 58.71s
+- Alembic downgrade/upgrade/check: clean, 0 schema drift
+- Docker compose & telegram profile: valid
+- Zero live external calls, zero credentials, zero LLM calls.
+known problems: None.
+spec/ADR deviations: None.
+Git commit hash if created: (recorded upon commit on build/m6)
+next recommended action: Commit on build/m6, push origin build/m6, await independent review.
+
 

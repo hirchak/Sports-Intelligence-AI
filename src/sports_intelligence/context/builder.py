@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -9,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sports_intelligence.collectors.freshness import FreshnessPolicy
 from sports_intelligence.context.models import MatchContextV1
 from sports_intelligence.context.provenance import (
     SourceManifest,
@@ -24,10 +26,31 @@ from sports_intelligence.db.models import (
 )
 from sports_intelligence.features.builder import DeterministicFeatures, build_features
 from sports_intelligence.quality.engine import (
+    QualityPolicy,
     QualityReportData,
     QualityWeights,
     evaluate_data_quality,
 )
+
+
+def compute_build_config_fingerprint(
+    *,
+    context_schema_version: str = "match_context_v1",
+    feature_schema_version: str = "features_v1",
+    quality_schema_version: str = "quality_v1",
+    policy_fingerprint: str,
+    research_enabled: bool,
+) -> str:
+    """Compute a deterministic SHA-256 fingerprint of all configuration affecting context build."""
+    payload = {
+        "context_schema_version": context_schema_version,
+        "feature_schema_version": feature_schema_version,
+        "policy_fingerprint": policy_fingerprint,
+        "quality_schema_version": quality_schema_version,
+        "research_enabled": research_enabled,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def assemble_match_context_v1(
@@ -161,6 +184,20 @@ def assemble_match_context_v1(
         for c in evidence.research.claims:
             doc = doc_map.get(c.document_id)
             src_ref = f"{doc.domain}: {doc.url}" if doc else None
+            source_obj = (
+                {
+                    "document_id": str(doc.id),
+                    "url": doc.url,
+                    "domain": doc.domain,
+                    "title": doc.title,
+                    "published_at": doc.published_at.isoformat() if doc.published_at else None,
+                    "retrieved_at": doc.retrieved_at.isoformat() if doc.retrieved_at else None,
+                    "content_hash": doc.content_hash,
+                    "provider": doc.provider,
+                }
+                if doc
+                else None
+            )
             claims_list.append(
                 {
                     "id": str(c.id),
@@ -169,12 +206,15 @@ def assemble_match_context_v1(
                     "claim_text": c.claim_text,
                     "confidence": c.confidence,
                     "team_id": str(c.team_id) if c.team_id else None,
-                    "conflict_flag": c.conflict_flag,
+                    "conflict_flag": (
+                        bool(c.conflict_flag) if c.conflict_flag is not None else False
+                    ),
                     "conflicting_claim_id": (
                         str(c.conflicting_claim_id) if c.conflicting_claim_id else None
                     ),
                     "extracted_at": c.extracted_at.isoformat(),
                     "source_reference": src_ref,
+                    "source": source_obj,
                 }
             )
     research_claims = {
@@ -192,8 +232,19 @@ def assemble_match_context_v1(
     }
 
     # 10. Market Snapshot
+    sorted_prices = sorted(
+        evidence.odds_prices,
+        key=lambda p: (
+            p.market,
+            p.selection,
+            p.bookmaker or "",
+            float(p.line) if p.line is not None else 0.0,
+            float(p.decimal_odds),
+            str(p.id),
+        ),
+    )
     prices_list: list[dict[str, Any]] = []
-    for p in evidence.odds_prices:
+    for p in sorted_prices:
         prices_list.append(
             {
                 "market": p.market,
@@ -204,11 +255,13 @@ def assemble_match_context_v1(
                     float(p.no_vig_probability) if p.no_vig_probability is not None else None
                 ),
                 "bookmaker": p.bookmaker,
+                "line": float(p.line) if p.line is not None else None,
             }
         )
+    bookmakers_list = sorted(list({p.bookmaker for p in sorted_prices if p.bookmaker}))
     market_snapshot = {
         "has_odds": evidence.odds_set is not None,
-        "bookmaker": evidence.odds_prices[0].bookmaker if evidence.odds_prices else None,
+        "bookmakers": bookmakers_list,
         "captured_at": (evidence.odds_set.captured_at.isoformat() if evidence.odds_set else None),
         "prices": prices_list,
         "movement": {
@@ -255,6 +308,8 @@ async def build_and_persist_match_context(
     as_of: datetime,
     weights: QualityWeights | None = None,
     min_predict_score: float = 0.65,
+    policy: QualityPolicy | None = None,
+    freshness_policy: FreshnessPolicy | None = None,
     research_enabled: bool = True,
 ) -> tuple[MatchContextRecord, DataQualityReport, FeatureSnapshot, MatchContextV1]:
     """Pure deterministic builder workflow:
@@ -291,6 +346,8 @@ async def build_and_persist_match_context(
         manifest,
         weights=weights,
         min_predict_score=min_predict_score,
+        policy=policy,
+        freshness_policy=freshness_policy,
     )
 
     # Step 5: Assemble MatchContext
@@ -331,6 +388,7 @@ async def build_and_persist_match_context(
         DataQualityReport.as_of == as_of_utc,
         DataQualityReport.schema_version == quality.schema_version,
         DataQualityReport.source_fingerprint == manifest.source_fingerprint,
+        DataQualityReport.policy_fingerprint == quality.policy_fingerprint,
     )
     quality_record = (await session.execute(quality_stmt)).scalar_one_or_none()
     if quality_record is None:
@@ -352,6 +410,7 @@ async def build_and_persist_match_context(
             source_manifest_jsonb=quality.source_manifest,
             source_fingerprint=manifest.source_fingerprint,
             quality_policy_jsonb=quality.quality_policy,
+            policy_fingerprint=quality.policy_fingerprint,
         )
         try:
             async with session.begin_nested():

@@ -41,6 +41,7 @@ from sports_intelligence.db.models import (
     TeamStatisticsSnapshot,
 )
 from sports_intelligence.db.session import create_engine, create_session_factory
+from sports_intelligence.quality.engine import QualityPolicy, QualityWeights
 from sports_intelligence.workers.tasks.context import _run_build
 
 requires_services = pytest.mark.skipif(
@@ -114,6 +115,8 @@ async def _seed_test_fixture(
     factory: Any,
     *,
     kickoff_at: datetime,
+    create_metadata: bool = True,
+    metadata_captured_at: datetime | None = None,
 ) -> dict[str, uuid.UUID]:
     async with factory() as session:
         league = League(slug=f"league-{uuid.uuid4().hex[:6]}", name="Premier League", enabled=True)
@@ -129,7 +132,8 @@ async def _seed_test_fixture(
         session.add_all([home_team, away_team])
         await session.flush()
 
-        # Provider external IDs
+        # Provider external IDs (seeded as historically known before kickoff)
+        prov_seen = kickoff_at - timedelta(days=30)
         session.add_all(
             [
                 ProviderEntityId(
@@ -137,12 +141,14 @@ async def _seed_test_fixture(
                     entity_type="team",
                     internal_entity_id=home_team.id,
                     external_id="101",
+                    first_seen_at=prov_seen,
                 ),
                 ProviderEntityId(
                     provider="mock",
                     entity_type="team",
                     internal_entity_id=away_team.id,
                     external_id="102",
+                    first_seen_at=prov_seen,
                 ),
             ]
         )
@@ -156,6 +162,29 @@ async def _seed_test_fixture(
             status="NS",
         )
         session.add(fixture)
+        await session.flush()
+
+        if create_metadata:
+            meta_cap = metadata_captured_at or (kickoff_at - timedelta(days=2))
+            meta = FixtureMetadataSnapshot(
+                fixture_id=fixture.id,
+                provider="mock",
+                provider_fixture_id=f"prov-{uuid.uuid4().hex[:8]}",
+                captured_at=meta_cap,
+                league_id=league.id,
+                season_id=season.id,
+                home_team_id=home_team.id,
+                away_team_id=away_team.id,
+                observed_home_team_name="Home FC",
+                observed_away_team_name="Away FC",
+                kickoff_at=kickoff_at,
+                venue="Main Stadium",
+                round="Round 1",
+                status="NS",
+                source_version="v1",
+            )
+            session.add(meta)
+
         await session.commit()
 
         return {
@@ -407,26 +436,26 @@ async def test_strict_as_of_anti_leakage_boundary(m6_session_factory: Any) -> No
 
     # Standings: 08:00 row was selected, rank=3 (not rank=1 from 12:00)
     assert morning_manifest["standings"]["snapshot_id"] == str(st_past.id)
-    assert m_ctx.season_strength["home_league_position"] == 3
+    assert m_ctx.season_strength.home_league_position == 3
 
     # Form: 09:00 row was selected (2 outcomes, not 1 outcome from 13:00)
     assert morning_manifest["home_team_form"]["snapshot_id"] == str(form_past.id)
-    assert m_ctx.team_form["home_sample_size"] == 2
+    assert m_ctx.team_form.home_sample_size == 2
 
     # Availability: 09:30 row was selected, 1 missing player (not 0 from 11:00)
     assert morning_manifest["home_availability"]["snapshot_id"] == str(avail_past.id)
-    assert m_ctx.availability["home_missing_count"] == 1
+    assert m_ctx.availability.home_missing_count == 1
 
     # Lineup: 18:45 row is EXCLUDED
     assert "home_lineup" not in morning_manifest
-    assert m_ctx.lineups["home_confirmed"] is None
+    assert m_ctx.lineups.home_confirmed is None
 
     # Odds: 09:55 row was selected (odds 2.10 / no-vig 0.45, not closing odds 1.50)
     assert morning_manifest["odds"]["snapshot_id"] == str(odds_past.id)
-    assert m_ctx.market_snapshot["prices"][0]["decimal_odds"] == 2.10
+    assert m_ctx.market_snapshot.prices[0].decimal_odds == 2.10
 
     # Research: 09:40 run was selected (status AVAILABLE, not future PROVIDER_ERROR)
-    assert m_ctx.research_claims["status"] == "AVAILABLE"
+    assert m_ctx.research_claims.status == "AVAILABLE"
 
     morning_hash = m_ctx_rec.context_hash
     morning_id = m_ctx_rec.id
@@ -445,10 +474,10 @@ async def test_strict_as_of_anti_leakage_boundary(m6_session_factory: Any) -> No
     prematch_manifest = p_ctx.source_manifest["sources"]
     assert "home_lineup" in prematch_manifest
     assert prematch_manifest["home_lineup"]["snapshot_id"] == str(lineup_future.id)
-    assert p_ctx.lineups["home_confirmed"] is True
+    assert p_ctx.lineups.home_confirmed is True
 
     # But closing odds at 19:50 are STILL excluded at 19:00!
-    assert p_ctx.market_snapshot["prices"][0]["decimal_odds"] != 1.50
+    assert p_ctx.market_snapshot.prices[0].decimal_odds != 1.50
 
     # 3. Assert that MORNING context record and hash in DB did NOT change
     async with m6_session_factory() as session:
@@ -619,7 +648,7 @@ async def test_mutable_fixture_metadata_future_anti_leakage(m6_session_factory: 
     kickoff_t0 = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
     kickoff_t2 = datetime(2026, 8, 22, 21, 0, tzinfo=UTC)
 
-    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff_t0)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff_t0, create_metadata=False)
     fid = ids["fixture_id"]
     lid = ids["league_id"]
     sid = ids["season_id"]
@@ -685,10 +714,10 @@ async def test_mutable_fixture_metadata_future_anti_leakage(m6_session_factory: 
         )
 
     # Verify T1 context only contains T0 observation
-    assert ctx_t1.fixture_identity["venue"] == "Stadium A"
-    assert ctx_t1.fixture_identity["round"] == "Round 1"
-    assert ctx_t1.fixture_identity["status"] == "NS"
-    assert ctx_t1.fixture_identity["kickoff_at"] == kickoff_t0.isoformat()
+    assert ctx_t1.fixture_identity.venue == "Stadium A"
+    assert ctx_t1.fixture_identity.round == "Round 1"
+    assert ctx_t1.fixture_identity.status == "NS"
+    assert ctx_t1.fixture_identity.kickoff_at == kickoff_t0.isoformat()
     assert ctx_t1.source_manifest["sources"]["fixture_metadata"]["snapshot_id"] == str(meta_t0_id)
     hash_t1 = rec_t1.context_hash
 
@@ -702,10 +731,10 @@ async def test_mutable_fixture_metadata_future_anti_leakage(m6_session_factory: 
         )
 
     # Verify T3 context contains T2 observation
-    assert ctx_t3.fixture_identity["venue"] == "Stadium B"
-    assert ctx_t3.fixture_identity["round"] == "Round 2"
-    assert ctx_t3.fixture_identity["status"] == "POSTPONED"
-    assert ctx_t3.fixture_identity["kickoff_at"] == kickoff_t2.isoformat()
+    assert ctx_t3.fixture_identity.venue == "Stadium B"
+    assert ctx_t3.fixture_identity.round == "Round 2"
+    assert ctx_t3.fixture_identity.status == "POSTPONED"
+    assert ctx_t3.fixture_identity.kickoff_at == kickoff_t2.isoformat()
     assert ctx_t3.source_manifest["sources"]["fixture_metadata"]["snapshot_id"] == str(meta_t2_id)
 
     # Verify old T1 context record in DB never mutated
@@ -1076,3 +1105,434 @@ async def test_form_snapshot_raw_evidence_link(m6_session_factory: Any) -> None:
     form_prov = ctx.source_manifest["sources"]["home_team_form"]
     assert form_prov["snapshot_id"] == str(form_id)
     assert form_prov["payload_id"] == str(payload_id)
+
+
+async def test_historical_context_no_metadata_snapshot_never_leaks_mutable_fixture(
+    m6_session_factory: Any,
+) -> None:
+    """M6.2 §1 & §15.1: Legacy fixture with current mutable status FT and no snapshot <= as_of
+    must report METADATA_UNAVAILABLE (never FT), abstain band, and can_predict=False.
+    """
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff, create_metadata=False)
+    fid = ids["fixture_id"]
+
+    # Mutate canonical fixture to finished match
+    async with m6_session_factory() as session:
+        fix = await session.get(Fixture, fid)
+        assert fix is not None
+        fix.status = "FT"
+        fix.venue = "Modern Arena"
+        fix.round = "Round 38"
+        await session.commit()
+
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+    async with m6_session_factory() as session:
+        rec, q, f, ctx = await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+        )
+
+    # Historical context must NEVER report current FT status
+    assert ctx.fixture_identity.status == "METADATA_UNAVAILABLE"
+    assert ctx.fixture_identity.venue is None
+    assert ctx.fixture_identity.round is None
+    assert ctx.fixture_identity.fixture_metadata_snapshot_id is None
+
+    # Quality report must flag fixture_metadata_missing and abstain
+    assert "fixture_metadata_missing" in q.critical_missing_jsonb
+    assert q.can_predict is False
+    assert q.quality_band == "abstain"
+
+    # Manifest must clearly reflect missing authoritative metadata
+    fix_prov = ctx.source_manifest["sources"]["fixture_metadata"]
+    assert fix_prov["snapshot_id"] is None
+    assert fix_prov["details"]["authoritative"] is False
+    assert fix_prov["details"]["error"] == "fixture_metadata_missing"
+
+
+async def test_metadata_snapshot_overrides_changed_canonical_fixture(
+    m6_session_factory: Any,
+) -> None:
+    """M6.2 §1 & §15.2: Historical snapshot league/team dimensions strictly override
+    mutated canonical Fixture dimensions.
+    """
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff, create_metadata=False)
+    fid = ids["fixture_id"]
+    orig_lid = ids["league_id"]
+    orig_sid = ids["season_id"]
+    orig_hid = ids["home_team_id"]
+    orig_aid = ids["away_team_id"]
+
+    t0_captured = datetime(2026, 8, 20, 10, 0, tzinfo=UTC)
+    meta_id = uuid.uuid4()
+    payload_id = uuid.uuid4()
+
+    async with m6_session_factory() as session:
+        # Create authoritative snapshot with original dimensions
+        raw_payload = RawProviderPayload(
+            id=payload_id,
+            provider="api_football",
+            endpoint_family="fixtures",
+            payload_hash="hash-fixture-raw",
+            payload={"fixture": {}},
+            first_seen_at=t0_captured,
+        )
+        session.add(raw_payload)
+        await session.flush()
+
+        meta = FixtureMetadataSnapshot(
+            id=meta_id,
+            fixture_id=fid,
+            provider="api_football",
+            provider_fixture_id="api-fix-999",
+            captured_at=t0_captured,
+            league_id=orig_lid,
+            season_id=orig_sid,
+            home_team_id=orig_hid,
+            away_team_id=orig_aid,
+            observed_home_team_name="Historic Home",
+            observed_away_team_name="Historic Away",
+            kickoff_at=kickoff,
+            venue="Historic Grounds",
+            round="Round 1",
+            status="NS",
+            source_version="v1",
+            payload_id=payload_id,
+        )
+        session.add(meta)
+
+        # Mutate canonical Fixture to completely different league and teams
+        other_league = League(slug="mutated-league", name="Mutated League", enabled=True)
+        session.add(other_league)
+        await session.flush()
+
+        fix = await session.get(Fixture, fid)
+        assert fix is not None
+        fix.league_id = other_league.id
+        fix.venue = "Mutated Stadium"
+        await session.commit()
+
+    t_as_of = datetime(2026, 8, 21, 10, 0, tzinfo=UTC)
+    async with m6_session_factory() as session:
+        rec, q, f, ctx = await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+        )
+
+    # Must strictly use snapshot's league_id and historic team names
+    assert ctx.fixture_identity.league_id == str(orig_lid)
+    assert ctx.fixture_identity.home_team_name == "Historic Home"
+    assert ctx.fixture_identity.away_team_name == "Historic Away"
+    assert ctx.fixture_identity.venue == "Historic Grounds"
+
+    # Fixture provenance contains external ID, source version, and payload_id
+    fix_prov = ctx.source_manifest["sources"]["fixture_metadata"]
+    assert fix_prov["snapshot_id"] == str(meta_id)
+    assert fix_prov["provider"] == "api_football"
+    assert fix_prov["payload_id"] == str(payload_id)
+    assert fix_prov["details"]["provider_fixture_id"] == "api-fix-999"
+    assert fix_prov["details"]["source_version"] == "v1"
+
+
+async def test_different_quality_policies_create_separate_identities_and_fingerprints(
+    m6_session_factory: Any,
+) -> None:
+    """M6.2 §5, §15.6, §15.7: Policy A vs Policy B generates distinct policy fingerprints
+    and can both be persisted for the same fixture and as_of without conflict.
+    """
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
+    policy_a = QualityPolicy(
+        weights=QualityWeights(fixture_identity=0.10, form=0.20),
+        staleness_penalty=0.05,
+        max_staleness_penalty=0.20,
+    )
+    policy_b = QualityPolicy(
+        weights=QualityWeights(fixture_identity=0.10, form=0.40),
+        staleness_penalty=0.10,
+        max_staleness_penalty=0.30,
+    )
+
+    async with m6_session_factory() as session:
+        rec_a, q_a, f_a, ctx_a = await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+            policy=policy_a,
+        )
+
+    async with m6_session_factory() as session:
+        rec_b, q_b, f_b, ctx_b = await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+            policy=policy_b,
+        )
+
+    assert q_a.policy_fingerprint != q_b.policy_fingerprint
+    assert q_a.quality_policy_jsonb["weights"]["form"] == 0.20
+    assert q_b.quality_policy_jsonb["weights"]["form"] == 0.40
+    assert q_a.quality_policy_jsonb["staleness_penalty"] == 0.05
+    assert q_b.quality_policy_jsonb["staleness_penalty"] == 0.10
+
+    # Verify both reports co-exist in DB with their distinct policy fingerprints
+    async with m6_session_factory() as session:
+        reports = (
+            (
+                await session.execute(
+                    select(DataQualityReport).where(
+                        DataQualityReport.fixture_id == fid,
+                        DataQualityReport.as_of == t_as_of,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(reports) == 2
+        fp_set = {r.policy_fingerprint for r in reports}
+        assert q_a.policy_fingerprint in fp_set
+        assert q_b.policy_fingerprint in fp_set
+
+
+async def test_odds_insertion_order_produces_identical_context_hash(
+    m6_session_factory: Any,
+) -> None:
+    """M6.2 §7 & §15.9: Database insertion order of OddsPrice rows does NOT affect
+    canonical MatchContext serialization or context_hash.
+    """
+    from sports_intelligence.context.builder import assemble_match_context_v1
+    from sports_intelligence.context.provenance import build_source_manifest
+    from sports_intelligence.context.selector import SelectedEvidence, SelectedFixtureInfo
+    from sports_intelligence.features.builder import build_features
+    from sports_intelligence.quality.engine import evaluate_data_quality
+
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    fix_info = SelectedFixtureInfo(
+        fixture_id=uuid.uuid4(),
+        league_id=uuid.uuid4(),
+        season_id=uuid.uuid4(),
+        home_team_id=uuid.uuid4(),
+        away_team_id=uuid.uuid4(),
+        kickoff_at=kickoff,
+        venue="Test Ground",
+        round="Round 1",
+        status="NS",
+        league_slug="test-league",
+        league_name="Test League",
+        home_team_name="Home",
+        away_team_name="Away",
+        home_external_id="1",
+        away_external_id="2",
+        fixture_metadata_snapshot_id=uuid.uuid4(),
+        metadata_captured_at=kickoff - timedelta(days=2),
+    )
+    as_of = kickoff - timedelta(hours=4)
+    odds_set_id = uuid.uuid4()
+    odds_set = OddsSnapshotSet(
+        id=odds_set_id,
+        fixture_id=fix_info.fixture_id,
+        provider="theoddsapi",
+        captured_at=as_of,
+        market_whitelist_jsonb=["h2h_1x2"],
+    )
+
+    p1 = OddsPrice(
+        id=uuid.uuid4(),
+        snapshot_set_id=odds_set_id,
+        bookmaker="pinnacle",
+        market="h2h_1x2",
+        selection="home",
+        decimal_odds=Decimal("2.10"),
+        implied_probability=Decimal("0.4762"),
+        no_vig_probability=Decimal("0.4500"),
+    )
+    p2 = OddsPrice(
+        id=uuid.uuid4(),
+        snapshot_set_id=odds_set_id,
+        bookmaker="bet365",
+        market="h2h_1x2",
+        selection="home",
+        decimal_odds=Decimal("2.15"),
+        implied_probability=Decimal("0.4651"),
+        no_vig_probability=Decimal("0.4400"),
+    )
+    p3 = OddsPrice(
+        id=uuid.uuid4(),
+        snapshot_set_id=odds_set_id,
+        bookmaker="betfair",
+        market="h2h_1x2",
+        selection="draw",
+        decimal_odds=Decimal("3.40"),
+        implied_probability=Decimal("0.2941"),
+        no_vig_probability=Decimal("0.2800"),
+    )
+
+    # Order 1: [p1, p2, p3]
+    ev1 = SelectedEvidence(
+        fixture_id=fix_info.fixture_id,
+        forecast_phase=ForecastPhase.MORNING,
+        as_of=as_of,
+        fixture=fix_info,
+        odds_set=odds_set,
+        odds_prices=[p1, p2, p3],
+    )
+    m1 = build_source_manifest(ev1)
+    f1 = build_features(ev1)
+    q1 = evaluate_data_quality(ev1, f1, m1)
+    ctx1 = assemble_match_context_v1(ev1, f1, q1, m1)
+
+    # Order 2: [p3, p1, p2] (reversed/scrambled)
+    ev2 = SelectedEvidence(
+        fixture_id=fix_info.fixture_id,
+        forecast_phase=ForecastPhase.MORNING,
+        as_of=as_of,
+        fixture=fix_info,
+        odds_set=odds_set,
+        odds_prices=[p3, p1, p2],
+    )
+    m2 = build_source_manifest(ev2)
+    f2 = build_features(ev2)
+    q2 = evaluate_data_quality(ev2, f2, m2)
+    ctx2 = assemble_match_context_v1(ev2, f2, q2, m2)
+
+    assert ctx1.canonical_json() == ctx2.canonical_json()
+    assert ctx1.market_snapshot.bookmakers == ["bet365", "betfair", "pinnacle"]
+
+
+async def test_previous_odds_provider_mismatch_yields_no_movement(
+    m6_session_factory: Any,
+) -> None:
+    """M6.2 §8 & §15.10: An earlier odds snapshot set from a DIFFERENT provider
+    must not be paired for odds movement calculation.
+    """
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
+    cur_odds_id = uuid.uuid4()
+    diff_prov_odds_id = uuid.uuid4()
+
+    async with m6_session_factory() as session:
+        # Current odds set: provider "theoddsapi"
+        cur_odds = OddsSnapshotSet(
+            id=cur_odds_id,
+            fixture_id=fid,
+            provider="theoddsapi",
+            captured_at=t_as_of,
+            market_whitelist_jsonb=["h2h_1x2"],
+        )
+        cur_p = OddsPrice(
+            snapshot_set_id=cur_odds_id,
+            bookmaker="sportsbook",
+            market="h2h_1x2",
+            selection="home",
+            decimal_odds=Decimal("2.00"),
+            implied_probability=Decimal("0.50"),
+            no_vig_probability=Decimal("0.48"),
+        )
+        # Earlier odds set: provider "other_odds_feed" (mismatch!)
+        prev_odds = OddsSnapshotSet(
+            id=diff_prov_odds_id,
+            fixture_id=fid,
+            provider="other_odds_feed",
+            captured_at=t_as_of - timedelta(hours=3),
+            market_whitelist_jsonb=["h2h_1x2"],
+        )
+        prev_p = OddsPrice(
+            snapshot_set_id=diff_prov_odds_id,
+            bookmaker="sportsbook",
+            market="h2h_1x2",
+            selection="home",
+            decimal_odds=Decimal("1.80"),
+            implied_probability=Decimal("0.55"),
+            no_vig_probability=Decimal("0.53"),
+        )
+        session.add_all([cur_odds, prev_odds])
+        await session.flush()
+        session.add_all([cur_p, prev_p])
+        await session.commit()
+
+    async with m6_session_factory() as session:
+        rec, q, f, ctx = await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+        )
+
+    # Provider mismatch must result in no previous odds set selected and movement = None
+    assert "prev_odds" not in ctx.source_manifest["sources"]
+    assert ctx.market_snapshot.movement.get("odds_move_home") is None
+    assert ctx.market_snapshot.movement.get("odds_move_over25") is None
+
+
+async def test_provider_mapping_historical_semantics_and_isolation(
+    m6_session_factory: Any,
+) -> None:
+    """M6.2 §11, §15.13, §15.14: ProviderEntityId selection obeys first_seen_at <= as_of
+    and requesting a specific provider never falls back to another provider mapping.
+    """
+    from sports_intelligence.context.selector import select_evidence
+
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+    hid = ids["home_team_id"]
+    aid = ids["away_team_id"]
+
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
+    async with m6_session_factory() as session:
+        # Delete existing mappings to have full control
+        await session.execute(delete(ProviderEntityId))
+
+        # Home team: mapping for "api_football" seen 5 days before as_of
+        p_home_past = ProviderEntityId(
+            provider="api_football",
+            entity_type="team",
+            internal_entity_id=hid,
+            external_id="api-home-42",
+            first_seen_at=t_as_of - timedelta(days=5),
+        )
+        # Away team: mapping for "mock" seen in the FUTURE (after as_of)
+        p_away_future = ProviderEntityId(
+            provider="mock",
+            entity_type="team",
+            internal_entity_id=aid,
+            external_id="mock-away-99",
+            first_seen_at=t_as_of + timedelta(hours=2),
+        )
+        session.add_all([p_home_past, p_away_future])
+        await session.commit()
+
+    async with m6_session_factory() as session:
+        evidence = await select_evidence(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+        )
+
+    info = evidence.fixture
+    # Home team api_football mapping is present
+    assert info.get_home_external_id("api_football") == "api-home-42"
+    # Requesting a different provider mapping must return None (NO fallback!)
+    assert info.get_home_external_id("theoddsapi") is None
+    assert info.get_home_external_id("mock") is None
+
+    # Away team mapping was first_seen_at > as_of, so it MUST be excluded at as_of
+    assert info.get_away_external_id("mock") is None
+    assert info.get_away_external_id() is None

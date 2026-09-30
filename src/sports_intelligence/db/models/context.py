@@ -69,6 +69,7 @@ class DataQualityReport(Base):
             "as_of",
             "schema_version",
             "source_fingerprint",
+            "policy_fingerprint",
             name="uq_data_quality_reports_identity",
         ),
     )
@@ -101,6 +102,7 @@ class DataQualityReport(Base):
     )
     source_fingerprint: Mapped[str | None] = mapped_column(String(255), nullable=True)
     quality_policy_jsonb: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    policy_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

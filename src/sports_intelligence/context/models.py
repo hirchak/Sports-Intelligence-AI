@@ -1,26 +1,13 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
-from typing import Any, cast
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-def _to_plain_dict(obj: Any) -> Any:
-    if hasattr(obj, "model_dump"):
-        return obj.model_dump()
-    if hasattr(obj, "__dataclass_fields__"):
-        return _to_plain_dict(asdict(obj))
-    if isinstance(obj, dict):
-        return {k: _to_plain_dict(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_to_plain_dict(item) for item in obj]
-    return obj
-
-
 class FixtureIdentitySection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     fixture_id: str
     league_id: str
@@ -42,7 +29,7 @@ class FixtureIdentitySection(BaseModel):
 
 
 class TeamFormSection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     home_sample_size: int | None = None
     away_sample_size: int | None = None
@@ -51,14 +38,14 @@ class TeamFormSection(BaseModel):
 
 
 class HomeAwayContextSection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     home_split_ppg: float | None = None
     away_split_ppg: float | None = None
 
 
 class SeasonStrengthSection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     home_league_position: int | None = None
     away_league_position: int | None = None
@@ -72,7 +59,7 @@ class SeasonStrengthSection(BaseModel):
 
 
 class ScheduleFatigueSection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     home_days_since_last_match: float | None = None
     away_days_since_last_match: float | None = None
@@ -85,7 +72,7 @@ class ScheduleFatigueSection(BaseModel):
 
 
 class AvailabilitySection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     home_state: str | None = None
     away_state: str | None = None
@@ -98,7 +85,7 @@ class AvailabilitySection(BaseModel):
 
 
 class LineupsSection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     home_confirmed: bool | None = None
     away_confirmed: bool | None = None
@@ -112,15 +99,28 @@ class LineupsSection(BaseModel):
 
 
 class HeadToHeadSection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     available: bool = False
     reason: str | None = None
     matches: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ResearchClaimSource(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    document_id: str
+    url: str
+    domain: str
+    title: str
+    published_at: str | None = None
+    retrieved_at: str | None = None
+    content_hash: str
+    provider: str
+
+
 class ResearchClaimItem(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: str
     document_id: str | None = None
@@ -132,10 +132,11 @@ class ResearchClaimItem(BaseModel):
     conflicting_claim_id: str | None = None
     extracted_at: str
     source_reference: str | None = None
+    source: ResearchClaimSource | None = None
 
 
 class ResearchClaimsSection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     status: str
     run_id: str | None = None
@@ -147,7 +148,7 @@ class ResearchClaimsSection(BaseModel):
 
 
 class MarketPriceItem(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     market: str
     selection: str
@@ -155,26 +156,29 @@ class MarketPriceItem(BaseModel):
     implied_probability: float
     no_vig_probability: float | None = None
     bookmaker: str | None = None
+    line: float | None = None
 
 
 class MarketSnapshotSection(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     has_odds: bool
-    bookmaker: str | None = None
+    bookmakers: list[str] = Field(default_factory=list)
     captured_at: str | None = None
     prices: list[MarketPriceItem] = Field(default_factory=list)
     movement: dict[str, float | None] = Field(default_factory=dict)
 
 
-@dataclass(frozen=True)
-class MatchContextV1:
-    """Immutable, typed MatchContext V1 data structure.
+class MatchContextV1(BaseModel):
+    """Immutable, strictly typed MatchContext V1 data structure.
 
     Sections strictly ordered 1 through 13 per specification.
     Contains ONLY point-in-time facts available at or before `as_of`.
     Zero future leakage, zero prediction probabilities, zero LLM text.
+    Strict extra='forbid' validation.
     """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
     # Identity
     schema_version: str
@@ -183,22 +187,22 @@ class MatchContextV1:
     as_of: str
 
     # Sections 1–13
-    fixture_identity: dict[str, Any]
-    team_form: dict[str, Any]
-    home_away_context: dict[str, Any]
-    season_strength: dict[str, Any]
-    schedule_fatigue: dict[str, Any]
-    availability: dict[str, Any]
-    lineups: dict[str, Any]
-    head_to_head: dict[str, Any]
-    research_claims: dict[str, Any]
-    market_snapshot: dict[str, Any]
+    fixture_identity: FixtureIdentitySection
+    team_form: TeamFormSection
+    home_away_context: HomeAwayContextSection
+    season_strength: SeasonStrengthSection
+    schedule_fatigue: ScheduleFatigueSection
+    availability: AvailabilitySection
+    lineups: LineupsSection
+    head_to_head: HeadToHeadSection
+    research_claims: ResearchClaimsSection
+    market_snapshot: MarketSnapshotSection
     deterministic_features: dict[str, Any]
     data_quality: dict[str, Any]
     source_manifest: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
-        return cast(dict[str, Any], _to_plain_dict(asdict(self)))
+        return self.model_dump()
 
     def canonical_json(self) -> str:
         """Deterministic canonical JSON serialization for stable cryptographic hashing."""

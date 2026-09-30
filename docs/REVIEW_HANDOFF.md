@@ -1,4 +1,4 @@
-# Review Handoff — Milestone M6.1
+# Review Handoff — Milestone M6.2
 
 Use this file when handing the repository to an independent reviewer, ChatGPT, Kimi, another engineer, or a fresh coding-agent session.
 
@@ -8,139 +8,142 @@ Update it before every milestone review.
 
 # Review Status
 
-**Milestone:** M6.1 — Correctness, Provenance, Freshness, and Orchestration Pass  
+**Milestone:** M6.2 — Final Acceptance-Hardening Pass  
 **Milestone Verdict:** COMPLETED, AWAITING INDEPENDENT REVIEW  
 **Branch:** `build/m6`  
 **Base Commit:** `fb256ecaf2ca1a97c64f1dba8d491cff6b935c91` (tag `v0.6-m5`, PR #7 merged into `main`)  
 **Reviewed M6 HEAD:** `fff8df75c520696f6c25a14e19ded7b6711e7688` (Verdict: FAIL)  
-**M6.1 HEAD:** `ecba462cb9059a5df30193dc2eb3e112f85d3aee`
+**Reviewed M6.1 HEAD:** `08d253fe90883f11456b402563f4065fc4b00072` (Verdict: FAIL)  
+**M6.2 HEAD:** (to be committed on `build/m6`)
 
 ---
 
-# 26-Point Review Response & Architecture Evidence
+# 23-Point Milestone M6.2 Review Response & Architecture Evidence
 
 ### 1. Final build/m6 Remote HEAD SHA
-- `ecba462cb9059a5df30193dc2eb3e112f85d3aee`
+- (Recorded upon commit and push)
 
-### 2. Immutable Fixture-Observation Solution
-- **Migration 0009**: Creates table `fixture_metadata_snapshots` tracking point-in-time fixture identity:
-  - `id`, `fixture_id`, `provider`, `provider_fixture_id`, `captured_at`, `league_id`, `season_id`, `home_team_id`, `away_team_id`, `observed_home_team_name`, `observed_away_team_name`, `kickoff_at`, `venue`, `round`, `status`, `payload_id` (ForeignKey to `raw_provider_payloads.id`), `source_version`.
-- **Discovery Pipeline Integration**: Whenever a fixture is discovered or updated (`discover_fixtures.py`), a `FixtureMetadataSnapshot` is recorded with `captured_at=retrieved_at` and `payload_id=raw_payload.id`.
-- **Point-in-Time Selector**: `select_evidence()` in `src/sports_intelligence/context/selector.py` selects the most recent `FixtureMetadataSnapshot` where `captured_at <= as_of`.
+### 2. Legacy Fixture Anti-Leakage Behavior
+- When no `FixtureMetadataSnapshot` exists `<= as_of` for a fixture:
+  - Selector sets `status="METADATA_UNAVAILABLE"`, `venue=None`, `round=None`, `season_id=None`, `home_team_name=None`, `away_team_name=None`, `fixture_metadata_snapshot_id=None`.
+  - It does NOT fall back to mutable canonical `Fixture` attributes (e.g. `status="FT"`).
+  - Data Quality Engine flags `"fixture_metadata_missing"` in `critical_missing`, evaluates quality band to `"abstain"`, and sets `can_predict=False`.
+  - Manifest fixture_metadata record has `snapshot_id=None`, `captured_at=None`, `payload_id=None`, and `details={"error": "fixture_metadata_missing", "authoritative": False}`.
+  - Regression verified: `test_historical_context_no_metadata_snapshot_never_leaks_mutable_fixture`.
 
-### 3. Fixture Historical Anti-Leakage Behavior
-- Later changes in canonical `fixtures` or `teams` (e.g., rescheduled kickoff time, postponed status, venue change, name correction) do NOT affect historical contexts built with `as_of = T0` prior to those changes.
-- Verified in `tests/integration/test_m6_anti_leakage_and_context.py::test_strict_as_of_anti_leakage_boundary` and `test_fixture_metadata_snapshot_anti_leakage`.
+### 3. Exact Fixture Metadata Authority Behavior
+- When `FixtureMetadataSnapshot` exists `<= as_of`:
+  - Its fields (`league_id`, `season_id`, `home_team_id`, `away_team_id`, `observed_home_team_name`, `observed_away_team_name`, `kickoff_at`, `venue`, `round`, `status`, `provider`, `provider_fixture_id`, `captured_at`, `payload_id`, `source_version`) are authoritative.
+  - League metadata is fetched using snapshot's `league_id`.
+  - Canonical `Fixture` mutations (e.g. changed kickoff, venue, status, or league) are strictly overridden for historical replay.
+  - Regression verified: `test_metadata_snapshot_overrides_changed_canonical_fixture`.
 
-### 4. Corrected Research Provenance
-- `FixtureResearchView` exposes real `ResearchRun.id` (not a placeholder).
-- `build_source_manifest()` includes:
-  - `run_id`, `status`, `selected_document_ids`, `selected_claim_ids`, `selected_urls`, `extraction_version`.
-- Every claim in `MatchContext.research_claims["claims"]` includes `document_id` and source reference.
+### 4. Runtime Quality Policy Wiring
+- Deterministic helper `build_quality_policy(settings: Settings) -> QualityPolicy` builds an immutable `QualityPolicy` from runtime `Settings`.
+- `FreshnessPolicy` is constructed from the same `resolved_settings`.
+- The production Celery worker (`context.py::_run_build`) instantiates both from `resolved_settings` and passes them down:
+  `build_and_persist_match_context(..., policy=quality_policy, freshness_policy=freshness_policy)`.
+- No bare `Settings()` are instantiated in quality evaluation during production.
+- Staleness penalties use `q_policy.staleness_penalty` and `q_policy.max_staleness_penalty` directly.
 
-### 5. Corrected Odds / Current + Previous Provenance
-- Both current and previous odds snapshot set IDs are captured in `source_manifest["sources"]["odds"]` (`snapshot_set_id` and `previous_snapshot_set_id`).
-- Both are included in the SHA-256 `source_fingerprint`.
+### 5. Policy Fingerprint / Identity Behavior
+- `QualityPolicy.policy_fingerprint()` computes a canonical SHA-256 hash of `to_dict()`.
+- Persisted in `data_quality_reports.policy_fingerprint` and enforced in unique constraint `uq_data_quality_reports_identity` on `(fixture_id, forecast_phase, as_of, schema_version, source_fingerprint, policy_fingerprint)`.
+- Separate policies for the same evidence and `as_of` produce distinct reports that co-exist in PostgreSQL without conflict.
+- Regression verified: `test_different_quality_policies_create_separate_identities_and_fingerprints`.
 
-### 6. Multi-Bookmaker Deterministic Aggregation Policy
-- In `src/sports_intelligence/features/builder.py`:
-  - Per market and selection across available bookmakers in the snapshot:
-    - Consensus decimal odds: median of decimal odds.
-    - Consensus probability: median of no-vig probabilities computed per bookmaker via additive normalization.
-  - Odds movement: calculated strictly as `current_consensus_median - previous_consensus_median`.
-  - Independent of SQL row iteration order (`test_multi_bookmaker_insertion_order_determinism`).
-  - Bookmaker identities preserved in `market_snapshot["bookmakers"]`.
+### 6. Build Config Fingerprint Behavior
+- `compute_build_config_fingerprint(*, context_schema_version, feature_schema_version, quality_schema_version, policy_fingerprint, research_enabled) -> str` computes a SHA-256 fingerprint of all configuration affecting context build.
+- Pre-match scanner job key format:
+  `context_build:{fixture_id}:{phase}:{source_fingerprint}:{build_config_fingerprint}`.
+- Re-enqueues legitimate new context builds if the quality policy or build configuration changes for the same sources.
 
-### 7. Form Identity & Provider Identity Fixes
-- `select_evidence()` strictly selects `TeamFormSnapshot` matching `window_size == 10` and `scope == "overall"`.
-- Provider-scoped external team ID mapping: standings rows and team stats are matched using external IDs scoped to `provider == snapshot.provider` via `get_home_external_id(provider)` and `get_away_external_id(provider)`.
+### 7. Deterministic Market-Context Serialization
+- OddsPrice rows are deterministically sorted by `(market, selection, bookmaker, line, decimal_odds, id)`.
+- Replaced misleading singular `bookmaker` with `bookmakers: list[str] = sorted(unique bookmaker names)`.
+- Arbitrary SQL insertion order produces byte-for-byte identical `context.canonical_json()` and `context_hash`.
+- Regression verified: `test_odds_insertion_order_produces_identical_context_hash`.
 
-### 8. Missingness Behavior in Form & Stats Math
-- In `src/sports_intelligence/features/builder.py`:
-  - `missing != 0.0`. Missing values in goals_for or goals_against do not default to 0.
-  - Missing goals_against does NOT count as a clean sheet.
-  - Missing goals_for does NOT count as failed to score.
-  - Independent counts of valid GF and valid GA matches are tracked.
+### 8. Compatible Previous-Odds Behavior
+- Previous odds query strictly requires `OddsSnapshotSet.provider == odds_set.provider` and `captured_at < odds_set.captured_at`.
+- Different provider sets are never paired; movement features default to `None`.
+- Regression verified: `test_previous_odds_provider_mismatch_yields_no_movement`.
 
-### 9. Freshness-Aware Data Quality Behavior
-- `DataQualityEngine.evaluate()` assesses the age of each snapshot category against configured phase TTLs at the exact evaluation `as_of`.
-- Stale snapshots are appended to `stale_sources` and receive staleness penalties (e.g. 0.05 per stale source up to max 0.20).
-- Canonical lineup states handled in PREMATCH:
-  - `CONFIRMED` -> 1.0 score.
-  - `NOT_YET_PUBLISHED` -> 0.40 score.
-  - `UNSUPPORTED` -> 0.50 score.
-  - `PROVIDER_ERROR` -> 0.20 score + provider error record.
-- In MORNING phase: Lineups dimension is N/A and excluded from score denominator.
+### 9. Strict MatchContext Validation
+- `MatchContextV1` and all 13 section schemas are strict Pydantic models with `ConfigDict(extra="forbid", frozen=True)`.
+- Full context is validated before canonical serialization, hashing, and database persistence.
+- Any rogue, extra, or malformed fields fail fast with `ValidationError`.
+- Regressions verified: `test_malformed_match_context_section_rejected`, `test_malformed_top_level_match_context_rejected`.
 
-### 10. Persisted Quality Policy and Version
-- `quality_policy` dictionary stored on `DataQualityReport` and `MatchContext`:
-  - `policy_version`, `weights`, `min_predict_score`, `staleness_penalty`, `max_staleness_penalty`, `band_thresholds`.
-- Canonical quality bands: `excellent` (>= 0.85), `good` (>= 0.70), `usable_with_warnings` (>= 0.50), `abstain` (< 0.50).
+### 10. Structured Research Provenance
+- `ResearchClaimSource` strictly models `(document_id, url, domain, title, published_at, retrieved_at, content_hash, provider)`.
+- Each claim in MatchContext contains a structured `source` reference.
+- Regressions verified: `test_research_provenance_and_claims_identity`.
 
-### 11. Feature-Level Provenance
-- `build_feature_provenance(evidence)` maps every derived feature family (`form`, `schedule`, `standings`, `availability`, `market`, `research`, `lineups`) to contributing source snapshot IDs.
-- Stored in `FeatureSnapshot.feature_provenance_jsonb`.
+### 11. Provider Mapping Historical Behavior
+- `ProviderEntityId` queries strictly filter `first_seen_at <= as_of_utc`.
+- Calling `get_home_external_id(provider)` or `get_away_external_id(provider)` with a specific provider returns `None` if that provider mapping is missing (no fallback to arbitrary mappings).
+- Regression verified: `test_provider_mapping_historical_semantics_and_isolation`.
 
-### 12. Context-Build Readiness Semantics
-- In `src/sports_intelligence/workers/tasks/pre_match.py`:
-  - Pre-match scanner tracks `has_in_flight_collectors` if any required collector job is `PENDING`, `RUNNING`, or has pending enqueues.
-  - Context build is ONLY triggered if `not has_in_flight_collectors and jobs_enqueued == 0`.
+### 12. MORNING Lineup N/A Behavior
+- In MORNING phase:
+  - Lineups dimension weight is excluded from the denominator.
+  - Stale lineups do not enter `stale_sources`.
+  - Lineups do not trigger staleness penalties or warnings.
+  - Score is identical whether lineups are missing, fresh, or 10 days old.
+- Regression verified: `test_stale_morning_lineup_zero_quality_effect`.
 
-### 13. Source-Generation Job Identity
-- Context build idempotency key format:
-  `context_build:{fixture_id}:{phase}:{schema_version}:{source_fingerprint}`
-- Guarantees deterministic per-source-generation job identity.
+### 13. Confirmation Accepted Migration 0003 Unchanged
+- Restored `0003_provider_evidence_history_and_indexes.py` byte-for-byte to match `origin/main`.
+- SHA-256 hash verified identical to `origin/main`:
+  `8573d9cc3790166c2b365c627b99b2789c314716839b0fa6da64dc3e184dafaf`.
+- `git diff origin/main -- src/sports_intelligence/db/migrations/versions/0003_provider_evidence_history_and_indexes.py` is completely empty.
 
-### 14. FAILED Context-Job Retry Behavior
-- In `_try_enqueue_context_build`:
-  - If a job for the same source generation already exists in `FAILED` status, it is retried via CAS transition `FAILED -> PENDING` with the same UUID.
-  - Never downgrades `RUNNING` or `SUCCEEDED`.
-
-### 15. Concurrent Builder Idempotency Result
-- Safe unique conflict handling across `feature_snapshots`, `data_quality_reports`, and `match_contexts`.
-- Tested with 5 concurrent builder tasks on the exact same fixture, phase, and as_of: all return identical records, source fingerprints, and context hashes without spurious failures (`test_concurrent_context_build_idempotency`).
-
-### 16. Strict MatchContext Schema Result
-- Defined typed Pydantic models for sections (`FixtureIdentitySection`, `TeamFormSection`, `DataQualitySection`, `FeaturesSection`, `MarketSnapshotSection`).
-- Deterministic canonical JSON serialization and SHA-256 `context_hash`.
-
-### 17. Migrations Created
+### 14. Migration(s) Added / Changed
 - `0009_m6_1_fixture_metadata_and_provenance.py`:
-  - Creates `fixture_metadata_snapshots`.
-  - Adds `team_form_snapshots.payload_id`.
-  - Adds `data_quality_reports.source_fingerprint` and `quality_policy_jsonb`.
-  - Adds `feature_snapshots.feature_provenance_jsonb`.
-  - Unique constraint `uq_data_quality_reports_identity` on `(fixture_id, forecast_phase, as_of)`.
+  - Upgrades: `fixture_metadata_snapshots` table, `legacy_baseline` backfill at `clock_timestamp()` (NOT backdated), `payload_id` on `team_form_snapshots`, `source_fingerprint`, `quality_policy_jsonb`, `policy_fingerprint`, and unique constraint `uq_data_quality_reports_identity` on `data_quality_reports`, `feature_provenance_jsonb` on `feature_snapshots`.
+  - Downgrades: cleanly and symmetrically drops added constraint, columns, and tables.
 
-### 18. Unit Test Result
-- `uv run pytest -q -m 'not integration'` → **339 passed, 87 deselected in 3.81s**
+### 15. Unit Result
+- `uv run pytest -q -m "not integration"`: **350 passed, 93 deselected in 4.78s**.
 
-### 19. Integration Test Result
-- `pytest -q -m integration` (with PostgreSQL and Redis service containers) → **87 passed, 339 deselected in 15.23s**
+### 16. Integration Result
+- `TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration`: **93 passed, 350 deselected in 26.30s**.
 
-### 20. Full Pytest Suite Result
-- `uv run pytest -q` → **426 passed in 16.64s**
+### 17. Full Pytest Result
+- `uv run pytest -q`: **443 passed in 58.71s**.
 
-### 21. Alembic Migration Verification
-- `alembic upgrade head`, `downgrade base`, `upgrade head` verified.
-- `alembic check` → **No new upgrade operations detected** (models and migrations in 100% sync).
+### 18. Alembic Result
+- Tested:
+  - `alembic downgrade -1`: clean.
+  - `alembic upgrade head`: clean.
+  - `alembic check`: clean (`No new upgrade operations detected`).
+  - Fresh database lifecycle: `downgrade base` -> `upgrade head` -> `downgrade base` -> `upgrade head` -> clean.
 
-### 22. Ruff / Format / Mypy
-- `uv run ruff check .` → **All checks passed!**
-- `uv run ruff format --check .` → **173 files already formatted**
-- `uv run mypy src` → **Success: no issues found in 116 source files**
+### 19. Ruff / Format / Mypy
+- `uv run ruff check .`: clean (`All checks passed!`).
+- `uv run ruff format --check .`: clean (`174 files already formatted`).
+- `uv run mypy src`: clean (`Success: no issues found in 116 source files`).
 
-### 23. Docker Compose Verification
-- `docker compose config -q` → valid (exit code 0)
-- `docker compose --profile telegram config -q` → valid (exit code 0)
+### 20. Compose
+- `docker compose config -q`: valid.
+- `docker compose --profile telegram config -q`: valid.
 
-### 24. Exact CI Result
-- Complete local reproduction of CI pipeline (unit, integration, lint, format, typecheck, migrations, compose) passes 100% green.
+### 21. Exact CI Result
+- Deterministic local CI test suite passed:
+  - Unit: 350 passed.
+  - Integration: 93 passed.
+  - Total: 443 passed.
 
-### 25. Real External Calls Made
-- Exactly **0** real external calls made in Milestone M6.1. All tests and services run completely offline and self-contained with mock providers.
+### 22. External Calls Made
+- Exactly ZERO live external calls made during automated tests:
+  - 0 API-Football calls.
+  - 0 The Odds API calls.
+  - 0 Tavily search calls.
+  - 0 LLM calls.
 
-### 26. Confirmation: M6 Not Merged / M7 Not Started
-- Branch remains `build/m6`.
-- `main` remains untouched at `fb256ecaf2ca1a97c64f1dba8d491cff6b935c91` (tag `v0.6-m5`).
-- Milestone M7 is **NOT** started. Zero LLM calls, zero predictions, zero ranking, zero betting recommendations exist.
+### 23. Confirmation M6 Not Merged / M7 Not Started
+- Confirmed: branch `build/m6` is NOT merged into `main`.
+- Confirmed: `main` remains at accepted M5 (`fb256ecaf2ca1a97c64f1dba8d491cff6b935c91`, tag `v0.6-m5`).
+- Confirmed: Milestone M7 is NOT started.
+- Confirmed: stopped for independent review.

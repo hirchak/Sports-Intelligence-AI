@@ -33,6 +33,8 @@ def _fixture_info(kickoff: datetime) -> SelectedFixtureInfo:
         away_team_name="Chelsea",
         home_external_id="42",
         away_external_id="49",
+        home_provider_external_ids={"api_football": "42"},
+        away_provider_external_ids={"api_football": "49"},
     )
 
 

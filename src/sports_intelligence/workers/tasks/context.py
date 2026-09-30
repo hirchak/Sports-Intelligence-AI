@@ -5,6 +5,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sports_intelligence.collectors.freshness import FreshnessPolicy
 from sports_intelligence.context.builder import build_and_persist_match_context
 from sports_intelligence.core.config import Settings, get_settings
 from sports_intelligence.core.job_status import JobStatus
@@ -12,6 +13,7 @@ from sports_intelligence.core.logging import get_logger
 from sports_intelligence.core.phases import ForecastPhase
 from sports_intelligence.db.session import create_engine, create_session_factory
 from sports_intelligence.pipelines.discover_fixtures import update_job_status
+from sports_intelligence.quality.engine import build_quality_policy
 from sports_intelligence.workers.celery_app import celery_app
 from sports_intelligence.workers.utils import record_job_attempt
 
@@ -56,12 +58,16 @@ async def _run_build(
         await session.commit()
 
     try:
+        quality_policy = build_quality_policy(resolved_settings)
+        freshness_policy = FreshnessPolicy(resolved_settings)
         async with factory() as session:
             context_rec, quality_rec, feat_rec, _ = await build_and_persist_match_context(
                 session,
                 fixture_id=fid,
                 forecast_phase=forecast_phase,
                 as_of=as_of,
+                policy=quality_policy,
+                freshness_policy=freshness_policy,
                 research_enabled=resolved_settings.research_capability_enabled,
             )
 
