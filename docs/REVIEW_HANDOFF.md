@@ -14,14 +14,14 @@ Update it before every milestone review.
 **Base Commit:** `fb256ecaf2ca1a97c64f1dba8d491cff6b935c91` (tag `v0.6-m5`, PR #7 merged into `main`)  
 **Reviewed M6 HEAD:** `fff8df75c520696f6c25a14e19ded7b6711e7688` (Verdict: FAIL)  
 **Reviewed M6.1 HEAD:** `08d253fe90883f11456b402563f4065fc4b00072` (Verdict: FAIL)  
-**M6.2 HEAD:** (to be committed on `build/m6`)
+**M6.2 HEAD:** `e004475e120472523305945c5568ffb9bfa97859`
 
 ---
 
 # 23-Point Milestone M6.2 Review Response & Architecture Evidence
 
 ### 1. Final build/m6 Remote HEAD SHA
-- (Recorded upon commit and push)
+- `e004475e120472523305945c5568ffb9bfa97859`
 
 ### 2. Legacy Fixture Anti-Leakage Behavior
 - When no `FixtureMetadataSnapshot` exists `<= as_of` for a fixture:

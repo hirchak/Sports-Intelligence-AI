@@ -749,7 +749,7 @@ Branch:
 - `build/m6` (M6.2 complete, awaiting review); base `main` at `fb256ec` (`v0.6-m5`)
 
 Commit:
-- (pending M6.2 commit on build/m6)
+- `e004475e120472523305945c5568ffb9bfa97859` (Milestone M6.2 HEAD)
 
 Working tree:
 - clean after commit
