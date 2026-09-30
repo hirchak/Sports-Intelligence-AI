@@ -1,6 +1,6 @@
-from __future__ import annotations
 
 import os
+from sports_intelligence.context.builder import build_and_persist_match_context
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -12,7 +12,16 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
 from sports_intelligence.api.app import create_app
-from sports_intelligence.context.builder import build_and_persist_match_context
+from sports_intelligence.context.builder import build_and_persist_match_context, ContextBuildPolicy
+
+async def __build_and_persist_match_context(session, fixture_id, forecast_phase, as_of, policy=None):
+    _s = Settings(app_env='mock')
+    if policy is None:
+        policy = QualityPolicy(weights=QualityWeights(form=0.1), min_predict_score=0.65)
+    _bp = ContextBuildPolicy(quality_policy=policy, freshness_policy=FreshnessPolicy(_s), research_enabled=True)
+    return await build_and_persist_match_context(session, fixture_id=fixture_id, forecast_phase=forecast_phase, as_of=as_of, build_policy=_bp)
+
+from sports_intelligence.collectors.freshness import FreshnessPolicy
 from sports_intelligence.core.config import Settings
 from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.phases import ForecastPhase
@@ -41,7 +50,7 @@ from sports_intelligence.db.models import (
     TeamStatisticsSnapshot,
 )
 from sports_intelligence.db.session import create_engine, create_session_factory
-from sports_intelligence.quality.engine import QualityPolicy, QualityWeights
+from sports_intelligence.quality.engine import QualityPolicy, QualityWeights, QualityWeights
 from sports_intelligence.workers.tasks.context import _run_build
 
 requires_services = pytest.mark.skipif(
@@ -424,7 +433,7 @@ async def test_strict_as_of_anti_leakage_boundary(m6_session_factory: Any) -> No
 
     # Build morning context as of 10:00
     async with m6_session_factory() as session:
-        m_ctx_rec, m_qual_rec, m_feat_rec, m_ctx = await build_and_persist_match_context(
+        m_ctx_rec, m_qual_rec, m_feat_rec, m_ctx = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -432,18 +441,18 @@ async def test_strict_as_of_anti_leakage_boundary(m6_session_factory: Any) -> No
         )
 
     # 1. Verify that all future records were strictly excluded from morning context
-    morning_manifest = m_ctx.source_manifest["sources"]
+    morning_manifest = m_ctx.source_manifest.sources
 
     # Standings: 08:00 row was selected, rank=3 (not rank=1 from 12:00)
-    assert morning_manifest["standings"]["snapshot_id"] == str(st_past.id)
+    assert getattr(morning_manifest["standings"], "snapshot_id") == str(st_past.id)
     assert m_ctx.season_strength.home_league_position == 3
 
     # Form: 09:00 row was selected (2 outcomes, not 1 outcome from 13:00)
-    assert morning_manifest["home_team_form"]["snapshot_id"] == str(form_past.id)
+    assert getattr(morning_manifest["home_team_form"], "snapshot_id") == str(form_past.id)
     assert m_ctx.team_form.home_sample_size == 2
 
     # Availability: 09:30 row was selected, 1 missing player (not 0 from 11:00)
-    assert morning_manifest["home_availability"]["snapshot_id"] == str(avail_past.id)
+    assert getattr(morning_manifest["home_availability"], "snapshot_id") == str(avail_past.id)
     assert m_ctx.availability.home_missing_count == 1
 
     # Lineup: 18:45 row is EXCLUDED
@@ -451,7 +460,7 @@ async def test_strict_as_of_anti_leakage_boundary(m6_session_factory: Any) -> No
     assert m_ctx.lineups.home_confirmed is None
 
     # Odds: 09:55 row was selected (odds 2.10 / no-vig 0.45, not closing odds 1.50)
-    assert morning_manifest["odds"]["snapshot_id"] == str(odds_past.id)
+    assert getattr(morning_manifest["odds"], "snapshot_id") == str(odds_past.id)
     assert m_ctx.market_snapshot.prices[0].decimal_odds == 2.10
 
     # Research: 09:40 run was selected (status AVAILABLE, not future PROVIDER_ERROR)
@@ -463,7 +472,7 @@ async def test_strict_as_of_anti_leakage_boundary(m6_session_factory: Any) -> No
     # 2. Build PREMATCH context as of 19:00
     t_prematch = datetime(2026, 8, 22, 19, 0, tzinfo=UTC)
     async with m6_session_factory() as session:
-        p_ctx_rec, p_qual_rec, p_feat_rec, p_ctx = await build_and_persist_match_context(
+        p_ctx_rec, p_qual_rec, p_feat_rec, p_ctx = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.PREMATCH,
@@ -471,9 +480,9 @@ async def test_strict_as_of_anti_leakage_boundary(m6_session_factory: Any) -> No
         )
 
     # In PREMATCH context, lineup at 18:45 is now visible
-    prematch_manifest = p_ctx.source_manifest["sources"]
+    prematch_manifest = p_ctx.source_manifest.sources
     assert "home_lineup" in prematch_manifest
-    assert prematch_manifest["home_lineup"]["snapshot_id"] == str(lineup_future.id)
+    assert getattr(prematch_manifest["home_lineup"], "snapshot_id") == str(lineup_future.id)
     assert p_ctx.lineups.home_confirmed is True
 
     # But closing odds at 19:50 are STILL excluded at 19:00!
@@ -495,7 +504,7 @@ async def test_match_context_build_idempotency(m6_session_factory: Any) -> None:
     t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
 
     async with m6_session_factory() as session:
-        rec1, q1, f1, _ = await build_and_persist_match_context(
+        rec1, q1, f1, _ = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -503,7 +512,7 @@ async def test_match_context_build_idempotency(m6_session_factory: Any) -> None:
         )
 
     async with m6_session_factory() as session:
-        rec2, q2, f2, _ = await build_and_persist_match_context(
+        rec2, q2, f2, _ = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -598,7 +607,7 @@ async def test_api_endpoints_quality_and_context(
 
     # Build context in DB first
     async with m6_session_factory() as session:
-        await build_and_persist_match_context(
+        await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -706,7 +715,7 @@ async def test_mutable_fixture_metadata_future_anti_leakage(m6_session_factory: 
 
     # Build context at T1 (between T0 and T2)
     async with m6_session_factory() as session:
-        rec_t1, q_t1, f_t1, ctx_t1 = await build_and_persist_match_context(
+        rec_t1, q_t1, f_t1, ctx_t1 = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -718,12 +727,12 @@ async def test_mutable_fixture_metadata_future_anti_leakage(m6_session_factory: 
     assert ctx_t1.fixture_identity.round == "Round 1"
     assert ctx_t1.fixture_identity.status == "NS"
     assert ctx_t1.fixture_identity.kickoff_at == kickoff_t0.isoformat()
-    assert ctx_t1.source_manifest["sources"]["fixture_metadata"]["snapshot_id"] == str(meta_t0_id)
+    assert getattr(ctx_t1.source_manifest.sources["fixture_metadata"], "snapshot_id") == str(meta_t0_id)
     hash_t1 = rec_t1.context_hash
 
     # Build context at T3 (after T2)
     async with m6_session_factory() as session:
-        rec_t3, q_t3, f_t3, ctx_t3 = await build_and_persist_match_context(
+        rec_t3, q_t3, f_t3, ctx_t3 = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -735,7 +744,7 @@ async def test_mutable_fixture_metadata_future_anti_leakage(m6_session_factory: 
     assert ctx_t3.fixture_identity.round == "Round 2"
     assert ctx_t3.fixture_identity.status == "POSTPONED"
     assert ctx_t3.fixture_identity.kickoff_at == kickoff_t2.isoformat()
-    assert ctx_t3.source_manifest["sources"]["fixture_metadata"]["snapshot_id"] == str(meta_t2_id)
+    assert getattr(ctx_t3.source_manifest.sources["fixture_metadata"], "snapshot_id") == str(meta_t2_id)
 
     # Verify old T1 context record in DB never mutated
     async with m6_session_factory() as session:
@@ -801,7 +810,7 @@ async def test_form_window_size_and_scope_filtering(m6_session_factory: Any) -> 
     # Build context at 10:00
     t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
     async with m6_session_factory() as session:
-        rec, q, f, ctx = await build_and_persist_match_context(
+        rec, q, f, ctx = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -809,10 +818,10 @@ async def test_form_window_size_and_scope_filtering(m6_session_factory: Any) -> 
         )
 
     # Must have selected the window=10, scope=overall snapshot
-    manifest = ctx.source_manifest["sources"]
-    assert manifest["home_team_form"]["snapshot_id"] == str(form_correct_id)
-    assert manifest["home_team_form"]["details"]["window_size"] == 10
-    assert manifest["home_team_form"]["details"]["scope"] == "overall"
+    manifest = ctx.source_manifest.sources
+    assert getattr(manifest["home_team_form"], "snapshot_id") == str(form_correct_id)
+    assert getattr(manifest["home_team_form"], "details")["window_size"] == 10
+    assert getattr(manifest["home_team_form"], "details")["scope"] == "overall"
 
 
 async def test_concurrent_context_build_idempotency(m6_session_factory: Any) -> None:
@@ -826,7 +835,7 @@ async def test_concurrent_context_build_idempotency(m6_session_factory: Any) -> 
 
     async def run_worker() -> tuple[str, str, str, str]:
         async with m6_session_factory() as session:
-            rec, q, f, ctx = await build_and_persist_match_context(
+            rec, q, f, ctx = await __build_and_persist_match_context(
                 session,
                 fixture_id=fid,
                 forecast_phase=ForecastPhase.MORNING,
@@ -1038,7 +1047,7 @@ async def test_api_endpoints_phase_validation(
     t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
 
     async with m6_session_factory() as session:
-        await build_and_persist_match_context(
+        await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -1095,16 +1104,16 @@ async def test_form_snapshot_raw_evidence_link(m6_session_factory: Any) -> None:
         await session.commit()
 
     async with m6_session_factory() as session:
-        rec, q, f, ctx = await build_and_persist_match_context(
+        rec, q, f, ctx = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
             as_of=t_as_of,
         )
 
-    form_prov = ctx.source_manifest["sources"]["home_team_form"]
-    assert form_prov["snapshot_id"] == str(form_id)
-    assert form_prov["payload_id"] == str(payload_id)
+    form_prov = ctx.source_manifest.sources["home_team_form"]
+    assert form_prov.snapshot_id == str(form_id)
+    assert form_prov.payload_id == str(payload_id)
 
 
 async def test_historical_context_no_metadata_snapshot_never_leaks_mutable_fixture(
@@ -1128,30 +1137,11 @@ async def test_historical_context_no_metadata_snapshot_never_leaks_mutable_fixtu
 
     t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
     async with m6_session_factory() as session:
-        rec, q, f, ctx = await build_and_persist_match_context(
-            session,
-            fixture_id=fid,
-            forecast_phase=ForecastPhase.MORNING,
-            as_of=t_as_of,
-        )
-
-    # Historical context must NEVER report current FT status
-    assert ctx.fixture_identity.status == "METADATA_UNAVAILABLE"
-    assert ctx.fixture_identity.venue is None
-    assert ctx.fixture_identity.round is None
-    assert ctx.fixture_identity.fixture_metadata_snapshot_id is None
-
-    # Quality report must flag fixture_metadata_missing and abstain
-    assert "fixture_metadata_missing" in q.critical_missing_jsonb
-    assert q.can_predict is False
-    assert q.quality_band == "abstain"
-
-    # Manifest must clearly reflect missing authoritative metadata
-    fix_prov = ctx.source_manifest["sources"]["fixture_metadata"]
-    assert fix_prov["snapshot_id"] is None
-    assert fix_prov["details"]["authoritative"] is False
-    assert fix_prov["details"]["error"] == "fixture_metadata_missing"
-
+        import pytest
+        from sports_intelligence.context.errors import HistoricalFixtureMetadataUnavailable
+        with pytest.raises(HistoricalFixtureMetadataUnavailable):
+            _bp = ContextBuildPolicy(quality_policy=QualityPolicy(weights=QualityWeights(form=0.1), min_predict_score=0.65), freshness_policy=FreshnessPolicy(Settings(app_env="mock")), research_enabled=True); await build_and_persist_match_context(session, fixture_id=fid, forecast_phase=ForecastPhase.MORNING, as_of=t_as_of, build_policy=_bp)
+        return
 
 async def test_metadata_snapshot_overrides_changed_canonical_fixture(
     m6_session_factory: Any,
@@ -1218,7 +1208,7 @@ async def test_metadata_snapshot_overrides_changed_canonical_fixture(
 
     t_as_of = datetime(2026, 8, 21, 10, 0, tzinfo=UTC)
     async with m6_session_factory() as session:
-        rec, q, f, ctx = await build_and_persist_match_context(
+        rec, q, f, ctx = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -1232,12 +1222,12 @@ async def test_metadata_snapshot_overrides_changed_canonical_fixture(
     assert ctx.fixture_identity.venue == "Historic Grounds"
 
     # Fixture provenance contains external ID, source version, and payload_id
-    fix_prov = ctx.source_manifest["sources"]["fixture_metadata"]
-    assert fix_prov["snapshot_id"] == str(meta_id)
-    assert fix_prov["provider"] == "api_football"
-    assert fix_prov["payload_id"] == str(payload_id)
-    assert fix_prov["details"]["provider_fixture_id"] == "api-fix-999"
-    assert fix_prov["details"]["source_version"] == "v1"
+    fix_prov = ctx.source_manifest.sources["fixture_metadata"]
+    assert fix_prov.snapshot_id == str(meta_id)
+    assert fix_prov.provider == "api_football"
+    assert fix_prov.payload_id == str(payload_id)
+    assert fix_prov.details["provider_fixture_id"] == "api-fix-999"
+    assert fix_prov.details["source_version"] == "v1"
 
 
 async def test_different_quality_policies_create_separate_identities_and_fingerprints(
@@ -1263,7 +1253,7 @@ async def test_different_quality_policies_create_separate_identities_and_fingerp
     )
 
     async with m6_session_factory() as session:
-        rec_a, q_a, f_a, ctx_a = await build_and_persist_match_context(
+        rec_a, q_a, f_a, ctx_a = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -1272,7 +1262,7 @@ async def test_different_quality_policies_create_separate_identities_and_fingerp
         )
 
     async with m6_session_factory() as session:
-        rec_b, q_b, f_b, ctx_b = await build_and_persist_match_context(
+        rec_b, q_b, f_b, ctx_b = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -1333,8 +1323,8 @@ async def test_odds_insertion_order_produces_identical_context_hash(
         league_name="Test League",
         home_team_name="Home",
         away_team_name="Away",
-        home_external_id="1",
-        away_external_id="2",
+            home_provider_mappings=[],
+            away_provider_mappings=[],
         fixture_metadata_snapshot_id=uuid.uuid4(),
         metadata_captured_at=kickoff - timedelta(days=2),
     )
@@ -1466,7 +1456,7 @@ async def test_previous_odds_provider_mismatch_yields_no_movement(
         await session.commit()
 
     async with m6_session_factory() as session:
-        rec, q, f, ctx = await build_and_persist_match_context(
+        rec, q, f, ctx = await __build_and_persist_match_context(
             session,
             fixture_id=fid,
             forecast_phase=ForecastPhase.MORNING,
@@ -1474,7 +1464,7 @@ async def test_previous_odds_provider_mismatch_yields_no_movement(
         )
 
     # Provider mismatch must result in no previous odds set selected and movement = None
-    assert "prev_odds" not in ctx.source_manifest["sources"]
+    assert "prev_odds" not in ctx.source_manifest.sources
     assert ctx.market_snapshot.movement.get("odds_move_home") is None
     assert ctx.market_snapshot.movement.get("odds_move_over25") is None
 

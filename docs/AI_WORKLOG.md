@@ -2012,3 +2012,46 @@ Git commit hash if created: e004475e120472523305945c5568ffb9bfa97859
 next recommended action: Push build/m6, await independent review.
 
 
+
+---
+
+## 2026-09-30 23:25 (UTC+2) - Antigravity
+**Milestone:** M6
+**Task:** M6.3 Reproducibility and Historical-Authority Pass Implementation
+
+**Behavior Implemented:**
+- Implemented `FreshnessPolicy` inside `ContextBuildPolicy` to compute staleness deterministically without injecting runtime side effects.
+- Rewrote `select_evidence` to strictly rely on `FixtureMetadataSnapshot` for league/team data rather than mutable `Fixture` objects.
+- Refactored `MatchContext` sections to strictly enforce schemas using Pydantic `ConfigDict(extra="forbid")`.
+- Updated all integration and unit tests for schema compliance and `HistoricalFixtureMetadataUnavailable` logic.
+
+**Files Changed:**
+- `src/sports_intelligence/context/builder.py`
+- `src/sports_intelligence/context/selector.py`
+- `src/sports_intelligence/context/models.py`
+- `src/sports_intelligence/collectors/freshness.py`
+- `tests/integration/test_m6_anti_leakage_and_context.py`
+- `tests/unit/...` (various config/mock updates)
+
+**Commands/Tests Run:**
+- `uv run ruff check . --fix`
+- `uv run ruff format .`
+- `uv run mypy src`
+- `uv run pytest -q -m "not integration"`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q -m integration`
+- `uv run pytest -q`
+
+**Results:**
+- Linting, formatting, and type checks passed 100%.
+- Unit tests: 350/350 passed.
+- Integration tests: 93/93 passed.
+- Total pytest: 443/443 passed.
+
+**Known Problems:**
+- None.
+
+**Spec/ADR Deviations:**
+- None.
+
+**Next Recommended Action:**
+- Submit `build/m6` for independent review.
