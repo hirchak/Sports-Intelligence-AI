@@ -1,29 +1,53 @@
 # Current Task
 
-**Task**: Finalize accepted Milestone M5, merge to main, tag `v0.6-m5`, create `build/m6`, and implement Milestone M6  
-**Status**: IN PROGRESS (Phase A: Finalizing accepted M5 and preparing merge)
+**Task**: Milestone M6: Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext  
+**Status**: COMPLETE / AWAITING INDEPENDENT REVIEW  
+**Branch**: `build/m6`  
+**Base Commit**: `fb256ecaf2ca1a97c64f1dba8d491cff6b935c91` (tag `v0.6-m5`, PR #7 merged into `main`)
 
 ## Milestone Review Verdicts
 - M4 → PASS / ACCEPTED (`0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`)
-- M5 → FAIL (`6c52b1f1df85163b0aeef1f3a16d223bd3296cff`)
-- M5.1 → FAIL (`30dd97a4a948f906d6e690b9acbd14550c75dec8`)
-- M5.2 → FAIL (`42f2277d8f7dde2f0b315c259f22c210da05cefb`)
-- **M5.3 / M5 → PASS / ACCEPTED** (Accepted implementation remote HEAD: `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`)
+- M5.3 / M5 → PASS / ACCEPTED (`b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`, merged in PR #7 `fb256ec`, tagged `v0.6-m5`)
+- **M6 → READY FOR INDEPENDENT REVIEW**
 
-## Next Steps
-1. Finalize accepted M5 persistent documentation.
-2. Open PR `build/m5` -> `main`.
-3. Wait for CI on PR and merge without force.
-4. Update local `main` from `origin/main`.
-5. Create and push annotated tag `v0.6-m5`.
-6. Create branch `build/m6` from accepted `main`.
-7. Implement Milestone M6:
-   - Form inputs collector prerequisite fix
-   - Strict `as_of` snapshot selection layer
-   - Provenance manifest
-   - Deterministic Feature Builder V1
-   - Data Quality Engine
-   - Immutable MatchContext V1 schema, persistence, canonical SHA-256 hash
-   - Pre-match scanner orchestration
-   - API endpoints for quality and context
-   - Comprehensive tests and acceptance verification
+## Implemented in Milestone M6
+1. **Prerequisite Form Inputs Fix**:
+   - Extended mock sports provider canned completed fixtures to 10 fixtures.
+   - Updated `FormInputsCollector` default window_size to 10 with `is_home` and `result` fields.
+   - Added `FreshnessCategory.TEAM_FORM` dispatch to `execute_plan()` in `pre_match_scan.py`.
+2. **Database Schema & Models** (Alembic migration `0008`):
+   - `feature_snapshots`: deterministic computed features, versioned, keyed by `(fixture_id, forecast_phase, as_of)`.
+   - `data_quality_reports`: 7-dimension quality evaluation, quality band (`gold`, `silver`, `bronze`, `abstain`), `can_predict`.
+   - `match_contexts`: immutable context document, canonical JSON, SHA-256 `context_hash`.
+3. **Point-in-Time Evidence Selector** (`sports_intelligence.context.selector`):
+   - Strict `<= as_of` temporal cutoff across Fixture, Standings, Team Stats, Form, Availability, Lineups, Odds, and Research.
+   - Strictly enforces league and season matching for standings.
+4. **Source Provenance Manifest** (`sports_intelligence.context.provenance`):
+   - Machine-readable manifest mapping each evidence category to table, snapshot_id, provider, captured_at, payload reference.
+   - Composite SHA-256 `source_fingerprint` uniquely capturing the source snapshot state.
+5. **Deterministic Feature Builder V1** (`sports_intelligence.features.builder`):
+   - Form metrics (PPG, GF, GA, scoring/conceding rates, clean sheets, home/away splits).
+   - Schedule rest days and 7d/14d congestion.
+   - Standings rank and points deltas.
+   - Availability counts and state.
+   - Market no-vig probabilities and odds movement.
+   - Missing data strictly preserved as `None` (missing != 0.0).
+6. **Deterministic Data Quality Engine** (`sports_intelligence.quality.engine`):
+   - 7 dimensions evaluated with configurable weights.
+   - MORNING vs PREMATCH lineups policy: in MORNING, lineups are N/A (excluded from denominator); in PREMATCH, evaluated per publication/confirmation.
+   - Critical missing gating (`can_predict = False` if odds or form missing).
+   - Conflict and stale source penalties.
+7. **MatchContext V1 Schema & Persistence** (`sports_intelligence.context.models`, `builder`):
+   - Strictly ordered 13 sections.
+   - Canonical JSON serialization with SHA-256 `context_hash`.
+   - Fully idempotent persistence across `match_contexts`, `data_quality_reports`, and `feature_snapshots`.
+8. **Celery Task & Orchestration**:
+   - Task `context.build_match_context` on queue `evaluation`.
+   - Pre-match scanner dispatches context build when all required data categories are fresh.
+9. **Read-only API Endpoints**:
+   - `GET /v1/fixtures/{fixture_id}/quality`
+   - `GET /v1/fixtures/{fixture_id}/context`
+10. **Acceptance Verification**:
+    - 408 tests pass (328 unit, 80 integration).
+    - 0 schema drift on `alembic check` and clean migration downgrade/upgrade cycle.
+    - Zero live API calls, zero secrets, zero LLM calls, zero betting logic.

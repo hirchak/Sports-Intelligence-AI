@@ -724,7 +724,7 @@ class FormInputsCollector(_ResolverMixin):
     priority = Priority.P2
 
     def lock_key(
-        self, *, team_id: uuid.UUID, window_size: int = 5, scope: str = "overall", **_: object
+        self, *, team_id: uuid.UUID, window_size: int = 10, scope: str = "overall", **_: object
     ) -> str:
         return f"form:{team_id}:{window_size}:{scope}"
 
@@ -733,7 +733,7 @@ class FormInputsCollector(_ResolverMixin):
         session: AsyncSession,
         *,
         team_id: uuid.UUID,
-        window_size: int = 5,
+        window_size: int = 10,
         scope: str = "overall",
         **_: object,
     ) -> tuple[datetime | None, uuid.UUID | None]:
@@ -755,7 +755,7 @@ class FormInputsCollector(_ResolverMixin):
         ctx: CollectorContext,
         *,
         team_id: uuid.UUID,
-        window_size: int = 5,
+        window_size: int = 10,
         scope: str = "overall",
         **_: object,
     ) -> CollectorResult:
@@ -780,10 +780,12 @@ class FormInputsCollector(_ResolverMixin):
                 {
                     "provider_fixture_id": fx.provider_fixture_id,
                     "kickoff_utc": fx.kickoff_utc.isoformat(),
+                    "is_home": is_home,
                     "opponent_provider_team_id": opponent_ext,
                     "goals_for": goals_for,
                     "goals_against": goals_against,
                     "outcome": letter,
+                    "result": letter,
                     "status": fx.status_short,
                 }
             )
@@ -809,7 +811,7 @@ class FormInputsCollector(_ResolverMixin):
         source_fingerprint: str,
         payload_id: uuid.UUID | None,
         team_id: uuid.UUID,
-        window_size: int = 5,
+        window_size: int = 10,
         scope: str = "overall",
         **_inputs: object,
     ) -> tuple[SnapshotRef, ...]:

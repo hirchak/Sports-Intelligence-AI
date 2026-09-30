@@ -228,6 +228,16 @@ async def execute_plan(
                         phase=phase,
                     )
                 counters["team_stats"] = counters.get("team_stats", 0) + 2
+        if FreshnessCategory.TEAM_FORM in decision.categories_to_collect:
+            for team_id in (decision.home_team_id, decision.away_team_id):
+                await enqueue_collector(
+                    "form_inputs",
+                    team_id=team_id,
+                    window_size=10,
+                    scope="overall",
+                    phase=phase,
+                )
+            counters["form_inputs"] = counters.get("form_inputs", 0) + 2
         if FreshnessCategory.AVAILABILITY in decision.categories_to_collect:
             for team_id in (decision.home_team_id, decision.away_team_id):
                 await enqueue_collector(

@@ -192,7 +192,18 @@ def _canned_lineups(*, published: bool = True) -> ProviderLineupsResult:
 def _canned_completed_fixtures(team_id: int) -> ProviderCompletedFixturesResult:
     now = utc_now()
     fixtures: list[ProviderCompletedFixture] = []
-    outcomes = [("W", 2, 0), ("W", 3, 1), ("D", 1, 1), ("L", 0, 2), ("W", 2, 1)]
+    outcomes = [
+        ("W", 2, 0),
+        ("W", 3, 1),
+        ("D", 1, 1),
+        ("L", 0, 2),
+        ("W", 2, 1),
+        ("D", 0, 0),
+        ("W", 1, 0),
+        ("L", 1, 3),
+        ("W", 2, 1),
+        ("W", 4, 0),
+    ]
     for idx, (label, gf, ga) in enumerate(outcomes):
         kickoff = now - timedelta(days=7 * (idx + 1))
         home_id, away_id = (team_id, 8000 + idx) if label != "L" else (8000 + idx, team_id)
@@ -311,7 +322,7 @@ class MockSportsDataProvider:
             update={
                 "provider": self._provider_name,
                 "provider_team_id": provider_team_id,
-                "fixtures": canned.fixtures[: max(min(last_n, 10), 0)],
+                "fixtures": canned.fixtures[: max(min(last_n, 20), 0)],
             }
         )
 

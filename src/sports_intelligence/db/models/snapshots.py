@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -60,7 +60,11 @@ class StandingSnapshot(Base):
     )
     rows_jsonb: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(UTC),
     )
 
 
@@ -106,7 +110,11 @@ class TeamStatisticsSnapshot(Base):
     )
     metrics_jsonb: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(UTC),
     )
 
 

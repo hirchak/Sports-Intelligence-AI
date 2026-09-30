@@ -2,37 +2,28 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M5 — PASS / ACCEPTED (finalizing merge to main, v0.6-m5 tag, and M6 kickoff)  
-**Last updated:** 2026-09-29 (Antigravity)  
-**Last known good commit:** b38229b0874e9ab992ae25ea2a63e1e6109f8ca7 (M5 accepted implementation HEAD)
+**Current milestone:** M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext (AWAITING INDEPENDENT REVIEW)  
+**Last updated:** 2026-09-30 (Antigravity)  
+**Last known good commit:** fb256ecaf2ca1a97c64f1dba8d491cff6b935c91 (tag v0.6-m5, PR #7 merged into main)
 
 ---
 
 # 1. Current objective
 
-M4 passed independent review (PASS / ACCEPTED, HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`).
+Milestone review verdicts:
+- M4 → **PASS / ACCEPTED** (HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`, tagged `v0.5-m4`)
+- M5 / M5.3 → **PASS / ACCEPTED** (HEAD `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`, merged in PR #7 `fb256ecaf2ca1a97c64f1dba8d491cff6b935c91`, tagged `v0.6-m5`)
+- **M6 → READY FOR INDEPENDENT REVIEW** (branch `build/m6`)
 
-Milestone M5 independent review verdicts:
-- M5 initial: **FAIL** (HEAD `6c52b1f1df85163b0aeef1f3a16d223bd3296cff`)
-- M5.1 pass: **FAIL** (HEAD `30dd97a4a948f906d6e690b9acbd14550c75dec8`)
-- M5.2 pass: **FAIL** (HEAD `42f2277d8f7dde2f0b315c259f22c210da05cefb`)
-- **M5.3 pass / Milestone M5: PASS / ACCEPTED**
-  - **Accepted implementation remote HEAD:** `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`
-  - **Eventual main merge commit:** to be recorded upon merge.
+Phase A: Finalized accepted M5, merged to `main` via PR #7 (`fb256ec`), created and pushed annotated tag `v0.6-m5`, branched `build/m6`.
 
-Phase A: Finalize accepted M5:
-1. Ensure `build/m5` is pushed and clean.
-2. Create/update PR `build/m5` → `main`.
-3. Wait for CI and merge without force.
-4. Update local `main` from `origin/main`.
-5. Create and push annotated tag `v0.6-m5`.
-6. Create `build/m6` from updated accepted `main`.
-
-Phase B: Milestone M6 — Deterministic Feature Builder + Data Quality Engine + immutable MatchContext.
+Phase B: Fully implemented Milestone M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext V1.
 
 Development remains strictly LOCAL ONLY.
 No Hetzner deployment is authorized.
 No Hermes access/dependency is authorized.
+Zero LLM calls, zero predictions, zero ranking, zero betting recommendations.
+
 
 ---
 
@@ -475,26 +466,66 @@ All review items implemented and independently verified:
 - **Respect Retry-After for 429**: `compute_retry_delay()` parses `Retry-After` header on `ProviderRateLimitError`, bounded by `research_max_retry_after_seconds` (default 30s); deterministic exponential backoff fallback; injectable sleeper and clock for offline tests.
 - **Fixture status capability-awareness**: Extended `CategoryState` Literal to include `"disabled"`; `GET /v1/fixtures/{fixture_id}/status` reports research freshness as `"disabled"` when research capability is disabled and no run exists.
 
+## M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext (branch `build/m6`)
+
+- **Prerequisite Form Inputs Fix**: Extended mock provider canned completed fixtures to 10 fixtures (`src/sports_intelligence/providers/sports/mock.py`); updated `FormInputsCollector` default window_size to 10 and populated `is_home` and `result` fields; added `FreshnessCategory.TEAM_FORM` dispatch to `execute_plan()` in `pre_match_scan.py`.
+- **Database Schema & Models (Migration 0008)**:
+  - `feature_snapshots`: versioned (`features_v1`), composite unique on `(fixture_id, forecast_phase, as_of)`.
+  - `data_quality_reports`: versioned (`quality_v1`), composite unique on `(fixture_id, forecast_phase, as_of)`, storing overall score, band (`gold`, `silver`, `bronze`, `abstain`), `can_predict`, and dimension scores.
+  - `match_contexts`: versioned (`context_v1`), composite unique on `(fixture_id, forecast_phase, as_of)`, storing canonical context document and SHA-256 `context_hash`.
+  - Migration cycle verified: `upgrade head`, `downgrade -1`, `upgrade head`, `alembic check` with 0 schema drift.
+- **Point-in-Time Evidence Selector (`sports_intelligence.context.selector`)**:
+  - Pure point-in-time queries strictly enforcing `<= as_of` across Fixture, Standings (exact league + season match), Team Stats, Form, Availability, Lineups, Odds (current + previous for movement), and Research (`get_research_for_fixture(mode="latest_run")`).
+  - Zero leakage of future records.
+- **Source Provenance Manifest (`sports_intelligence.context.provenance`)**:
+  - Machine-readable manifest mapping each category to table, snapshot_id, provider, captured_at, payload reference.
+  - Composite SHA-256 `source_fingerprint` uniquely capturing the source evidence snapshot state.
+- **Deterministic Feature Builder V1 (`sports_intelligence.features.builder`)**:
+  - Pure deterministic math calculating form PPG, goals for/against, scoring/conceding rates, clean sheets, home/away splits.
+  - Schedule rest days and 7d/14d match congestion.
+  - Standings rank and points deltas.
+  - Availability counts and state.
+  - Market no-vig probabilities and odds movement.
+  - Strict preservation of `None` for missing data (never converts missing to 0.0). Missing diagnostics tracked in `missing_features`.
+- **Deterministic Data Quality Engine (`sports_intelligence.quality.engine`)**:
+  - Evaluates 7 dimensions (`fixture_identity`, `form`, `season_stats`, `availability`, `odds`, `research`, `lineups`).
+  - Lineups policy strictly enforced: in `MORNING` phase, lineups are N/A and excluded from denominator; in `PREMATCH` phase, evaluated per publication/confirmation state.
+  - Critical missing rules: `can_predict = False` if odds or form missing.
+  - Quality bands: gold (>=0.85), silver (>=0.70), bronze (>=0.50), abstain (<0.50).
+- **MatchContext V1 Schema & Idempotent Persistence (`sports_intelligence.context.models`, `builder`)**:
+  - Strictly ordered 13 sections per spec.
+  - Canonical JSON serialization with SHA-256 `context_hash`.
+  - Idempotent upsert/re-read semantics in `build_and_persist_match_context`.
+- **Celery Worker Task & Orchestration**:
+  - Background task `context.build_match_context` on queue `evaluation`.
+  - Pre-match scanner dispatches context build job when all required collector jobs are fresh.
+- **Read-Only API Endpoints**:
+  - `GET /v1/fixtures/{fixture_id}/quality`: returns quality report with dimension scores and quality band.
+  - `GET /v1/fixtures/{fixture_id}/context`: returns full immutable MatchContext document and context hash.
+  - Zero live external calls, read-only DB access.
+
 ---
 
 # 3. In progress
 
-None. Milestone M5.3 implemented, awaiting independent review.
+None. Milestone M6 implemented, awaiting independent review.
 
 ---
 
-# 4. Acceptance tests passed (actually run, M5.3 state)
+# 4. Acceptance tests passed (actually run, M6 state)
 
-- `uv run pytest -q -m "not integration"` → **318 passed, 76 deselected in 5.30s**
+- `uv run pytest -q -m "not integration"` → **328 passed, 80 deselected in 3.58s**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
-  **76 passed, 318 deselected in 17.16s** (all M2/M3/M4/M5 integration tests
-  plus M5.3 lifecycle, quota-denial, observation timestamp anti-leakage, and status tests)
-- Full test suite (`uv run pytest -q`) → **394 passed in 16.24s**
-- `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 157 files formatted)
-- `uv run mypy src` → **Success: no issues found in 104 source files** (strict)
-- `uv run alembic check` → clean (No new upgrade operations detected)
+  **80 passed, 328 deselected in 13.42s** (all M2/M3/M4/M5 integration tests
+  plus M6 strict anti-leakage, context build idempotency, Celery task execution, and API endpoints)
+- Full test suite (`uv run pytest -q`) → **408 passed in 14.20s**
+- `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 172 files formatted)
+- `uv run mypy src` → **Success: no issues found in 115 source files** (strict)
+- `alembic upgrade head` / `downgrade -1` / `upgrade head` / `alembic check` → clean (No new upgrade operations detected)
 - `docker compose config -q` and `docker compose --profile telegram config -q` (+dev) → OK
 - Secret scan: clean (zero credentials committed; no secrets in tracked files)
+- Determinism check: zero live external API calls, zero LLM calls, zero betting recommendations.
+
 
 ## M3-era live smoke (historical, still valid)
 

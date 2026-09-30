@@ -1777,5 +1777,103 @@ results:
 - Working tree clean, build/m5 up to date with origin/build/m5.
 known problems: None.
 spec/ADR deviations: None.
+Git commit hash if created: 94a0511470ce2385b297b1b3fb3bcbe741639d48
+next recommended action: Open PR build/m5 -> main, wait for CI, merge to main, tag v0.6-m5, create build/m6.
+
+---
+timestamp: 2026-09-30T07:15:00+02:00
+agent/model: Antigravity (Gemini 3.8 Flash)
+milestone: M5
+task: Finalize M5 merge to main, tag v0.6-m5, create branch build/m6
+files changed:
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/AI_WORKLOG.md
+behavior implemented:
+- Verified M5 acceptance verdict: PASS / ACCEPTED (HEAD b38229b0874e9ab992ae25ea2a63e1e6109f8ca7).
+- Merged PR #7 (build/m5 -> main) with merge commit fb256ecaf2ca1a97c64f1dba8d491cff6b935c91.
+- Created and pushed annotated tag v0.6-m5 on commit fb256ec.
+- Created branch build/m6 from updated accepted main (fb256ec).
+commands/tests run:
+- gh pr merge 7 --merge
+- git tag -a v0.6-m5 -m "Milestone M5 — Web Research Subsystem"
+- git push origin v0.6-m5
+- git checkout -b build/m6
+results:
+- Clean merge, annotated tag v0.6-m5 pushed to remote, branch build/m6 checked out.
+known problems: None.
+spec/ADR deviations: None.
+Git commit hash if created: fb256ecaf2ca1a97c64f1dba8d491cff6b935c91
+next recommended action: Implement Milestone M6.
+
+---
+timestamp: 2026-09-30T09:25:00+02:00
+agent/model: Antigravity (Gemini 3.8 Flash)
+milestone: M6
+task: Implement Milestone M6: deterministic Feature Builder + Data Quality Engine + immutable MatchContext
+files changed:
+- src/sports_intelligence/api/app.py
+- src/sports_intelligence/api/routes/context.py
+- src/sports_intelligence/collectors/pre_match_scan.py
+- src/sports_intelligence/collectors/sports_collectors.py
+- src/sports_intelligence/context/__init__.py
+- src/sports_intelligence/context/builder.py
+- src/sports_intelligence/context/models.py
+- src/sports_intelligence/context/provenance.py
+- src/sports_intelligence/context/selector.py
+- src/sports_intelligence/db/migrations/versions/0008_m6_match_context_features_quality.py
+- src/sports_intelligence/db/models/__init__.py
+- src/sports_intelligence/db/models/context.py
+- src/sports_intelligence/db/models/snapshots.py
+- src/sports_intelligence/features/__init__.py
+- src/sports_intelligence/features/builder.py
+- src/sports_intelligence/providers/sports/mock.py
+- src/sports_intelligence/quality/__init__.py
+- src/sports_intelligence/quality/engine.py
+- src/sports_intelligence/schemas/context.py
+- src/sports_intelligence/workers/celery_app.py
+- src/sports_intelligence/workers/tasks/context.py
+- src/sports_intelligence/workers/tasks/pre_match.py
+- tests/integration/test_m6_anti_leakage_and_context.py
+- tests/unit/collectors/test_pre_match_scan.py
+- tests/unit/context/test_context_schema_and_hash.py
+- tests/unit/features/test_features_math.py
+- tests/unit/quality/test_quality_engine.py
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/AI_WORKLOG.md
+- docs/REVIEW_HANDOFF.md
+behavior implemented:
+- Extended mock sports provider to 10 completed fixtures; updated FormInputsCollector default window to 10 and populated is_home and result; added FreshnessCategory.TEAM_FORM dispatch to execute_plan().
+- Created Alembic migration 0008 adding feature_snapshots, data_quality_reports, and match_contexts tables with proper indexes and unique constraints.
+- Built strict point-in-time evidence selector (pure <= as_of across 8 evidence tables with zero future data leakage).
+- Built machine-readable source provenance manifest with composite SHA-256 fingerprint.
+- Built deterministic Feature Builder V1 calculating form PPG, scoring/conceding rates, clean sheets, home/away splits, schedule rest days/congestion, standings deltas, availability counts/state, market no-vig probabilities, and odds movement; preserved missing != 0.0 with diagnostics.
+- Built deterministic Data Quality Engine evaluating 7 dimensions with conflict penalties, critical missing rules (odds/form missing -> can_predict=False), and phase-aware lineups policy (MORNING: N/A and excluded from denominator; PREMATCH: evaluated per publication/confirmation).
+- Built MatchContext V1 schema (13 sections), canonical JSON serialization, and stable SHA-256 context_hash.
+- Integrated background context build Celery task (context.build_match_context) on evaluation queue and wired scanner dispatch.
+- Added read-only endpoints GET /v1/fixtures/{id}/quality and GET /v1/fixtures/{id}/context.
+commands/tests run:
+- uv run ruff check .
+- uv run ruff format --check .
+- uv run mypy src
+- uv run pytest -q -m 'not integration'
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q
+- DATABASE_URL=... uv run alembic downgrade -1 && alembic upgrade head && alembic check
+- docker compose config -q && docker compose --profile telegram config -q
+results:
+- Lint: clean
+- Format: clean (172 files)
+- Mypy: clean (115 files)
+- Unit tests: 328 passed, 80 deselected
+- Integration tests: 80 passed, 328 deselected
+- Full suite: 408 passed in 14.20s
+- Alembic: clean, no schema drift
+- Docker compose: valid
+- Zero live external calls, zero credentials, zero LLM calls.
+known problems: None.
+spec/ADR deviations: None.
 Git commit hash if created: to be recorded
-next recommended action: Commit docs, push build/m5, open PR build/m5 -> main, wait for CI, merge to main, tag v0.6-m5, create build/m6.
+next recommended action: Commit build/m6, push to remote, await independent review.
+

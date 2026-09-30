@@ -101,6 +101,9 @@ async def _run() -> dict[str, object]:
                 )
                 for key, value in counts.items():
                     bucket[key] += value
+
+            if result.get("jobs_enqueued", 0) == 0:
+                await _try_enqueue_context_build(factory, decision, as_of=started_at)
         except Exception:
             logger.exception(
                 "failed to dispatch collector jobs for decision",
@@ -326,3 +329,40 @@ async def _dispatch_decision(
         "jobs_enqueued": sum(b["enqueued"] for b in counters.values()),
         "by_category": counters,
     }
+
+
+async def _try_enqueue_context_build(
+    factory: Any,
+    decision: PreMatchDecision,
+    *,
+    as_of: datetime,
+) -> None:
+    from sports_intelligence.workers.tasks.context import build_match_context_task
+
+    job_key = f"context_build:{decision.fixture_id}:{decision.phase.value}:{as_of:%Y%m%d%H}"
+    try:
+        async with factory() as session:
+            job, created = await create_or_get_job(
+                session,
+                job_type="context:build_match_context",
+                idempotency_key=job_key,
+                scheduled_for=as_of,
+            )
+            await session.commit()
+            job_id = str(job.id)
+
+        if created:
+            build_match_context_task.apply_async(
+                args=[job_id, decision.fixture_id, decision.phase.value, as_of.isoformat()],
+                queue="evaluation",
+            )
+            logger.info(
+                "enqueued deterministic context build",
+                extra={"fixture_id": decision.fixture_id, "phase": decision.phase.value},
+            )
+    except Exception:
+        logger.warning(
+            "could not enqueue context build job",
+            extra={"fixture_id": decision.fixture_id},
+            exc_info=True,
+        )
