@@ -17,6 +17,15 @@ from sports_intelligence.db.models.discovery import (
     Team,
 )
 from sports_intelligence.db.models.jobs import Job, JobAttempt
+from sports_intelligence.db.models.predictions import (
+    LLMCallAttempt,
+    MarketPrediction,
+    ModelConfig,
+    PredictionRun,
+    ProbabilityBaseline,
+    PromptVersion,
+    RankedCandidate,
+)
 from sports_intelligence.db.models.snapshots import (
     AvailabilitySnapshot,
     ExternalApiRequest,
@@ -34,6 +43,13 @@ from sports_intelligence.db.models.snapshots import (
 )
 
 __all__ = [
+    "LLMCallAttempt",
+    "MarketPrediction",
+    "ModelConfig",
+    "PredictionRun",
+    "ProbabilityBaseline",
+    "PromptVersion",
+    "RankedCandidate",
     "AvailabilitySnapshot",
     "Base",
     "DataQualityReport",

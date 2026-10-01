@@ -2340,3 +2340,235 @@ next recommended action: Push build/m6, await independent review.
 
 
 
+
+---
+
+### 2026-10-01 — Codex (M7 implementation checkpoint)
+
+**Milestone:** M7, `build/m7`; accepted base `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6`.
+**Task:** Implement binding user scope preserved in `docs/M7_SCOPE.md`.
+**Files changed:** prediction contracts/config/identity/projection/router/engine/baselines/service/telemetry;
+LLM providers; ranking; DB models and migration 0012; API; worker/context completion hook;
+Telegram thin UI; prompt/config/runtime packaging; unit/integration tests; current-state docs.
+**Behavior:** separate forecast and price comparison; all 12 probabilities; one repair globally;
+configured fallback/retries/budgets; immutable prompt/config snapshots at enqueue; semantic reuse
+and explicit rerun token; separate baselines; primary/challenger and with/without odds;
+DB-loaded jobs on llm queue, persisted read UI.
+**Commands/tests:** Ruff/mypy during implementation; M7 unit/provider contracts;
+M7 Postgres/Redis integration; empty `sports_intel_m7_test` upgraded through 0012.
+**Results:** 149 new unit/HTTP-contract tests passed; 21 new integration tests passed including
+keyless discovery→collectors→M6 context→MockLLM→API→Telegram fake transport.
+Full repository gates, migration cycle and exact remote CI still pending.
+**Known problems:** final hardening/coverage/docs and complete gates remain; no live LLM integration verified.
+**Spec/ADR deviations:** existing PREMATCH phase retained; DC benchmark derived from same-bookmaker
+captured 1X2 because overlapping outcomes must not normalize to sum 1; WITHOUT_ODDS conservatively
+masks arbitrary research text/quality details to avoid market leakage. Go runtime adapter disabled
+by default pending permitted-use configuration; current docs describe coding-agent traffic.
+**Git commit:** not created yet; changes understood and scoped to M7.
+**Next action:** final hardening, full local gates, documented handoff, commit/push build/m7 and exact-head CI;
+then STOP for independent review. No merge/tag, M8, deployment, Hetzner or Hermes.
+
+---
+
+### 2026-10-01 — Codex (M7 local verification and review preparation)
+
+**Milestone:** M7, build/m7, accepted base/main `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / v0.7-m6.
+**Task:** Complete implementation, integrity hardening, all local quality gates and handoff.
+**Files changed:** all M7 implementation/test files listed in Git diff; runtime docs, ADR 0010,
+.env.example, Docker prompt packaging, CI Telegram-profile validation, Makefile Redis db15 isolation.
+**Behavior:** complete scoped forecasting layer, strict bounded repair/fallback, actual identity and telemetry,
+configurable float threshold tolerance, frozen config/context checks, automatic scanner→context→prediction
+integration, immutable reruns and thin Russian Telegram. No M8/settlement/evaluation/ensembles/staking.
+**Commands/tests:** uv run ruff check .; ruff format --check .; mypy src; unit, integration and full pytest;
+fresh upgrade and populated M6→M7 regression; Alembic downgrade -1/upgrade/check; Compose default/Telegram
+validation; Git diff hygiene; secret sanity of working files and Git history (values never printed).
+**Results:** 531 unit, 128 integration, 659 total; Ruff/format clean (208 files), strict mypy clean (142 source
+files); migration zero drift and M6 content/hash preservation; Compose valid; secret scan clean.
+Keyless discovery→collectors→MatchContext→MockLLM→API→Telegram transport passed; actual scanner completion
+and duplicate scan deduplication verified; real isolated Redis broker has only job/run UUID payloads.
+**Known problems/limitations:** real runtime providers and new live Telegram flow not smoke-tested;
+no LLM provider/model/credentials locally configured, zero real LLM calls. Poisson uncalibrated/unadjusted;
+WITHOUT_ODDS also removes research free text; crash/lost-delivery recovery needs inspection/explicit rerun.
+**Spec/ADR deviations:** ADR 0010 documents scoped choices; PREMATCH existing enum retained; DC uses
+same-bookmaker captured 1X2. No changes to accepted M0–M6 migration history.
+**Git commit:** pending coherent implementation commit; exact source commit and CI recorded next.
+**Next action:** commit/push build/m7, verify exact remote HEAD Actions, then stop for independent review.
+Zero deployment, Hetzner, SSH or Hermes interaction; main unchanged; no merge/tag of M7 or M8 work.
+
+---
+
+### 2026-10-01 — Codex (M7 remote verification / final handoff)
+
+**Milestone:** M7, build/m7. **Task:** Complete remote CI verification and synchronize review state.
+**Files changed:** docs/CURRENT_TASK.md, IMPLEMENTATION_STATUS.md, REVIEW_HANDOFF.md, AI_WORKLOG.md.
+**Behavior:** documentation only; mark implementation verified, preserve independent-review stop boundary.
+**Commands/tests:** git push origin build/m7; gh run watch/view 36890119992; exact head/job/log verification;
+Git status/diff, unchanged accepted main/tag and old migration history confirmed. No source changes since gates.
+**Results:** source HEAD `6c861b94c6300ae7da018176f5af12804f22b217`; CI run `36890119992` SUCCESS on that
+exact HEAD, all three jobs (lint/type/unit, integration, Compose+Telegram) SUCCESS. Local 531 unit,
+128 integration, 659 full; Ruff/format/mypy, Alembic cycles/drift, Compose and secret sanity all passed.
+**Known problems:** no runtime LLM credentials/calls; live providers/new live Telegram not verified;
+Poisson/anti-anchoring/operational recovery limitations retained in PREDICTIONS.md and REVIEW_HANDOFF.md.
+**Spec/ADR deviations:** ADR 0010 scoped choices; no new deviation or M8 work.
+**Git commits:** foundation `231d4539d074d5a3838bc535bbb81cd06855af84`; integration
+`6c861b94c6300ae7da018176f5af12804f22b217`. Final documentation commit follows and is rechecked on its own
+remote HEAD; final SHA and CI run are returned in the completion report.
+**Next action:** publish this documentation-only handoff commit to build/m7, verify its exact CI HEAD, then
+STOP for independent review. M7 NOT merged/tagged; main remains `11b6e782...` / v0.7-m6; M8 NOT started;
+zero deployment / Hetzner / SSH sessions / Hermes interaction.
+
+---
+
+### 2026-10-01 — Codex (M7.1 focused M4 canonical market fix, verification in progress)
+
+**Milestone:** M7.1 on `build/m7`; reviewed starting HEAD `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
+**Task:** Fix M4 `h2h_1x2` normalization compatibility in M7 baselines/ranking without redesigning M4.
+**Files changed so far:** `predictions/baselines.py`; provider Mock output in `providers/odds/mock.py`;
+M7 `tests/m7_fakes.py`, baseline/ranking regressions, M4 mock-provider contract regression; M7.1 status,
+review, prediction-method documentation. No migration/schema changes.
+**Behavior:** Accept canonical `h2h_1x2` and preserve `h2h`/`1x2` aliases; map home/draw/away and group them
+as canonical 1X2. Only complete, normalized same-bookmaker 1X2 is eligible. DC rows remain excluded from
+no-vig baseline; derive HOME_OR_DRAW / HOME_OR_AWAY / DRAW_OR_AWAY from that bookmaker's full 1X2.
+M7 synthetic canonical rows and M4 mock normalized output mirror M4 persisted DTO; raw provider request key stays `h2h`.
+**Commands/tests run:** focused baseline/ranking + odds mapping unit tests; M7 integration suite on dedicated
+`sports_intel_m7_test` and Redis db15.
+**Results:** 33 targeted unit/M4 contract tests passed; 27 M7 integration tests passed, including E2E using
+MockOddsProvider after it emits `h2h_1x2`. Full acceptance gates have not yet been rerun.
+**Known problems:** None found in focused checks; exact remote CI remains pending.
+**Spec/ADR deviations:** None. No changes to M4 normalization/parser, schema, or migration.
+**Git:** no M7.1 commit yet; working on reviewed branch only.
+**Next action:** full unit/integration/full pytest, Ruff/format/mypy, Alembic, Compose, secret sanity; update
+final handoff, commit/push `build/m7`, verify exact-head Actions, then STOP. M8/merge/tag/deploy remain prohibited.
+
+---
+
+### 2026-10-01 18:54 UTC — Codex (M7.1 canonical M4 odds acceptance)
+
+**Milestone:** M7.1 on `build/m7`; reviewed start HEAD `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
+**Task:** Fix M7 baseline/ranking support for accepted M4 canonical 1X2 odds values.
+**Files changed:** `src/sports_intelligence/predictions/baselines.py`; the M4 mock DTO emitter in
+`src/sports_intelligence/providers/odds/mock.py`; `tests/m7_fakes.py`;
+`tests/unit/predictions/test_baseline_ranking.py`; `tests/unit/test_odds_mapping.py`;
+`docs/CURRENT_TASK.md`, `IMPLEMENTATION_STATUS.md`, `REVIEW_HANDOFF.md`, `PREDICTIONS.md`.
+**Behavior:** maps canonical `h2h_1x2` + HOME/DRAW/AWAY selections while retaining earlier M7 aliases;
+normalizes all aliases into one complete 1X2 group key. Baseline accepts only complete same-bookmaker
+no-vig 1X2 with identified bookmaker. DC normalized prices are ignored; all DC probabilities are derived
+from that same book's captured 1X2. Mock DTO emits canonical M4 market; provider request `h2h` unchanged.
+No M4 live parser/schema redesign.
+**Commands/tests run:** focused M7 baseline/ranking and M4 mock-adapter unit tests; all M7 integration;
+full unit/integration/full pytest; Ruff, format, mypy, Alembic check, Compose default/dev/Telegram configs.
+**Results:** focused 33 tests initially passed. Full current results: 535 unit, 128 integration,
+663 total passed. Ruff/format clean (208 Python files), mypy clean (142 source files), Alembic check zero
+schema drift, Compose configs valid. Full keyless M7 integration/E2E runs against dedicated Docker DB/Redis.
+**Known problems:** remote CI for the M7.1 HEAD still pending. Runtime providers remain contract-tested only;
+zero live LLM calls/credentials.
+**Spec/ADR deviations:** none; no schema change/migration. The M4 `h2h` wire request key remains provider-specific.
+**Git commit:** pending local acceptance commit.
+**Next action:** secret-sanity/diff check, commit and push `build/m7`, exact-head GitHub Actions; then STOP
+for independent review. M7 not merged/tagged; M8/deploy/Hetzner/Hermes not started.
+
+### 2026-10-01 — Codex (M7.1 full local acceptance pass)
+
+**Milestone:** M7.1 on `build/m7`, start `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
+**Task:** Close canonical M4 odds mismatch and complete local acceptance.
+**Files changed:** M7 baselines/ranking compatibility; canonical synthetic M7 prices; one M4 mock normalized
+market label; M7/M4 regression tests; persistent M7.1 status/review documentation.
+**Behavior:** `h2h_1x2` home/draw/away now maps and groups with legacy M7 aliases. Only complete same-bookmaker
+1X2 is used. DC probabilities derive from that book's 1X2 and ignore overlapping generic no-vig values.
+The outgoing provider request key remains `h2h`. No M4 live parser/schema or DB changes.
+**Commands/tests:** `uv run ruff check .`; `uv run ruff format --check .`; `uv run mypy src`;
+unit, integration and full pytest; `DATABASE_URL=...sports_intel_m7_test uv run alembic check`;
+Docker Compose default/dev/Telegram config; secret sanity scan of working files and Git history.
+**Results:** 535 unit, 128 integration, **663 full tests passed**; Ruff/format clean (208 Python files),
+mypy clean (142 source files); Alembic: no new operations; all Compose configs valid; 279-file/history
+secret scan clean. Runtime LLM calls: zero.
+**Known problems:** exact remote CI for M7.1 pending; previous M7 CI does not verify this fix.
+**Spec/ADR deviations:** none. M7 DC benchmark same-book requirement remains enforced.
+**Git:** M7.1 commit and push pending.
+**Next action:** commit/push `build/m7`, verify exact-head GitHub Actions, and STOP for independent review.
+M7 unmerged/untagged, M8 not started, LOCAL DEVELOPMENT ONLY, zero deployment/Hetzner/Hermes.
+
+### 2026-10-01 — Codex (M7.1 acceptance and source CI pass)
+
+**Milestone:** M7.1; branch `build/m7`; reviewed start `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
+**Task:** Complete the narrow M4 `h2h_1x2` contract compatibility fix and all acceptance gates.
+**Files changed:** prediction baseline mapping, M4 MockOddsProvider canonical DTO emitter, M7 synthetic context,
+M7 baseline/ranking tests, M4 Mock odds contract test, and persistent M7.1 docs.
+**Behavior:** Complete same-bookmaker canonical 1X2 benchmark from `h2h_1x2/home|draw|away`; retain M7 aliases;
+derive all DC benchmark probabilities only from that complete same-bookmaker 1X2. Incomplete and split-book
+markets are rejected. Provider wire request `h2h` and live M4 normalizer/schema are unchanged.
+**Commands/tests:** `uv run ruff check .`; `uv run ruff format --check .`; `uv run mypy src`;
+unit, integration and full `pytest`; `DATABASE_URL=...sports_intel_m7_test uv run alembic check`;
+Docker Compose default, dev override and Telegram profile; working-file/Git-history secret scan;
+`gh run view 36910780514` for exact pushed HEAD.
+**Results:** 535 unit + 128 integration = **663 passed**. Ruff/format clean (208 Python files), mypy clean
+(142 source files), Alembic reports no new upgrade operations, Compose configs valid. Secret scan checks
+279 files and Git history with no findings. CI run `36910780514` on source HEAD
+`07658d8e9fdd29f0e642447fd1639efb0b08aa47`: lint/type/unit, Postgres/Redis integration, and Compose
+validation jobs all SUCCESS. Zero runtime LLM calls.
+**Known problems:** none specific to M7.1; live providers/new Telegram interaction not exercised.
+**Spec/ADR deviations:** none. No schema migration or architecture redesign.
+**Git:** source fix commit `07658d8e9fdd29f0e642447fd1639efb0b08aa47`, pushed. Final documentation-only commit follows.
+**Next action:** push docs, check CI on exact docs HEAD, STOP for independent review. M7 stays unmerged/untagged;
+M8 is not started; LOCAL DEVELOPMENT ONLY.
+
+---
+
+### 2026-10-01 19:02 UTC — Codex (M7.1 source CI verified)
+
+**Milestone:** M7.1; source HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47` on `build/m7`.
+**Task:** Verify exact pushed M7.1 CI and prepare independent-review stop.
+**Files changed:** Persistent review/checkpoint documents only; no source or test changes after the passing suite.
+**Behavior:** Record exact remote acceptance evidence and preserve the M7.1 review boundary.
+**Commands/tests:** `gh run view 36910780514`; Git refs/status, prior full local tests, Alembic and Compose gate results.
+**Results:** GitHub Actions run `36910780514` on exact code HEAD has all 3 jobs SUCCESS: lint/type/unit,
+Postgres/Redis integration, Docker Compose validation. Local 535 unit + 128 integration = 663 pass;
+Ruff/format/mypy clean; Alembic no drift; Compose default/dev/Telegram valid; secret scan clean.
+**Known problems:** The final docs-only commit will trigger its own CI run; M8 remains outside this task.
+**Spec/ADR deviations:** none. No migration/schema changes.
+**Git:** M7.1 code commit `07658d8e9fdd29f0e642447fd1639efb0b08aa47`, pushed. Main stays at accepted M6.
+**Next action:** push this documentation-only review update, verify its exact HEAD CI, then STOP for independent
+review. M7 remains unmerged/untagged; M8 and deployment are not started.
+
+### 2026-10-01 — Codex (M7.1 review handoff CI verified)
+
+**Milestone:** M7.1; branch `build/m7`; code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47`.
+**Task:** Verify remote CI for M7.1 code and documentation-only review handoff.
+**Files changed:** review/current task/implementation status and append-only worklog documentation only.
+**Behavior:** no source behavior changes; records acceptance result and independent-review stop.
+**Commands/tests:** `gh run view 36910780514` for code HEAD and `gh run view 36911401660` for the pushed review handoff HEAD.
+**Results:** both runs SUCCESS on their exact heads; three CI jobs each (lint/type/unit, integration, Docker Compose)
+passed. Local M7.1 full pytest remains 535 unit + 128 integration = 663 passed. Final subsequent docs-only
+push/CI receipt is returned in the completion message.
+**Known problems:** none specific to M7.1; independent review is pending.
+**Spec/ADR deviations:** none. No M8, deployment, schema or source change.
+**Git:** docs-only handoff CI run `36911401660` SUCCESS; branch remains `build/m7`.
+**Next action:** STOP for independent review. M7 is not merged/tagged; M8 not started.
+
+---
+
+### 2026-10-01 21:50 CEST — Codex (record owner-supplied M7 acceptance verdict)
+
+**Milestone:** M7 / M7.1 — PASS / ACCEPTED.
+**Task:** Finalize accepted M7 documentation and release flow; no new source implementation.
+**Files changed:** docs/CURRENT_TASK.md, IMPLEMENTATION_STATUS.md, REVIEW_HANDOFF.md, AI_WORKLOG.md.
+**Independent review verdict:** User supplied PASS / ACCEPTED. Accepted branch HEAD `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`; M7.1 implementation `07658d8e9fdd29f0e642447fd1639efb0b08aa47`; final accepted CI `36911970853` SUCCESS across all jobs.
+**Completed behavior:** status and reviewer entry updated. Historical M6 failures and prior worklog entries remain unchanged.
+**Verification:** starting `main`/tag `v0.7-m6` still equals accepted M6 SHA; branch is build/m7; no open M7 PR, tag v0.8-m7, or build/m8 existed before this finalization.
+**Known problems:** no M7 blockers. Main merge/tag/branch-creation steps remain to complete under this request.
+**Spec/ADR deviations:** none. LOCAL DEVELOPMENT ONLY. No M8 code or deployment/Hetzner/Hermes interaction.
+**Git:** docs-finalization commit pending.
+**Next action:** commit/push docs; exact docs-head CI; create PR to main, normal merge after checks; verify merged-main CI; annotated v0.8-m7; create/push empty build/m8 from accepted main and stop.
+
+### 2026-10-01 21:55 CEST — Codex (M7 acceptance docs finalization)
+
+**Milestone:** M7 / M7.1 independently accepted PASS / ACCEPTED.
+**Task:** Record supplied verdict and begin the explicitly authorized PR/merge/tag/empty-build/m8 finalization.
+**Files changed:** `docs/CURRENT_TASK.md`, `docs/IMPLEMENTATION_STATUS.md`, `docs/REVIEW_HANDOFF.md`, `docs/AI_WORKLOG.md`.
+**Behavior:** Acceptance record now identifies accepted branch HEAD `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`, implementation commit `07658d8e9fdd29f0e642447fd1639efb0b08aa47`, and accepted CI run `36911970853` (SUCCESS across all jobs). Historical review failures remain untouched.
+**Commands/tests:** Read mandatory repo instructions/state/docs; confirmed clean `build/m7`, accepted main/tag, absent M7 PR, and absent v0.8-m7/build/m8. Existing M7 acceptance evidence retained.
+**Results:** Documentation closeout prepared on accepted build/m7. M7 not merged/tagged yet; M8 not started. Main remains M6 until PR merge.
+**Known problems:** none in accepted M7. Merge, tag and clean branch creation remain to execute.
+**Spec/ADR deviations:** none. No source/schema change. LOCAL DEVELOPMENT ONLY.
+**Git:** docs-only acceptance finalization commit pending.
+**Next action:** commit/push docs, verify exact docs-head CI, open PR build/m7→main, wait checks, merge normally, verify merged-main CI, tag v0.8-m7, then push empty build/m8 from exact main and stop.

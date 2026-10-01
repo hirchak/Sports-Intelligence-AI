@@ -1,50 +1,32 @@
 # Current Task
 
-**Task:** Finalize Independently Accepted Milestone M6 (Phase A — Documentation Cleanup & Merge Preparation)
-**Status:** M6 ACCEPTED — DOCS CLEANUP IN PROGRESS
-**Branch:** `build/m6`
-**Base:** `origin/main` (`fb256ecaf2ca1a97c64f1dba8d491cff6b935c91`, tag `v0.6-m5`)
+**Task:** Finalize independently accepted Milestone M7
+**Independent verdict:** M7 / M7.1 = PASS / ACCEPTED
+**Status:** Documentation finalization and PR-to-main flow in progress
+**Branch:** `build/m7`
+**Accepted HEAD:** `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`
+**M7.1 implementation:** `07658d8e9fdd29f0e642447fd1639efb0b08aa47`
+**Accepted source CI:** `36911970853` — SUCCESS, all three jobs
+**Accepted base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`)
 
-## Milestone Acceptance Status
-- **Milestone:** M6 (M6.5 Historical-Truthfulness Acceptance Pass)
-- **Independent Review Verdict:** **PASS / ACCEPTED**
-- **Accepted Pre-Merge Branch HEAD:** `cec7210cf440b9cc06c040611e477cfed9ad5472`
-- **Implementation Commit:** `86cc3ddcbb7625723ab1fb442cac65c53be46b87`
-- **Final CI Run for Accepted HEAD:** `36837924850` (Conclusion: SUCCESS across all 3 jobs)
-- **Branch Pushed:** Yes (`origin/build/m6` synchronized with local HEAD)
+## Binding scope
 
-## Summary of Accepted M6 Behavior
-1. **Historical Metadata & Anti-Leakage Authority**:
-   - Strict refusal via `HistoricalFixtureMetadataUnavailable` when no metadata snapshot exists `<= as_of`.
-   - Migration 0011 contains zero migration-time backfill from mutable tables; legacy pre-0011 snapshots truthfully retain `NULL` for `observed_league_name` and `observed_league_slug`.
-   - Evidence selector reads league identity strictly from metadata snapshot (`None` if unobserved), completely eliminating mutable `League` fallback queries and placeholder string sentinels.
-   - Tested and verified: historical MatchContext identity, source fingerprint, and context hash are 100% reproducible and invariant to subsequent mutations of the `League` row.
-2. **Deterministic Provider Mapping Selection & Ordering**:
-   - Explicit SQL ordering: `ORDER BY provider ASC, first_seen_at DESC, external_id ASC, id ASC`.
-   - Deterministic selection of latest mapping `<= as_of` per provider; exclusion of future mappings (`first_seen_at > as_of`).
-   - Canonical list sorting: `(provider, -first_seen_at.timestamp(), external_id, str(mapping_id))`.
-3. **Pydantic Immutability & Persistence Boundary**:
-   - `ConfigDict(frozen=True)` enforces attribute-level freezing.
-   - Immutable persistence boundary enforced by application/data-lifecycle policy on `match_contexts`, `feature_snapshots`, and `data_quality_reports`.
-   - SHA-256 `context_hash` persisted for deterministic identity and integrity comparison.
-4. **Celery Task Error Semantics**:
-   - Clean structured warning on `HistoricalFixtureMetadataUnavailable` (zero traceback dumps).
-   - Marks Celery job `FAILED` in `jobs` and `job_attempts` ledger; re-raises for worker failure accounting.
-   - Zero context, feature, or quality records persisted on refusal.
+The user provided the independent M7 / M7.1 PASS / ACCEPTED verdict. Finalize docs, commit and push
+docs-only changes, open PR `build/m7` → `main`, wait for PR checks, merge with the established normal
+merge strategy, verify final main and its CI, create/push annotated `v0.8-m7` on merged main, then
+create/push a clean `build/m8` from that exact main SHA. Do not implement anything on `build/m8`.
 
-## Verification
-- Unit tests: 361 passed (100%)
-- Integration tests: 100 passed (100%)
-- Total tests: 461 passed (100%)
-- Ruff lint & format: clean (177 files formatted, 0 errors)
-- Mypy (119 files): clean (0 issues)
-- Alembic migration check: clean (0 drift)
-- Docker Compose validation: clean
+Remain LOCAL DEVELOPMENT ONLY. No Hetzner/deployment/Hermes. M8 settlement/evaluation NOT STARTED.
+Preserve all historical failed/review verdicts in status and append-only worklog.
 
-## Next Actions
-1. Complete docs-only commit on `build/m6` and push.
-2. Verify GitHub Actions CI run on docs-only HEAD.
-3. Open PR `build/m6` -> `main`.
-4. Merge accepted M6 into `main`.
-5. Create and push annotated release tag `v0.7-m6` on merged `main`.
-6. Create and push `build/m7` from merged `main` (M7 NOT STARTED).
+## Previously verified M7 acceptance
+
+- 535 unit PASS; 128 integration PASS; 663 total PASS.
+- Ruff/format/myPy clean; Alembic clean; Compose clean.
+- Accepted `origin/build/m7` HEAD and final source CI are listed above.
+- Main and `v0.7-m6` remain on the accepted M6 SHA until the authorized PR is merged.
+
+## Next action
+
+Commit/push docs-only finalization, wait for exact-head CI, create the requested PR, and continue only through
+the authorized merge/tag/build/m8 setup. Stop on `build/m8` without code changes.

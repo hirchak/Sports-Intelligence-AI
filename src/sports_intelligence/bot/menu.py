@@ -31,6 +31,7 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     """Top-level menu shown after /start and on every Back."""
     builder = InlineKeyboardBuilder()
     builder.button(text=TODAY_LABEL, callback_data=MENU_TODAY)
+    builder.button(text="Прогнозы", callback_data="menu:predictions")
     builder.button(text=FIND_LABEL, callback_data=MENU_FIND)
     builder.button(text=HEALTH_LABEL, callback_data=MENU_HEALTH)
     builder.button(text=HELP_LABEL, callback_data=MENU_HELP)

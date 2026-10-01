@@ -8,6 +8,7 @@ from sports_intelligence.bot.access import AllowlistMiddleware
 from sports_intelligence.bot.backend_client import BackendClient
 from sports_intelligence.bot.context import AppContext
 from sports_intelligence.bot.handlers import router
+from sports_intelligence.bot.predictions import router as prediction_router
 from sports_intelligence.bot.transport import AiogramTransport
 from sports_intelligence.core.config import Settings
 
@@ -33,5 +34,8 @@ def build_application(settings: Settings, backend: BackendClient) -> tuple[Bot, 
     middleware = AllowlistMiddleware(context)
     router.message.middleware(middleware)
     router.callback_query.middleware(middleware)
+    prediction_router.message.middleware(middleware)
+    prediction_router.callback_query.middleware(middleware)
+    dispatcher.include_router(prediction_router)
     dispatcher.include_router(router)
     return bot, dispatcher

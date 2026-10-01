@@ -1,7 +1,7 @@
 # Pipelines
 
-Status: **M2** — fixture discovery pipeline implemented (batch-first,
-idempotent, raw evidence). Form/odds/research arrive M4+.
+Status: **M7 implemented, independent review pending** — discovery, collectors, research,
+quality/features/context and predictions/ranking. LOCAL DEVELOPMENT ONLY.
 Authoritative design: `08_FOOTBALL_ANALYTICS_PIPELINE.md` and
 `09_AGENT_CATALOG_AND_ORCHESTRATION.md`.
 
@@ -51,9 +51,23 @@ improvement hypotheses.
 |--------------------------|-----------|-------|
 | Jobs, queues, retries    | M1        | done (jobs schema + queues) |
 | Fixture discovery        | M2        | done (API-Football + mock, batch-first, idempotent) |
-| Match collectors + odds  | M4        | planned |
-| Research                 | M5        | planned |
-| Features + MatchContext  | M6        | planned |
-| Prediction + ranking     | M7        | planned |
+| Match collectors + odds  | M4        | accepted |
+| Research                 | M5        | accepted |
+| Features + MatchContext  | M6        | accepted |
+| Prediction + ranking     | M7        | implemented; review pending |
 | Settlement + evaluation  | M8        | planned |
 | Improvements + replay    | M9        | planned |
+
+## M7 automatic prediction boundary
+
+Existing M4 scheduler scans collector freshness, then enqueues `context.build_match_context`.
+After M6 context persistence, `automatic_prediction` can enqueue one semantic prediction job
+when `PREDICTION_AUTO_ENABLED=true`, the context is eligible, and its score meets policy.
+Existing phases remain `MORNING` and `PREMATCH`. Context-generation and prediction-request
+keys deduplicate repeated scans/completions; no LLM call occurs inside the scanner.
+No scheduler or automatic calls were activated in the running local stack.
+
+`prediction.predict_match` runs on `llm`, receives only job/run UUIDs, claims QUEUED by CAS,
+loads exact context and frozen prompt/config/policy from PostgreSQL, validates integrity, applies
+bounded calls/repair/fallback, stores every probability and candidate/filter reason, then marks
+Job/JobAttempt. UI reads persisted state. See [PREDICTIONS.md](PREDICTIONS.md).

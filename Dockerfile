@@ -16,6 +16,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY src ./src
 COPY config ./config
+COPY prompts ./prompts
 COPY scripts ./scripts
 
 FROM base AS production

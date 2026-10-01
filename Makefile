@@ -62,7 +62,7 @@ test:
 
 test-integration:
 	@docker compose exec -T sports-postgres createdb -U sports -O sports sports_intel_test 2>/dev/null || true
-	@docker compose exec -T sports-redis redis-cli FLUSHDB >/dev/null 2>&1 || true
+	@docker compose exec -T sports-redis redis-cli -n 15 FLUSHDB >/dev/null 2>&1 || true
 	TEST_DATABASE_URL="postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test" \
 	TEST_REDIS_URL="redis://localhost:6380/15" \
 	uv run pytest -q -m integration

@@ -8,6 +8,12 @@ import httpx
 from pydantic import BaseModel
 
 from sports_intelligence.core.logging import get_logger
+from sports_intelligence.predictions.contracts import Role, Variant
+from sports_intelligence.schemas.predictions import (
+    AnalyzeResponse,
+    PredictionDetail,
+    PredictionSummary,
+)
 
 logger = get_logger(__name__)
 
@@ -142,6 +148,56 @@ class BackendClient:
         except ValueError as exc:
             raise BackendPayloadError("unexpected discovery payload") from exc
 
+    async def list_predictions(
+        self,
+        *,
+        fixture_id: str | None = None,
+        limit: int = 8,
+    ) -> list[PredictionSummary]:
+        params = {"role": "PRIMARY", "limit": str(limit)}
+        if fixture_id:
+            params["fixture_id"] = fixture_id
+        payload = await self._get_json("/v1/predictions", params=params)
+        try:
+            if not isinstance(payload, list):
+                raise ValueError("list required")
+            return [PredictionSummary.model_validate(row) for row in payload]
+        except ValueError:
+            raise BackendPayloadError("unexpected prediction list") from None
+
+    async def get_prediction(self, run_id: str) -> PredictionDetail:
+        payload = await self._get_json(f"/v1/predictions/{run_id}")
+        try:
+            return PredictionDetail.model_validate(payload)
+        except ValueError:
+            raise BackendPayloadError("unexpected prediction detail") from None
+
+    async def analyze_fixture(
+        self,
+        fixture_id: str,
+        *,
+        context_id: UUID | None = None,
+        phase: str = "MORNING",
+        role: Role = Role.PRIMARY,
+        variant: Variant = Variant.WITH_ODDS,
+        rerun_key: UUID | None = None,
+    ) -> AnalyzeResponse:
+        body = {
+            "phase": phase,
+            "role": role.value,
+            "variant": variant.value,
+            "context_id": str(context_id) if context_id else None,
+            "rerun": rerun_key is not None,
+            "rerun_key": str(rerun_key) if rerun_key else None,
+        }
+        payload = await self._post_json(
+            f"/v1/fixtures/{fixture_id}/analyze", body=body, expected=202
+        )
+        try:
+            return AnalyzeResponse.model_validate(payload)
+        except ValueError:
+            raise BackendPayloadError("unexpected analyze response") from None
+
     async def _get_json(self, path: str, params: dict[str, str] | None = None) -> Any:
         try:
             response = await self._client.get(f"{self._base_url}{path}", params=params)
@@ -153,12 +209,12 @@ class BackendClient:
         except ValueError as exc:
             raise BackendPayloadError("backend returned malformed JSON") from exc
 
-    async def _post_json(self, path: str, body: dict[str, Any]) -> Any:
+    async def _post_json(self, path: str, body: dict[str, Any], expected: int = 200) -> Any:
         try:
             response = await self._client.post(f"{self._base_url}{path}", json=body)
         except httpx.HTTPError as exc:
             raise BackendUnavailableError("backend is unreachable") from exc
-        self._ensure_status(response, 200)
+        self._ensure_status(response, expected)
         try:
             return response.json()
         except ValueError as exc:

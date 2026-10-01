@@ -93,8 +93,17 @@ class Settings(BaseSettings):
     research_max_retry_after_seconds: int = 30
     tavily_base_url: str = "https://api.tavily.com"
 
+    llm_routes_path: str = "config/llm.yaml"
+    prediction_prompt_path: str = "prompts/predictor/1.0.0.txt"
+    prediction_auto_enabled: bool = False
+    prediction_auto_variant: Literal["LLM_WITH_ODDS", "LLM_WITHOUT_ODDS"] = "LLM_WITH_ODDS"
+    llm_openai_api_key: str = Field(default="", repr=False)
+    llm_minimax_api_key: str = Field(default="", repr=False)
+    llm_opencode_go_api_key: str = Field(default="", repr=False)
+    # Current Go docs target coding traffic. Runtime activation is an explicit separate gate.
+    llm_opencode_go_runtime_allowed: bool = False
     llm_provider: str = ""
-    llm_api_key: str = ""
+    llm_api_key: str = Field(default="", repr=False)
     llm_base_url: str = ""
     predictor_model: str = ""
     research_model: str = ""
@@ -172,7 +181,19 @@ class Settings(BaseSettings):
             and not self.search_api_key
         ):
             missing.append("SEARCH_API_KEY")
-        if self.llm_provider and self.llm_provider != "mock" and not self.llm_api_key:
+        if (
+            self.llm_provider
+            and self.llm_provider != "mock"
+            and not (
+                self.llm_api_key
+                or {
+                    "openai": self.llm_openai_api_key,
+                    "openai_compatible": self.llm_openai_api_key,
+                    "minimax": self.llm_minimax_api_key,
+                    "opencode_go": self.llm_opencode_go_api_key,
+                }.get(self.llm_provider)
+            )
+        ):
             missing.append("LLM_API_KEY")
         if missing:
             raise ValueError(f"APP_ENV={self.app_env} requires: {', '.join(missing)}")
