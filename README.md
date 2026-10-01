@@ -133,3 +133,9 @@ M10 production readiness. M0–M6 accepted; M7 awaits independent review. See `0
 Read `AGENTS.md` before any session. State files:
 `docs/IMPLEMENTATION_STATUS.md`, `docs/CURRENT_TASK.md`, `docs/AI_WORKLOG.md`,
 `docs/REVIEW_HANDOFF.md`.
+
+## M8 result truth and measurement
+
+Implemented local post-match flow and methodology: [EVALUATION.md](docs/EVALUATION.md).
+Result scans are opt-in (`RESULT_SCAN_ENABLED=false` default); no deployment or M9.
+API `/v1/results`, `/v1/jobs/evaluate`, `/v1/evaluations/summary`; Telegram `/stats`, `/results`, `/evaluate`.

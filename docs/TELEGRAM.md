@@ -72,3 +72,9 @@ its new screen can request the next rerun. The original MatchContext/phase/role/
 ABSTAINED/FAILED/QUEUED are separate screens; valid forecasts without passing candidates show
 `NO HIGH-CONFIDENCE OPPORTUNITY`. No provider/DB calls from handlers; no automatic Telegram
 push was activated. M7 was verified with test transport, not a new live Telegram smoke.
+
+## M8 implementation
+
+See [EVALUATION.md](EVALUATION.md) and [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
+Migration 0013 adds versioned results, probability/candidate settlements, immutable evaluation runs,
+normalized metrics and calibration buckets. Local scheduled date batches feed API and thin Telegram stats.

@@ -1026,13 +1026,14 @@ leagues:
         await session.commit()
 
     from sports_intelligence.collectors.pre_match_scan import plan_for_date
+    from sports_intelligence.core.time import local_today
 
     decisions = await plan_for_date(
-        m4_session_factory, settings, day=kickoff.astimezone(UTC).date()
+        m4_session_factory, settings, day=local_today(kickoff, settings.app_timezone)
     )
     assert decisions
     decisions_again = await plan_for_date(
-        m4_session_factory, settings, day=kickoff.astimezone(UTC).date()
+        m4_session_factory, settings, day=local_today(kickoff, settings.app_timezone)
     )
     assert len(decisions) == len(decisions_again)
 

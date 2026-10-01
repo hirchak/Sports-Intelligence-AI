@@ -1,101 +1,81 @@
-# M7 Review Handoff
+# M8 independent review handoff
 
-**Independent review verdict:** M7 / M7.1 PASS / ACCEPTED (owner-provided).
-**Accepted remote `build/m7` HEAD:** `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`.
-**M7.1 implementation commit:** `07658d8e9fdd29f0e642447fd1639efb0b08aa47`.
-**Final accepted CI:** [36911970853](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36911970853) — SUCCESS, all jobs on the exact accepted HEAD.
-**Base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6`; M7 awaits the requested PR merge.
-**Phase:** LOCAL DEVELOPMENT ONLY. M8 NOT STARTED; no deployment, Hetzner or Hermes interaction.
+Branch `build/m8`; accepted base/main `4eff88bcaaac387ec047d50575d25b8135baa567`, tag `v0.8-m7`.
+Implementation locally complete; remote commit/CI receipt pending. M8 NOT merged or tagged.
+M9 NOT started. LOCAL DEVELOPMENT ONLY; zero deployment, Hetzner, SSH or Hermes interaction.
 
+Binding complete scope: [M8_SCOPE.md](M8_SCOPE.md). Methodology and limits:
+[EVALUATION.md](EVALUATION.md), [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
+Historical verdicts remain in IMPLEMENTATION_STATUS and append-only AI_WORKLOG.
 
+## Implementation / evaluation contract
 
-## Scope and architecture
+1. Result collector: SportsDataProvider.get_results_by_date, Mock/API-Football adapters; one UTC date batch,
+   tracked provider ID resolution, finish/grace filtering; no fixture-by-fixture calls.
+2. Quota: P0 reserve per physical attempt, safe success/error ledger, headers, raw content hash dedup and
+   provider observations, Redis date coalescing/freshness; no hidden adapter retries in M8 path.
+3. Truth: append-only fixture result versions with provider fixture identity, normalized/provider status,
+   regulation/extra-time/shootout scores, observed_at, raw FK, source hash, predecessor and created_at.
+   Supplied home/away provider IDs are checked against canonical mappings. A→B→A creates three versions.
+4. States: FINAL/AET/PEN (normalized names), POSTPONED, CANCELLED, ABANDONED, UNFINISHED, UNKNOWN.
+   `regulation_v1`: 90 minutes + added time only. No ET/shootout goals in market truth.
+   Postponed/live/unknown/missing AET regulation remain UNSETTLED; cancelled/abandoned VOID.
+5. All 12 canonical M7 selections: HOME/DRAW/AWAY; three double chance; O/U1.5, O/U2.5; BTTS yes/no.
+   Integer scores make half-goal PUSH impossible; enum/return logic still represents PUSH.
+6. Settlement idempotency: unique probability + result/version + policy; row locks; retry/concurrency
+   cannot duplicate rows. Corrections append settlements. UNSETTLED audit rows do not count as settled.
+   Displayed-only candidate settlements retain fixed-one-unit net return from original captured odds.
+7. Evaluation identity: frozen config/version + filters/period + source cutoff, UUID manifest;
+   exact identity reuses immutable run; changed config/cutoff creates distinct run. Worker writes atomic
+   metrics/calibration/run success, never M6/M7. Bad rows fail operationally rather than silently dropping.
+8. Binary Brier=(p-y)^2 mean. Separately named multiclass 1X2 Brier=sum of 3 squared errors, range 0..2.
+   Binary log loss uses natural log and explicit computation-only epsilon (default 1e-15); separate 1X2 loss.
+9. Calibration default deciles [lower,upper), final bucket includes 1; n/mean_p/frequency/signed gap.
+   ECE=weighted absolute bucket gap. Sharpness=mean((p-.5)^2). Empty measures null/n=0.
+10. Coverage=SUCCEEDED/(SUCCEEDED+ABSTAINED); abstention same denominator. Failures/in-flight separate.
+    NO_BET valid. Display coverage includes candidates without results; hit/ROI use eligible settlements.
+    Hit=WIN/(WIN+LOSS); WIN odds-1, LOSS -1, PUSH/VOID 0; ROI denominator WIN/LOSS/PUSH, VOID refunded.
+    Average captured odds/EV retain their own n. Optional explicit persisted closing snapshot price proxy;
+    missing comparator null/n=0; no historical later-price fetch, dynamic staking or profitability claim.
+11. Persisted market/statistical/LLM baselines independent; missing baseline probabilities reduce n;
+    no recomputation/fill/ensembles. PRIMARY/CHALLENGER and WITH/WITHOUT_ODDS always partition metrics.
+    WITHOUT_ODDS removes research text too, so no pure causal odds-experiment claim.
+12. Dimensions: time, league, market, selection, odds buckets, provider/model/config, prompt semantic
+    version, role, variant, phase, quality band, confidence, baseline/version. Single-facet aggregates;
+    multi-filter scoped queued evaluations supported. Latency/tokens where known; no invented money cost.
+13. Automatic opt-in Beat date scan → sports_io worker → result persistence → local settlement →
+    queued 7d/30d/all evaluations; finish=120m/grace=30m/hourly/lookback=7d defaults. No Telegram trigger
+    dependency or LLM use. Already-confirmed results need no refetch; explicit force correction supported.
+14. API: GET /v1/results, /v1/results/{fixture_id}, /v1/results/{fixture_id}/settlements;
+    POST /v1/jobs/evaluate (202 queued); GET /v1/evaluations/summary reads persisted state, bounded filters/
+    pagination. Telegram /stats, /results, /evaluate, periods and four segmentation shortcuts, settlement
+    screen; allowlist retained, typed safe backend validation, samples always shown.
+15. Schema: Alembic 0013, six normalized M8 tables listed in implementation status; existing M7 foreign
+    keys, no giant context duplication, old migrations byte-identical to accepted base.
 
-Binding complete user scope: [M7_SCOPE.md](M7_SCOPE.md).
-Runtime/design/limitations: [PREDICTIONS.md](PREDICTIONS.md), [ADR 0010](adr/0010-m7-forecasting-and-comparison-identities.md).
+## Verification actually run (2026-10-02)
 
-Immutable M6 context → eligibility → separate baselines → deterministic ModelRouter → configured
-runtime provider → strict validator/one repair → twelve probabilities → deterministic captured-price
-comparison/ranking → immutable run records → API/Telegram. Development model is not runtime predictor.
+- Unit: **839 passed** (535 accepted M7 + 304 M8); integration **145 passed** (128 + 17 M8).
+- Full `pytest -q`: **984 passed**, 32.87 seconds; isolated Compose sports_intel_m8_test + Redis db15.
+- Ruff check / format check clean (227 files); mypy strict clean (155 source files).
+- Migration: fresh sports_intel_m8_fresh_test→head→downgrade -1→head→alembic check PASS;
+  populated 0012 M7→0013→0012→0013 integrity regression PASS, zero drift.
+- Compose default/dev override/Telegram profile configs PASS. Secret sanity: 301 working files and
+  Git history PASS (heuristic scan; no values printed). `git diff --check` PASS.
+- Keyless E2E discovery→collectors→M6→MockLLM→ranking→M8 worker→settlement→evaluation→API→Telegram
+  test transport PASS. Synthetic clock advances post-match; original FeatureSnapshot/MatchContext and
+  M7 probability/ranking/odds/context hash regressions PASS. All settlement matrix/statuses and numeric
+  examples, correction/concurrent retry, baselines/roles/variants, cutoff and combined filters tested.
+- Existing M4 scan test used a UTC date with Warsaw-day planner and failed around midnight; changed
+  test date to configured local_today only. Legacy test stub/menu assertions updated for M8 interface/UI.
 
-- Adapters: deterministic Mock, OpenAI/OpenAI-compatible, MiniMax, OpenCode Go; chat/responses/messages
-  protocols as configured. HTTP contracts offline-tested, live provider integration unverified.
-- Router: capabilities, quality/budget route labels, recent health, permitted manual override, bounded
-  configured fallback. Actual provider/returned model and config preserved separately from requested route.
-- Prompt: `predictor`, `1.0.0`, source path + SHA-256 + persisted content at enqueue; model config/policy hashes.
-- Identity: context + prompt/version + provider/model/config + variant/role/phase + route/policy + engine version;
-  explicit rerun UUID adds request uniqueness; CAS execution prevents duplicate calls; old runs preserved.
-- Probabilities: HOME/DRAW/AWAY; three DC; O/U1.5, O/U2.5; BTTS_YES/NO. Six direct estimates; Python derives rest.
-- Validation: bounded strict schema, identity, finite [0,1], sum tolerance 1e-6, totals/BTTS coherence,
-  abstention, duplicate/contradictory/outside evidence. One repair total, even with fallback; never retry repair.
-- ABSTAINED has no normal probabilities/candidates; SUCCEEDED+NO_BET has all twelve, zero display candidates.
-- Baseline: observed last10 GF/GA mean attack/defence Poisson, independent goals; missing rates unavailable.
-  No fitted home/opponent adjustment/calibration; no arbitrary ensembles. Market captured no-vig benchmark
-  separate; DC derived from same-bookmaker 1X2, preserving original context and old odds data.
-- WITH/WITHOUT_ODDS coexist. Masking preserves original context but conservatively removes all research text,
-  odds features/provenance and quality detail. Later odds-effect comparisons must account for research removal.
-- PRIMARY/CHALLENGER coexist; shadow never promoted/averaged or shown as primary.
-- Ranking: edge=Pmodel−Pmarket, EV=Pmodel*capturedOdds−1; allowed markets, quality, min/max odds,
-  probability/edge thresholds, context staleness/age, league allow/deny, display cap. All filter reasons persisted.
-- Automatic-first capability: eligible MORNING/PREMATCH context completion enqueues one deduplicated llm job
-  when opt-in enabled; existing scheduler flags retained, no new LLM polling. Local stack activation not performed.
-- API: POST `/v1/fixtures/{id}/analyze` (202 job enqueue), GET `/v1/predictions`, GET `/v1/predictions/{run_id}`.
-  Safe phase/context/as_of/role/variant/allowlisted-route options; explicit rerun token, no keys/raw configs accepted.
-- Telegram: Russian prediction menu, fixture analyze/view, table/why/risks/model/rerun; typed BackendClient,
-  persisted reads only, allowlist on router, bounded callbacks, one acknowledgement, test transport verified.
-- Migration 0012: prompt_versions, model_configs, prediction_runs, market_predictions, ranked_candidates,
-  probability_baselines, llm_call_attempts. UUID/FK/index/uniqueness/checks; M0–M6 revisions unchanged.
+## Live status / remaining limitations
 
-## Actual local verification
+**Live result provider calls: 0. Live runtime LLM calls: 0.** Real provider uses offline HTTP contract tests;
+no new live Telegram smoke. No statistical significance, forecasting accuracy or profitability proven.
+No fitted calibration/model promotion/weekly LLM analyst. M7 monetary cost data absent. Closing proxy
+requires explicit existing snapshot IDs; confirmed corrections are manual/explicit. Existing crash/lost
+broker delivery recovery remains operational/manual; no new outbox platform. Invalid result contracts
+retain safe ledger/job failure, no unsafe partial settlement. See EVALUATION.md for exact definitions.
 
-- Unit (including offline provider contracts): **531 passed**, 128 deselected.
-- Integration (Docker Postgres `sports_intel_m7_test`, Redis db15): **128 passed**, 531 deselected.
-- Full pytest: **659 passed** in 23.18s.
-- Ruff check/format: clean, **208 Python files**. Mypy: clean, **142 source files**.
-- Alembic: fresh empty DB→head; populated accepted M6→0012; downgrade -1→upgrade head→check, zero drift.
-- Docker Compose config and Telegram profile: valid. Secret sanity scan/diff hygiene: clean.
-- Keyless complete discovery→collectors→context→MockLLM→persisted API→Telegram fake flow verified;
-  real isolated Redis Celery message serialization verifies minimal UUID payload. Concurrency/rerun/fallback,
-  failed/invalid output, can_predict=false and planted later lineup/odds/fixture status tested.
-- Real runtime LLM calls: **0**; runtime provider/model/credentials were not configured locally.
-- No new live Telegram smoke, no model accuracy/calibration claims.
-
-## Known limits and review boundary
-
-No empirical baseline/LLM accuracy evaluation (M8). Model-specific endpoints/sampling/schema availability
-must be configured and validated before real usage. Go runtime disabled by default because current official
-Go docs target coding traffic; permitted forecasting API use must be established separately.
-No DB immutability triggers; existing append-only application policy applies. Worker crash after claim or lost
-broker delivery requires inspection/explicit rerun; no automatic reset that might repeat paid calls.
-No disagreement aggregation, fitted ensembles, settlement/evaluation or automatic Telegram push.
-
-M7 is PASS / ACCEPTED; M8 settlement/evaluation NOT STARTED. No deployment, Hetzner or Hermes interaction.
-Historical M6 failures/acceptance evidence remain in IMPLEMENTATION_STATUS and append-only AI_WORKLOG.
-
-Accepted M6 reviewer packet remains in Git at
-[M6 handoff](https://github.com/hirchak/Sports-Intelligence-AI/blob/11b6e782ab7256607992b70cc0d0dee4ebe92a3a/docs/REVIEW_HANDOFF.md).
-No historical failure or acceptance worklog entries were rewritten.
-
-
-## M7.1 M4 canonical 1X2 acceptance
-
-M4 persists canonical `h2h_1x2` prices with `home/draw/away`; the Odds API request key remains `h2h`.
-M7.1 maps canonical M4 prices into the complete same-bookmaker 1X2 benchmark and derives all three DC
-probabilities from that same group. Incomplete or cross-book groups cannot produce an M7 market baseline.
-Synthetic M7 odds and MockOddsProvider normalized outputs now mirror M4's canonical DTO. The M4 live
-normalizer, request protocol, schema and migrations are unchanged. Regression tests cover baseline values,
-all DC sums, ranking with canonical captured prices, incompleteness and same-book enforcement.
-
-Acceptance evidence: 535 unit + 128 integration = 663 passed; Ruff/format/mypy clean; Alembic no drift;
-Compose default/dev/Telegram valid; secret scan clean. CI `36911970853` green on accepted exact HEAD.
-No runtime LLM calls. M7 not merged; M8 not started. No deployment/Hetzner/Hermes interaction.
-
-
-## Independent acceptance and finalization
-
-The independent review verdict is M7 / M7.1 PASS / ACCEPTED. Accepted `build/m7` HEAD is
-`3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`; implementation fix is
-`07658d8e9fdd29f0e642447fd1639efb0b08aa47`; final acceptance CI is `36911970853` (SUCCESS, all jobs).
-Accepted main/base remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6` until PR merge.
-The authorized finalization path is build/m7 → normal merge PR → verify main CI → annotated `v0.8-m7` →
-`build/m8` from that exact main SHA. `build/m8` is a clean starting branch only; do not implement on it.
+Next: push/verify exact final build/m8 Actions and clean tree, then independent review only.

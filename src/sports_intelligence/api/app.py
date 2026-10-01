@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sports_intelligence.api.resources import close_resources
 from sports_intelligence.api.routes import (
     context,
+    evaluation,
     fixtures,
     health,
     jobs,
@@ -66,6 +67,7 @@ def create_app(settings: Settings) -> FastAPI:
     application.include_router(research.router)
     application.include_router(context.router)
     application.include_router(predictions.router)
+    application.include_router(evaluation.router)
     return application
 
 

@@ -7,6 +7,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from sports_intelligence.evaluation.settlement import ResultObservation
+
 
 def canonical_request_fingerprint(
     provider: str, endpoint_family: str, params: Mapping[str, str]
@@ -207,3 +209,9 @@ class ProviderCompletedFixturesResult(_CategoryResultBase):
 
     provider_team_id: int
     fixtures: list[ProviderCompletedFixture] = Field(default_factory=list)
+
+
+class ProviderResultsBatch(_CategoryResultBase):
+    """One single physical request; retries and quota owned by M8 collector."""
+
+    results: list[ResultObservation]

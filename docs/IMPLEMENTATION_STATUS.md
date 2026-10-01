@@ -2,13 +2,18 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M7 — LLM Prediction Engine + Model Router + Validation + Candidate Ranking (PASS / ACCEPTED; merge finalization in progress)
-**Last updated:** 2026-10-01 (Codex)
-**Last known good commit:** 11b6e782ab7256607992b70cc0d0dee4ebe92a3a (tag v0.7-m6, PR #8 merged into main)
+**Current milestone:** M8 — Result Collection, Settlement and Evaluation (IN PROGRESS)
+**Last updated:** 2026-10-02 (Codex)
+**Last known good commit:** 4eff88bcaaac387ec047d50575d25b8135baa567 (v0.8-m7, PR #9 merged)
 
 ---
 
 # 1. Current objective
+
+M8 authorized by [M8_SCOPE.md](M8_SCOPE.md). Fetched refs confirm build/m8 starts at
+accepted M7 4eff88b / v0.8-m7; origin/main is unchanged. Older M7 finalization prose below
+is historical and superseded by this checkpoint. M8 requires independent review.
+Policy: [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
 
 Milestone review verdicts:
 - M4 → **PASS / ACCEPTED** (HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`, tagged `v0.5-m4`)
@@ -25,17 +30,14 @@ Milestone review verdicts:
   M7.1 implementation: `07658d8e9fdd29f0e642447fd1639efb0b08aa47`.
   Final source CI: `36911970853` (SUCCESS across all jobs). Historical failed verdicts above remain intact.
 
-Accepted M6 is merged into `origin/main` at `11b6e782ab7256607992b70cc0d0dee4ebe92a3a`, tagged `v0.7-m6`.
-Verified local/remote `build/m7` starts at exactly that commit with a clean tree.
-M7 implementation authorized by `docs/M7_SCOPE.md`; old review failures below remain historical evidence.
-LOCAL DEVELOPMENT ONLY. No M8, merge/tag of M7, deployment, Hetzner or Hermes interaction.
-M7 / M7.1 independent review verdict: PASS / ACCEPTED. Accepted `origin/build/m7` HEAD `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`; M7.1 source commit `07658d8e9fdd29f0e642447fd1639efb0b08aa47`; exact final source CI `36911970853` SUCCESS across all jobs. No remaining M7 code blockers. Main remains accepted M6 at `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6` until PR #/merge finalization. M8 NOT STARTED. LOCAL DEVELOPMENT ONLY.
+Accepted M7 is merged via PR #9 at `4eff88bcaaac387ec047d50575d25b8135baa567`, tagged `v0.8-m7`.
+Current `build/m8` is the only implementation branch. M8 is locally verified and awaits commit/push,
+exact-head CI and independent review. Main remains accepted M7; no M8 merge/tag, M9 or deployment.
 
-**M7 independent review verdict:** PASS / ACCEPTED (M7 / M7.1).
-Accepted branch HEAD `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`.
-Final accepted CI run `36911970853`: SUCCESS across all jobs.
-
-
+M8 flow: date-level result provider → immutable result versions → regulation_v1 settlements →
+metrics_v1 evaluation (separate roles/variants/baselines) → persisted API / thin Telegram.
+[EVALUATION.md](EVALUATION.md) records conventions, configuration, scope and limitations.
+Historical M0–M7 review verdicts below are preserved.
 
 ---
 
@@ -724,7 +726,20 @@ All review items implemented and independently verified:
 
 # 3. In progress
 
-M7 / M7.1 has been independently ACCEPTED. Execute the owner-authorized PR → merge → main CI → tag → empty build/m8 setup. No code work on build/m8.
+M8 implementation complete locally. Commit/push build/m8 and verify exact final Actions HEAD;
+then stop for independent review. M8 is not independently accepted; M9 is not started.
+
+Local gates (2026-10-02): **839 unit + 145 integration = 984 full pytest PASS**;
+Ruff/format clean (227 Python files); strict mypy clean (155 source files).
+Full keyless M2→M8 E2E + Telegram test transport PASS; original FeatureSnapshot/MatchContext/M7
+prediction/ranking/price payloads remain unchanged. Results outside evaluation cutoff excluded.
+Fresh sports_intel_m8_fresh_test→0013/down→0012/up→0013/Alembic check PASS;
+populated M7→M8 migration regression PASS. Docker default/dev/Telegram configs PASS;
+working-file/history secret sanity PASS. No live result/LLM calls or new live Telegram smoke.
+
+The full suite uncovered an existing UTC/Warsaw midnight test-date mismatch: only the test's
+requested date changed to configured local_today. Provider protocol stub and menu assertions updated
+for the new explicit M8 interface/UI. No pre-M8 runtime behavior or historical migrations changed.
 
 ---
 
@@ -821,18 +836,10 @@ M7 / M7.1 has been independently ACCEPTED. Execute the owner-authorized PR → m
 
 # 8. Database/migrations
 
-Status:
-- migrations `0001` through `0012` locally verified on a fresh isolated test DB; implementation CI `36890119992` passed
-  (apply → repeat → downgrade → reapply); ORM↔migration drift check clean.
-- Historical revision `0003_provider_evidence_history_and_indexes.py` verified 100%
-  byte-for-byte identical to `origin/main` (SHA-256 identical).
-
-Latest migration:
-- `0012_m7_prediction_engine` (M0–M6 historical migration files unchanged).
-- M7 verified on fresh `sports_intel_m7_test`, populated M6→M7, downgrade/re-upgrade and zero drift.
-
-Local DB preservation required:
-- no, until meaningful live test data exists
+Latest: `0013_m8_results_and_evaluation` (six M8 tables: fixture_results, prediction_settlements,
+candidate_settlements, evaluation_runs, evaluation_metrics, calibration_buckets).
+Fresh and populated accepted M7 migration cycles + drift PASS. Revisions 0001–0012 unchanged.
+Only isolated local *_test databases migrated for M8; development DB untouched.
 
 ---
 
@@ -870,14 +877,15 @@ LLM provider routing:
 
 # 11. Current Git state
 
-Branch: `build/m7`; accepted HEAD `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`.
-Final acceptance CI `36911970853` is SUCCESS on that exact HEAD. Main remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`) pending the authorized PR merge. M7 is accepted; do not implement M8.
+Branch: `build/m8`. Accepted base/main/tag: `4eff88bcaaac387ec047d50575d25b8135baa567` / `v0.8-m7`.
+Local implementation commit and exact remote CI receipt pending. No M8 merge/tag authorized.
 
 ---
 
 # 12. Next action
 
-1. Commit/push docs-only acceptance record and verify exact-head CI. 2. Open PR `build/m7` → `main`; wait for checks; merge normally. 3. Verify merged main and CI; tag/push `v0.8-m7` on that commit. 4. Create/push `build/m8` from that exact accepted main HEAD and STOP without implementing M8.
+Commit/push verified M8, confirm all Actions jobs on exact final remote HEAD, and stop for
+independent review. Do not start M9, deploy, SSH, or interact with Hetzner/Hermes.
 
 ---
 

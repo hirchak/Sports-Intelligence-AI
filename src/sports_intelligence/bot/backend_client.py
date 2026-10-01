@@ -9,6 +9,12 @@ from pydantic import BaseModel
 
 from sports_intelligence.core.logging import get_logger
 from sports_intelligence.predictions.contracts import Role, Variant
+from sports_intelligence.schemas.evaluation import (
+    EvaluationSummaryView,
+    ResultDetailView,
+    ResultView,
+    SettlementView,
+)
 from sports_intelligence.schemas.predictions import (
     AnalyzeResponse,
     PredictionDetail,
@@ -197,6 +203,57 @@ class BackendClient:
             return AnalyzeResponse.model_validate(payload)
         except ValueError:
             raise BackendPayloadError("unexpected analyze response") from None
+
+    async def evaluation_summary(
+        self, *, period: str = "30d", group_by: str | None = None
+    ) -> dict[str, Any]:
+        params = {"period": period, "limit": "8"}
+        if group_by:
+            params["group_by"] = group_by
+        payload = await self._get_json("/v1/evaluations/summary", params=params)
+        if not isinstance(payload, dict) or not isinstance(payload.get("groups"), list):
+            raise BackendPayloadError("invalid evaluation summary")
+        try:
+            EvaluationSummaryView.model_validate(payload)
+        except ValueError:
+            raise BackendPayloadError("invalid evaluation summary") from None
+        return payload
+
+    async def recent_results(self) -> list[dict[str, Any]]:
+        payload = await self._get_json("/v1/results", params={"limit": "8"})
+        if not isinstance(payload, list):
+            raise BackendPayloadError("invalid result list")
+        try:
+            return [ResultView.model_validate(row).model_dump(mode="json") for row in payload]
+        except ValueError:
+            raise BackendPayloadError("invalid result list") from None
+
+    async def result_detail(self, fixture_id: str) -> dict[str, Any]:
+        payload = await self._get_json(f"/v1/results/{fixture_id}")
+        if not isinstance(payload, dict):
+            raise BackendPayloadError("invalid result detail")
+        try:
+            ResultDetailView.model_validate(payload)
+        except ValueError:
+            raise BackendPayloadError("invalid result detail") from None
+        return payload
+
+    async def settlements(self, fixture_id: str) -> list[dict[str, Any]]:
+        payload = await self._get_json(
+            f"/v1/results/{fixture_id}/settlements", params={"limit": "24"}
+        )
+        if not isinstance(payload, list):
+            raise BackendPayloadError("invalid settlements")
+        try:
+            return [SettlementView.model_validate(row).model_dump(mode="json") for row in payload]
+        except ValueError:
+            raise BackendPayloadError("invalid settlements") from None
+
+    async def evaluate(self) -> dict[str, Any]:
+        payload = await self._post_json("/v1/jobs/evaluate", body={"period": "30d"}, expected=202)
+        if not isinstance(payload, dict):
+            raise BackendPayloadError("invalid evaluation request")
+        return payload
 
     async def _get_json(self, path: str, params: dict[str, str] | None = None) -> Any:
         try:

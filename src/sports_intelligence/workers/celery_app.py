@@ -47,6 +47,13 @@ def create_celery_app(settings: Settings) -> Celery:
                 "options": {"queue": "control"},
             }
 
+    if settings.result_scan_enabled:
+        beat_schedule["results.scan"] = {
+            "task": "evaluation.result_scan",
+            "schedule": settings.result_scan_interval_seconds,
+            "options": {"queue": "control"},
+        }
+
     application = Celery(
         "sports_intelligence",
         broker=settings.celery_broker_url,
@@ -59,6 +66,7 @@ def create_celery_app(settings: Settings) -> Celery:
             "sports_intelligence.workers.tasks.research",
             "sports_intelligence.workers.tasks.context",
             "sports_intelligence.workers.tasks.llm",
+            "sports_intelligence.workers.tasks.evaluation",
         ],
     )
     application.conf.update(
@@ -70,6 +78,9 @@ def create_celery_app(settings: Settings) -> Celery:
         task_default_queue="control",
         task_queues=tuple(Queue(name) for name in QUEUE_NAMES),
         task_routes={
+            "evaluation.collect_results": {"queue": "sports_io"},
+            "evaluation.evaluate": {"queue": "evaluation"},
+            "evaluation.result_scan": {"queue": "control"},
             "prediction.predict_match": {"queue": "llm"},
             "sports_intelligence.workers.tasks.control.*": {"queue": "control"},
             "sports_intelligence.workers.tasks.sports.*": {"queue": "sports_io"},

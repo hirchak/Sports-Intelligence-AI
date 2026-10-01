@@ -73,6 +73,20 @@ class Settings(BaseSettings):
         default_factory=lambda: ["h2h", "double_chance", "totals", "btts"]
     )
 
+    result_scan_enabled: bool = False
+    result_scan_interval_seconds: int = Field(default=3600, ge=900)
+    result_expected_finish_minutes: int = Field(default=120, ge=90)
+    result_grace_minutes: int = Field(default=30, ge=0)
+    result_lookback_days: int = Field(default=7, ge=1, le=365)
+    result_retry_limit: int = Field(default=2, ge=0, le=3)
+    evaluation_epsilon: float = Field(
+        default=1e-15, ge=2.220446049250313e-16, lt=0.01, allow_inf_nan=False
+    )
+    evaluation_calibration_boundaries: list[float] = Field(
+        default_factory=lambda: [i / 10 for i in range(11)]
+    )
+    evaluation_default_days: int = Field(default=30, ge=1, le=3650)
+
     sports_provider: str = "mock"
     sports_api_key: str = ""
     api_football_base_url: str = "https://v3.football.api-sports.io"

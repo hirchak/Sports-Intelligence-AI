@@ -524,10 +524,17 @@ async def test_health_callback_renders_status(
 # Direct menu builder tests (pure functions).
 
 
-def test_main_menu_keyboard_includes_m7_predictions() -> None:
+def test_main_menu_keyboard_includes_predictions_and_m8_stats() -> None:
     keyboard = main_menu_keyboard()
     texts = _button_texts(keyboard)
-    assert texts == ["Сегодня", "Прогнозы", "Найти", "Здоровье", "Помощь"]
+    assert texts == [
+        "Сегодня",
+        "Прогнозы",
+        "Результаты и статистика",
+        "Найти",
+        "Здоровье",
+        "Помощь",
+    ]
 
 
 def test_find_menu_keyboard_has_quick_dates_and_back() -> None:

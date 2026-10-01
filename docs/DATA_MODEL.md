@@ -99,3 +99,9 @@ LLMCallAttempt records physical calls including retries/repair; real requests al
 Historical rows are append-only under application policy; M7 does not add DB immutability triggers.
 Completed predictions are never updated by reruns. Terminal failed runs are reusable as failure state;
 explicit rerun creates another row. See [PREDICTIONS.md](PREDICTIONS.md).
+
+## M8 implementation
+
+See [EVALUATION.md](EVALUATION.md) and [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
+Migration 0013 adds versioned results, probability/candidate settlements, immutable evaluation runs,
+normalized metrics and calibration buckets. Local scheduled date batches feed API and thin Telegram stats.

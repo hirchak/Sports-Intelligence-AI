@@ -9,6 +9,7 @@ from sports_intelligence.providers.dto import (
     ProviderAvailabilityResult,
     ProviderCompletedFixturesResult,
     ProviderLineupsResult,
+    ProviderResultsBatch,
     ProviderStandingsResult,
     ProviderTeamStatisticsResult,
 )
@@ -25,6 +26,7 @@ class ProviderCapabilities:
     supports_availability: bool = False
     supports_lineups: bool = False
     supports_completed_fixtures: bool = False
+    supports_results_by_date: bool = False
 
 
 @runtime_checkable
@@ -62,6 +64,10 @@ class SportsDataProvider(Protocol):
     async def get_completed_fixtures(
         self, *, provider_team_id: int, last_n: int
     ) -> ProviderCompletedFixturesResult: ...
+
+    async def get_results_by_date(self, fixture_date: date) -> ProviderResultsBatch:
+        """Single physical date batch request; no hidden retries."""
+        ...
 
     async def aclose(self) -> None: ...
 

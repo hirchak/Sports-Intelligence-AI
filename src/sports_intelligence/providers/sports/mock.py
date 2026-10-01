@@ -16,6 +16,7 @@ from sports_intelligence.providers.dto import (
     ProviderLineupPlayer,
     ProviderLineupsResult,
     ProviderResponseMetadata,
+    ProviderResultsBatch,
     ProviderStandingRow,
     ProviderStandingsResult,
     ProviderTeamAvailability,
@@ -250,6 +251,7 @@ class MockSportsDataProvider:
             supports_availability=True,
             supports_lineups=True,
             supports_completed_fixtures=True,
+            supports_results_by_date=True,
         )
 
     async def get_fixtures_by_date(
@@ -324,6 +326,24 @@ class MockSportsDataProvider:
                 "provider_team_id": provider_team_id,
                 "fixtures": canned.fixtures[: max(min(last_n, 20), 0)],
             }
+        )
+
+    async def get_results_by_date(self, fixture_date: date) -> ProviderResultsBatch:
+        from sports_intelligence.providers.sports.results import parse_results
+
+        payload = self._load(fixture_date.isoformat()) or {"response": []}
+        # Builtin demo finishes 2-1; injected responses retain exact supplied status/score.
+        if self._responses is None:
+            payload = json.loads(json.dumps(payload))
+            for entry in payload.get("response", []):
+                entry["fixture"]["status"] = {"short": "FT"}
+                entry["score"] = {"fulltime": {"home": 2, "away": 1}}
+        observed_at = utc_now()
+        return ProviderResultsBatch(
+            provider=self._provider_name,
+            retrieved_at=observed_at,
+            raw_payload=payload,
+            results=parse_results(payload, observed_at),
         )
 
     async def aclose(self) -> None:

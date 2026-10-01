@@ -231,6 +231,9 @@ class _StubSportsProvider:
             teams=[],
         )
 
+    async def get_results_by_date(self, *a, **k):  # type: ignore[no-untyped-def]
+        raise AssertionError("standings tests must not collect results")
+
     async def get_completed_fixtures(self, *a, **k):  # type: ignore[no-untyped-def]
         from sports_intelligence.core.time import utc_now
 
