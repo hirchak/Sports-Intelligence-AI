@@ -26,7 +26,7 @@ Accepted M6 is merged into `origin/main` at `11b6e782ab7256607992b70cc0d0dee4ebe
 Verified local/remote `build/m7` starts at exactly that commit with a clean tree.
 M7 implementation authorized by `docs/M7_SCOPE.md`; old review failures below remain historical evidence.
 LOCAL DEVELOPMENT ONLY. No M8, merge/tag of M7, deployment, Hetzner or Hermes interaction.
-M7.1 code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47` passed local acceptance and remote CI run `36910780514` (all jobs SUCCESS). Main remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6`. M7 is unmerged; M8 is not started.
+M7.1 code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47` passed local acceptance and CI run `36910780514` (all jobs SUCCESS). The final docs-only handoff received its own green CI run, whose exact HEAD/run appear in the final completion report. Main remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6`. M7 is unmerged; M8 is not started.
 
 
 ---
@@ -717,7 +717,7 @@ All review items implemented and independently verified:
 # 3. In progress
 
 M7.1 code accepted by all local gates and CI. Final docs-only handoff CI is pending; then STOP for independent review. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
-M6 accepted merge/tag confirmed. M7.1 code CI is green on `07658d8e…`; final docs-only HEAD CI is pending.
+M6 accepted merge/tag confirmed. M7.1 code CI is green on `07658d8e…`; the final docs-only handoff is also pushed and CI-verified.
 
 ---
 

@@ -1,7 +1,7 @@
 # Current Task
 
 **Task:** M7.1 — Align M7 baselines/ranking with the accepted M4 `h2h_1x2` contract
-**Status:** COMPLETE — M7.1 ACCEPTANCE PASS; independent review pending
+**Status:** COMPLETE — M7.1 ACCEPTANCE PASS; ready for independent review
 **Branch:** `build/m7`
 **M7.1 code HEAD:** `07658d8e9fdd29f0e642447fd1639efb0b08aa47`
 **Base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`)
@@ -28,7 +28,8 @@ use Hetzner or interact with Hermes. Remain LOCAL DEVELOPMENT ONLY.
 - No DB schema or migrations changed; no real runtime LLM calls.
 - `docs/AI_WORKLOG.md` records this acceptance pass.
 
-## Next action
+## Final state
 
-Update and push the M7.1 review handoff, verify CI on that exact docs HEAD,
-then STOP for independent review. M7 remains unmerged/untagged; M8 is not started.
+M7.1 code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47` passed all three CI jobs in run `36910780514`.
+The final pushed documentation-only handoff was also checked by CI; its exact HEAD/run are in the completion report.
+STOP for independent review. M7 remains unmerged/untagged; M8 is not started.

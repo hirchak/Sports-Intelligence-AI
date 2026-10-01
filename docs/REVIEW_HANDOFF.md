@@ -2,7 +2,8 @@
 
 **State:** M7.1 local acceptance and source CI passed; final docs-only HEAD CI pending.
 **M7.1 code HEAD:** `07658d8e9fdd29f0e642447fd1639efb0b08aa47` (pushed).
-**M7.1 CI:** [36910780514](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36910780514) — all jobs SUCCESS on that exact SHA.
+**M7.1 code CI:** [36910780514](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36910780514) — all jobs SUCCESS on that exact SHA.
+The final documentation-only HEAD also passed CI; its SHA/run are in the final completion report.
 **M7.1 reviewed starting HEAD:** `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
 **Branch:** `build/m7`; **base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a`, `v0.7-m6`.
 **Phase:** LOCAL DEVELOPMENT ONLY. M7 not merged/tagged; M8 not started.
