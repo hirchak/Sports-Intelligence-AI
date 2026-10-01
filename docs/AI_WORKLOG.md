@@ -2487,3 +2487,45 @@ secret scan clean. Runtime LLM calls: zero.
 **Git:** M7.1 commit and push pending.
 **Next action:** commit/push `build/m7`, verify exact-head GitHub Actions, and STOP for independent review.
 M7 unmerged/untagged, M8 not started, LOCAL DEVELOPMENT ONLY, zero deployment/Hetzner/Hermes.
+
+### 2026-10-01 — Codex (M7.1 acceptance and source CI pass)
+
+**Milestone:** M7.1; branch `build/m7`; reviewed start `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
+**Task:** Complete the narrow M4 `h2h_1x2` contract compatibility fix and all acceptance gates.
+**Files changed:** prediction baseline mapping, M4 MockOddsProvider canonical DTO emitter, M7 synthetic context,
+M7 baseline/ranking tests, M4 Mock odds contract test, and persistent M7.1 docs.
+**Behavior:** Complete same-bookmaker canonical 1X2 benchmark from `h2h_1x2/home|draw|away`; retain M7 aliases;
+derive all DC benchmark probabilities only from that complete same-bookmaker 1X2. Incomplete and split-book
+markets are rejected. Provider wire request `h2h` and live M4 normalizer/schema are unchanged.
+**Commands/tests:** `uv run ruff check .`; `uv run ruff format --check .`; `uv run mypy src`;
+unit, integration and full `pytest`; `DATABASE_URL=...sports_intel_m7_test uv run alembic check`;
+Docker Compose default, dev override and Telegram profile; working-file/Git-history secret scan;
+`gh run view 36910780514` for exact pushed HEAD.
+**Results:** 535 unit + 128 integration = **663 passed**. Ruff/format clean (208 Python files), mypy clean
+(142 source files), Alembic reports no new upgrade operations, Compose configs valid. Secret scan checks
+279 files and Git history with no findings. CI run `36910780514` on source HEAD
+`07658d8e9fdd29f0e642447fd1639efb0b08aa47`: lint/type/unit, Postgres/Redis integration, and Compose
+validation jobs all SUCCESS. Zero runtime LLM calls.
+**Known problems:** none specific to M7.1; live providers/new Telegram interaction not exercised.
+**Spec/ADR deviations:** none. No schema migration or architecture redesign.
+**Git:** source fix commit `07658d8e9fdd29f0e642447fd1639efb0b08aa47`, pushed. Final documentation-only commit follows.
+**Next action:** push docs, check CI on exact docs HEAD, STOP for independent review. M7 stays unmerged/untagged;
+M8 is not started; LOCAL DEVELOPMENT ONLY.
+
+---
+
+### 2026-10-01 19:02 UTC — Codex (M7.1 source CI verified)
+
+**Milestone:** M7.1; source HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47` on `build/m7`.
+**Task:** Verify exact pushed M7.1 CI and prepare independent-review stop.
+**Files changed:** Persistent review/checkpoint documents only; no source or test changes after the passing suite.
+**Behavior:** Record exact remote acceptance evidence and preserve the M7.1 review boundary.
+**Commands/tests:** `gh run view 36910780514`; Git refs/status, prior full local tests, Alembic and Compose gate results.
+**Results:** GitHub Actions run `36910780514` on exact code HEAD has all 3 jobs SUCCESS: lint/type/unit,
+Postgres/Redis integration, Docker Compose validation. Local 535 unit + 128 integration = 663 pass;
+Ruff/format/mypy clean; Alembic no drift; Compose default/dev/Telegram valid; secret scan clean.
+**Known problems:** The final docs-only commit will trigger its own CI run; M8 remains outside this task.
+**Spec/ADR deviations:** none. No migration/schema changes.
+**Git:** M7.1 code commit `07658d8e9fdd29f0e642447fd1639efb0b08aa47`, pushed. Main stays at accepted M6.
+**Next action:** push this documentation-only review update, verify its exact HEAD CI, then STOP for independent
+review. M7 remains unmerged/untagged; M8 and deployment are not started.

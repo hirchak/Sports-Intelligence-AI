@@ -1,15 +1,12 @@
 # M7 Review Handoff
 
-**State:** M7.1 implementation and full local acceptance pass; push/exact remote CI pending. Do not review until exact-head CI succeeds.
-**Previous M7 source HEAD:** `6c861b94c6300ae7da018176f5af12804f22b217`, pushed.
+**State:** M7.1 local acceptance and source CI passed; final docs-only HEAD CI pending.
+**M7.1 code HEAD:** `07658d8e9fdd29f0e642447fd1639efb0b08aa47` (pushed).
+**M7.1 CI:** [36910780514](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36910780514) — all jobs SUCCESS on that exact SHA.
 **M7.1 reviewed starting HEAD:** `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
-**M7.1 reviewed starting HEAD:** `b0dd35c3606449d95c3be0723ded5f78a2883e67`. Previous M7 CI is not acceptance evidence for this fix.
-**Source CI:** [36890119992](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36890119992)
-— lint/type/unit SUCCESS; integration SUCCESS; Compose including Telegram SUCCESS.
-M7 implementation CI before the M7.1 fix is not acceptance proof for the corrected branch.
 **Branch:** `build/m7`; **base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a`, `v0.7-m6`.
-**Foundation commit:** `231d4539d074d5a3838bc535bbb81cd06855af84`.
 **Phase:** LOCAL DEVELOPMENT ONLY. M7 not merged/tagged; M8 not started.
+
 
 ## Scope and architecture
 
@@ -82,12 +79,16 @@ No historical failure or acceptance worklog entries were rewritten.
 
 ## M7.1 canonical M4 1X2 follow-up
 
-M4 `OddsPrice.market` is `h2h_1x2` (`home/draw/away`); The Odds API wire key is `h2h`.
-M7.1 aligns the baseline/ranker with normalized `h2h_1x2`, keeps backward-compatible M7 aliases,
+M4 `OddsPrice.market` is `h2h_1x2` (`home/draw/away`); the The Odds API request key remains `h2h`.
+M7.1 aligns baseline/ranking with normalized `h2h_1x2`, retains backward-compatible M7 aliases,
 verifies all three DC derivations from one bookmaker's complete 1X2, rejects incomplete/cross-book
-sets, and changes M7 fixtures/M4 mock output to the accepted canonical DTO. M4 HTTP parsing and
-schema remain unchanged. Focused tests currently pass (33 unit/M4 contract, 27 M7 integration);
-complete suite/CI and final reviewed HEAD will be filled before the independent-review handoff.
+sets, and updates M7 synthetic prices and the M4 mock DTO to the canonical output. M4 live parsing,
+request protocol, schema, and migrations are unchanged.
+
+Full local acceptance: **535 unit + 128 integration = 663 passed**; Ruff/format/mypy clean; Alembic
+no new operations; Docker Compose default/dev/Telegram valid; secret sanity passed. M7.1 code CI
+`36910780514` is green on HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47`. The pending docs-only
+commit must pass CI on its own exact HEAD. No live LLM calls.
 
 
 ## M7.1 M4 canonical 1X2 acceptance (2026-10-01)

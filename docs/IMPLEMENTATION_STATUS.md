@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M7.1 — Canonical odds contract acceptance fix (IMPLEMENTED; remote CI pending)
+**Current milestone:** M7.1 — Canonical odds contract acceptance fix (PASS / ACCEPTANCE VERIFIED; independent review pending)
 **Last updated:** 2026-10-01 (Codex)
 **Last known good commit:** 11b6e782ab7256607992b70cc0d0dee4ebe92a3a (tag v0.7-m6, PR #8 merged into main)
 
@@ -26,7 +26,7 @@ Accepted M6 is merged into `origin/main` at `11b6e782ab7256607992b70cc0d0dee4ebe
 Verified local/remote `build/m7` starts at exactly that commit with a clean tree.
 M7 implementation authorized by `docs/M7_SCOPE.md`; old review failures below remain historical evidence.
 LOCAL DEVELOPMENT ONLY. No M8, merge/tag of M7, deployment, Hetzner or Hermes interaction.
-M7 implementation source HEAD `6c861b94c6300ae7da018176f5af12804f22b217` was independently review-submitted; focused M7.1 odds-contract acceptance fix is now in progress from reviewed HEAD `b0dd35c3606449d95c3be0723ded5f78a2883e67`. Main and `v0.7-m6` remain unchanged.
+M7.1 code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47` passed local acceptance and remote CI run `36910780514` (all jobs SUCCESS). Main remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6`. M7 is unmerged; M8 is not started.
 
 
 ---
@@ -701,7 +701,7 @@ All review items implemented and independently verified:
 - See [PREDICTIONS.md](PREDICTIONS.md) / ADR 0010. Implementation CI `36890119992` passed; independent review pending.
 
 
-### M7.1 — M4 canonical odds contract acceptance fix (LOCAL PASS; CI PENDING)
+### M7.1 — M4 canonical odds contract acceptance fix (PASS / ACCEPTANCE VERIFIED)
 
 - Reviewed starting HEAD: `b0dd35c3606449d95c3be0723ded5f78a2883e67` on clean `build/m7`.
 - M4 normalizer persists `h2h_1x2` with `home/draw/away`; M7 accepted aliases `h2h`/`1x2` but omitted the canonical market.
@@ -716,8 +716,8 @@ All review items implemented and independently verified:
 
 # 3. In progress
 
-M7.1 local acceptance passes; commit/push and exact-head CI pending; then independent review. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
-M6 accepted merge/tag confirmed. M7.1 source is locally verified; M7.1 remote CI remains pending.
+M7.1 code accepted by all local gates and CI. Final docs-only handoff CI is pending; then STOP for independent review. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
+M6 accepted merge/tag confirmed. M7.1 code CI is green on `07658d8e…`; final docs-only HEAD CI is pending.
 
 ---
 
@@ -863,10 +863,10 @@ LLM provider routing:
 
 # 11. Current Git state
 
-Branch: `build/m7`; accepted base/main `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`).
-Implementation commits: foundation `231d4539d074d5a3838bc535bbb81cd06855af84`,
-integration `6c861b94c6300ae7da018176f5af12804f22b217`. Source pushed and CI green.
-Final docs commit is rechecked on its remote HEAD. Do not modify main or merge M7.
+Branch: `build/m7`; M7.1 code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47`.
+M7.1 CI run `36910780514`: unit/lint/type, integration, Compose all SUCCESS.
+Accepted base/main remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`).
+Final docs-only HEAD CI is verified separately. Do not modify main or merge/tag M7.
 
 ---
 
