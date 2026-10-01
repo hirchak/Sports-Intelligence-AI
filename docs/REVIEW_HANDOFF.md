@@ -1,25 +1,27 @@
-# Review Handoff: M6.5 Historical-Truthfulness Acceptance Pass
+# Review Handoff: Milestone M6 Accepted (Merge Preparation)
 
-**Milestone:** M6.5 — Historical-Truthfulness Acceptance Pass (Elimination of False Historical Backfill & Mutable League Fallback, Truthful Pre-0011 Legacy Replay)
+**Milestone:** M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext (PASS / ACCEPTED)
 **Branch:** `build/m6`
 **Base:** `origin/main` (`fb256ecaf2ca1a97c64f1dba8d491cff6b935c91`, tag `v0.6-m5`)
 **Implementation Commit:** `86cc3ddcbb7625723ab1fb442cac65c53be46b87`
-**Remote Status:** Pushed to `origin/build/m6` (GitHub Actions CI Run `36837766536` — SUCCESS)
+**Accepted Pre-Merge Branch HEAD:** `cec7210cf440b9cc06c040611e477cfed9ad5472`
+**Final CI Run for Accepted HEAD:** `36837924850` (Conclusion: SUCCESS across all 3 jobs)
 **Development Phase:** LOCAL DEVELOPMENT ONLY (No Hetzner, no SSH, no Hermes, no deployment, no M7, no LLM calls)
 
 ---
 
 ## 1. Scope & Objective
-Resolve the remaining review findings from M6.4:
-1. **Eliminate False Historical Backfill**: Remove the migration-time SQL query in migration `0011_m6_4_historical_league_metadata.py` that backfilled pre-existing `fixture_metadata_snapshots` using current mutable `leagues` table rows. Pre-0011 snapshots must not receive values observed at migration time T1 while retaining `captured_at = T0`. Legacy rows truthfully remain `NULL`.
-2. **Eliminate Mutable League Fallback in Evidence Selection**: Remove all fallback logic in `select_evidence` that referenced mutable `League` row attributes (`league_obj.name` / `league_obj.slug`) or invented `"Unknown"` / `"unknown"` string sentinels. Simplify mutable `Fixture` locator to an existence-only check (`select(Fixture.id)`). Historical display league identity comes strictly from evidence available `<= as_of` (or `None`).
-3. **Nullable Display Metadata Schema**: Make `SelectedFixtureInfo.league_name`, `SelectedFixtureInfo.league_slug`, and `FixtureIdentitySection.league_name`/`league_slug` nullable (`str | None = None`). Authoritative `league_id` remains strictly non-null and verified.
+Milestone M6 has been independently reviewed and **ACCEPTED** (verdict: PASS / ACCEPTED).
+This handoff records the final verified state before merging `build/m6` to `main`:
+1. **Eliminated False Historical Backfill**: Migration `0011_m6_4_historical_league_metadata.py` adds nullable `observed_league_name` and `observed_league_slug` without migration-time backfill queries. Historical snapshot rows created prior to migration 0011 retain `NULL`.
+2. **Eliminated Mutable League Fallback in Evidence Selection**: `select_evidence` reads display league identity strictly from `FixtureMetadataSnapshot.observed_league_name` and `observed_league_slug` (`None` if unobserved). Mutable `Fixture` lookup is an existence-only check (`select(Fixture.id)`). `League` and `Team` tables are not joined, and placeholder sentinels (`"Unknown"`/`"unknown"`) are eliminated.
+3. **Nullable Display Metadata Schema**: `SelectedFixtureInfo.league_name`, `SelectedFixtureInfo.league_slug`, and `FixtureIdentitySection.league_name`/`league_slug` are nullable (`str | None = None`). Authoritative `league_id` remains strictly non-null and verified.
 4. **Truthful Quality and Provenance Reporting**: When observed league display metadata is `None`, `evaluate_data_quality` flags a structured warning (`"Observed league display identity unavailable in historical metadata snapshot"`) and records a missing field (`field="observed_league_display"`), while preserving `can_predict` (core IDs and kickoff are present). Manifest records `null` for `observed_league_name` and `observed_league_slug`.
-5. **Comprehensive Pre-0011 Regression Coverage**: Add unit test verifying clean serialization of `None` display metadata, and add 10-step integration regression test `test_legacy_pre_0011_metadata_snapshot_does_not_acquire_migration_league_values` covering steps A through J.
+5. **Comprehensive Pre-0011 Regression Coverage**: Unit test `test_match_context_with_none_league_display_metadata_serializes_cleanly` and 10-step integration regression test `test_legacy_pre_0011_metadata_snapshot_does_not_acquire_migration_league_values` covering steps A through J.
 
 ---
 
-## 2. Source and Test Files Changed
+## 2. Source and Test Files Changed in M6.5
 
 ### Source Files (4):
 1. `src/sports_intelligence/db/migrations/versions/0011_m6_4_historical_league_metadata.py`:
@@ -80,9 +82,16 @@ Resolve the remaining review findings from M6.4:
 
 ---
 
-## 5. Pydantic Immutability Claim Audit (M6.4 Accepted Base)
-- `ConfigDict(frozen=True)` provides attribute-level freezing.
-- The immutable boundary for Sports Intelligence AI is PostgreSQL persistence in `match_contexts`. Once written, rows in `match_contexts`, `feature_snapshots`, and `data_quality_reports` are immutable historical records with cryptographic `context_hash` verification.
+## 5. Immutability & Persistence Boundary Semantics
+- **Attribute-Level Pydantic Freeze**:
+  - Pydantic models with `ConfigDict(frozen=True)` provide **attribute-level freezing**: assigning to model fields (`ctx.fixture_identity = ...`) raises `ValidationError`.
+  - However, `ConfigDict(frozen=True)` is **not recursive deep freezing**; standard Python mutable collections nested inside models (e.g., `list`, `dict`) can still be mutated in-place via collection methods (e.g. `list.append()`, `dict["k"] = v`).
+- **PostgreSQL Persistence Invariant**:
+  - PostgreSQL snapshots (`match_contexts`, `feature_snapshots`, and `data_quality_reports`) are treated as immutable by **application/data-lifecycle policy**.
+  - Database schema does not physically prevent `UPDATE` or `DELETE` via triggers or permission revocation; immutability is an architectural invariant maintained by workers, repositories, and CAS transitions.
+- **Integrity Tracking via Context Hash**:
+  - `context_hash` (SHA-256) is computed from canonical sorted JSON at context assembly time and persisted alongside the snapshot for deterministic identity and integrity comparison across replays.
+  - Read endpoints serve persisted snapshots with their stored `context_hash` without recomputing or cryptographically verifying the hash on every read.
 - Verified in `test_match_context_immutability_attribute_frozen_and_nested_behavior`.
 
 ---
@@ -120,8 +129,8 @@ Resolve the remaining review findings from M6.4:
 ---
 
 ## 9. Next Steps
-- Commit and push to `origin/build/m6`.
-- Verify GitHub Actions CI run on exact remote HEAD across all 3 jobs.
-- Do NOT merge `build/m6` to `main`.
-- Do NOT start M7.
-- Development remains LOCAL ONLY.
+- Open PR `build/m6` -> `main`.
+- Merge accepted M6 into `main`.
+- Create and push release tag `v0.7-m6` on merged `main`.
+- Create and push `build/m7` branch from merged `main`.
+- Milestone M7 implementation is NOT STARTED. Development remains LOCAL ONLY.

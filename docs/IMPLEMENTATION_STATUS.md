@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M6.5 — Historical-Truthfulness Acceptance Pass (AWAITING INDEPENDENT REVIEW)  
+**Current milestone:** M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext (PASS / ACCEPTED; PREPARING MERGE)  
 **Last updated:** 2026-10-01 (Antigravity)  
 **Last known good commit:** fb256ecaf2ca1a97c64f1dba8d491cff6b935c91 (tag v0.6-m5, PR #7 merged into main)
 
@@ -18,11 +18,13 @@ Milestone review verdicts:
 - M6.2 → **FAIL** (reviewed HEAD `a307096b131b9b59fe01a799a299a26b167477d0`)
 - M6.3 → **FAIL** (reviewed HEAD `2b2dfaa30e84e9cf3a4c509093bf031f722bc6ec`, review findings: mutable league metadata dependency in historical replay, non-deterministic provider mapping order, Pydantic immutability claim discrepancy, Celery task refusal traceback)
 - M6.4 → **FAIL** (reviewed HEAD `0621aa576aacd21860bd6695a698f3d85082231a`, review findings: false historical backfill in migration 0011 populating pre-existing snapshots from mutable leagues table at migration time; fallback in select_evidence to mutable League attributes and "Unknown" sentinels; missing legacy pre-0011 regression test)
-- **M6.5 → COMPLETED, AWAITING INDEPENDENT REVIEW** (branch `build/m6`)
+- M6.5 → **PASS / ACCEPTED** (pre-merge HEAD `cec7210cf440b9cc06c040611e477cfed9ad5472`, implementation `86cc3ddcbb7625723ab1fb442cac65c53be46b87`, CI run `36837924850`)
+- **M6 overall → PASS / ACCEPTED** (branch `build/m6`)
+- **M7 → NOT STARTED**
 
 Phase A: Finalized accepted M5, merged to `main` via PR #7 (`fb256ec`), created and pushed annotated tag `v0.6-m5`, branched `build/m6`.
 
-Phase B: Completed, verified, and validated Milestone M6.5 on `build/m6`.
+Phase B: Completed, verified, and validated Milestone M6 on `build/m6`. M6 independently reviewed and ACCEPTED. Finalizing docs, merging to `main`, tagging `v0.7-m6`, and preparing `build/m7` branch.
 
 Development remains strictly LOCAL ONLY.
 No Hetzner deployment is authorized.
@@ -685,7 +687,7 @@ All review items implemented and independently verified:
 
 # 3. In progress
 
-None. Milestone M6.5 completed, awaiting independent review.
+Milestone M6 accepted. Phase A docs-only finalization in progress, followed by PR merge into main, release tag v0.7-m6, and preparation of build/m7 branch. Milestone M7 implementation is NOT STARTED.
 
 ---
 
