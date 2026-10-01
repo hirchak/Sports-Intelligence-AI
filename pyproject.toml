@@ -36,6 +36,7 @@ build-backend = "hatchling.build"
 packages = ["src/sports_intelligence"]
 
 [tool.hatch.build.targets.wheel.force-include]
+"prompts" = "sports_intelligence/runtime_prompts"
 "src/sports_intelligence/providers/sports/mock_data" = "sports_intelligence/providers/sports/mock_data"
 
 [tool.ruff]

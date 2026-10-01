@@ -1,0 +1,32 @@
+# MOCK-only defaults. Set real model/provider credentials via environment, never here.
+version: llm_routes_v1
+routes:
+  prediction_primary:
+    primary:
+      provider: mock
+      model: mock-v1
+      structured_mode: json_schema
+      temperature: 0.0
+  prediction_challenger:
+    primary:
+      provider: mock
+      model: mock-challenger-v1
+      structured_mode: json_schema
+      temperature: 0.0
+policy:
+  version: prediction_v1
+  min_data_quality: 0.65
+  timeout_seconds: 30
+  max_retries: 1
+  max_retry_delay_seconds: 5
+  max_calls_per_day: 100
+  max_challenger_calls_per_day: 20
+  ranking:
+    version: ranking_v1
+    min_data_quality: 0.65
+    min_decimal_odds: 1.30
+    min_model_probability: 0.55
+    min_edge: 0.05
+    max_candidates: 3
+    max_odds_age_seconds: 7200
+manual_override_routes: []

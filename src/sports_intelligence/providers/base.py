@@ -4,8 +4,6 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any, Protocol, runtime_checkable
 
-from pydantic import BaseModel
-
 from sports_intelligence.providers.dto import (
     FixtureDiscoveryResult,
     ProviderAvailabilityResult,
@@ -14,6 +12,7 @@ from sports_intelligence.providers.dto import (
     ProviderStandingsResult,
     ProviderTeamStatisticsResult,
 )
+from sports_intelligence.providers.llm.base import LLMProvider, LLMResult
 
 
 @dataclass(frozen=True)
@@ -73,28 +72,4 @@ class OddsProvider(Protocol):
     async def get_odds(self, fixture_id: str, markets: list[str]) -> dict[str, Any]: ...
 
 
-@dataclass(frozen=True)
-class LLMResult:
-    parsed_output: BaseModel | None
-    raw_response_reference: str | None
-    provider: str
-    model: str
-    latency_ms: int
-    usage: dict[str, Any] | None
-    finish_reason: str | None
-    request_id: str
-
-
-class LLMProvider(Protocol):
-    """Minimum interface per LLM router spec section 3. Not implemented (M7)."""
-
-    async def generate_structured(
-        self,
-        *,
-        task_type: str,
-        model: str,
-        system_prompt: str,
-        payload: dict[str, Any],
-        output_schema: type[BaseModel],
-        request_id: str,
-    ) -> LLMResult: ...
+__all__ = ["LLMProvider", "LLMResult", "OddsProvider", "ProviderCapabilities", "SportsDataProvider"]
