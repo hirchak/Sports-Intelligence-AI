@@ -2,8 +2,8 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M6.2 — Final Acceptance-Hardening Pass (AWAITING INDEPENDENT REVIEW)  
-**Last updated:** 2026-09-30 (Antigravity)  
+**Current milestone:** M6.3 — Reproducibility and Historical-Authority Pass (AWAITING INDEPENDENT REVIEW)  
+**Last updated:** 2026-10-01 (Antigravity)  
 **Last known good commit:** fb256ecaf2ca1a97c64f1dba8d491cff6b935c91 (tag v0.6-m5, PR #7 merged into main)
 
 ---
@@ -15,11 +15,13 @@ Milestone review verdicts:
 - M5 / M5.3 → **PASS / ACCEPTED** (HEAD `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`, merged in PR #7 `fb256ecaf2ca1a97c64f1dba8d491cff6b935c91`, tagged `v0.6-m5`)
 - M6 → **FAIL** (reviewed HEAD `fff8df75c520696f6c25a14e19ded7b6711e7688`)
 - M6.1 → **FAIL** (reviewed HEAD `08d253fe90883f11456b402563f4065fc4b00072`)
-- **M6.2 → COMPLETED, AWAITING INDEPENDENT REVIEW** (branch `build/m6`)
+- M6.2 → **FAIL** (reviewed HEAD `a307096b131b9b59fe01a799a299a26b167477d0`)
+- M6.3 → **FAIL — DELIVERY / REMOTE STATE MISMATCH** (reviewed HEAD `fe8f6145c86e1d5f133d69b1e488aea05b20089f`, missing source changes)
+- **M6.3 (Recovered & Verified) → COMPLETED, AWAITING INDEPENDENT REVIEW** (remote HEAD `5fb6c604617c7f93117e6d42d623a92082461981`, branch `build/m6`)
 
 Phase A: Finalized accepted M5, merged to `main` via PR #7 (`fb256ec`), created and pushed annotated tag `v0.6-m5`, branched `build/m6`.
 
-Phase B: Fully implemented Milestone M6.2 — Final Acceptance-Hardening Pass on `build/m6`.
+Phase B: Fully recovered, verified, committed, pushed, and validated Milestone M6.3 on `build/m6`.
 
 Development remains strictly LOCAL ONLY.
 No Hetzner deployment is authorized.
@@ -599,26 +601,60 @@ All review items implemented and independently verified:
   - Lineups dimension weight excluded from score denominator.
   - Missing lineups do not hurt; stale lineups do not enter `stale_sources` and do not trigger staleness penalties or warnings.
 
+## M6.3 — Reproducibility and Historical-Authority Pass (branch `build/m6`)
+
+- **Authoritative Fixture Metadata & Historical Refusal**:
+  - Context selector and builder strictly enforce `FixtureMetadataSnapshot` as the single source of truth for fixture dimensions.
+  - When no `FixtureMetadataSnapshot` exists with `captured_at <= as_of`, the context builder raises typed `HistoricalFixtureMetadataUnavailable` error instead of falling back to mutable canonical `Fixture` attributes (e.g. status, kickoff, teams).
+  - No `FeatureSnapshot`, `DataQualityReport`, or `MatchContext` is persisted for historical builds lacking authoritative metadata.
+  - Worker safely handles `HistoricalFixtureMetadataUnavailable` without exposing internal traces or crashing workers.
+- **End-to-End Metadata Snapshot Team IDs**:
+  - Authoritative `home_team_id` and `away_team_id` from the selected snapshot are propagated to all downstream queries: availability, lineups, standings, team stats, and form.
+  - Provider mapping lookup resolves `ProviderEntityId` using the snapshot's authoritative team IDs with `first_seen_at <= as_of_utc`.
+- **Complete Provider Mapping Provenance**:
+  - Source manifest records all resolved provider entity mappings under `provider_mappings` section with `provider`, `internal_id`, `external_id`, `entity_type`, and `first_seen_at`.
+- **Deterministic Source Manifest Fingerprint**:
+  - Deterministic serialization of the entire source manifest (fixture metadata, evidence snapshots, and provider entity mappings) into canonical JSON, computing a reproducible SHA-256 `source_fingerprint`.
+- **Explicit Freshness Policy Identity & Snapshot**:
+  - Introduced `FreshnessPolicy` dataclass with `freshness_policy_snapshot` dictionary and SHA-256 `freshness_policy_fingerprint`.
+  - Added Alembic migration `0010_m6_3_freshness_policy.py` adding `freshness_policy_fingerprint` to `data_quality_reports` table and updated unique constraint `uq_data_quality_reports_identity` across `(fixture_id, phase, as_of, schema_version, source_fingerprint, policy_fingerprint, freshness_policy_fingerprint)`.
+  - Migration includes clean symmetrical downgrade.
+- **ContextBuildPolicy**:
+  - Unified `QualityPolicy` and `FreshnessPolicy` into `ContextBuildPolicy`.
+  - Computes `build_config_fingerprint` embedded in Celery task idempotency key: `context_build:{fixture_id}:{phase}:{source_fingerprint}:{build_config_fingerprint}`.
+- **Strict Pydantic MatchContext Schema**:
+  - Enforced `ConfigDict(extra="forbid", frozen=True)` across all 13 sections and root `MatchContextV1`.
+- **Full Test & CI Validation**:
+  - All 453 tests passing (357 unit + 96 integration).
+  - Ruff, format, and mypy (118 source files) 100% clean.
+  - Alembic migration lifecycle verified with zero schema drift.
+  - GitHub Actions run `36831445894` passed all 3 jobs on exact remote HEAD `5fb6c604617c7f93117e6d42d623a92082461981`.
+
 ---
 
 # 3. In progress
 
-None. Milestone M6.2 completed, awaiting independent review.
+None. Milestone M6.3 completed, awaiting independent review.
 
 ---
 
-# 4. Acceptance tests passed (actually run, M6.2 state)
+# 4. Acceptance tests passed (actually run, M6.3 state)
 
-- `uv run pytest -q -m "not integration"` → **350 passed, 93 deselected in 4.78s**
+- `uv run pytest -q -m "not integration"` → **357 passed, 96 deselected in 4.62s**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
-  **93 passed, 350 deselected in 26.30s** (all M2/M3/M4/M5 integration tests
+  **96 passed, 357 deselected in 17.78s** (all M2/M3/M4/M5 integration tests
   plus M6 strict anti-leakage, context build idempotency, Celery task execution, API endpoints,
-  metadata authority overrides, policy fingerprints, deterministic odds serialization, provider isolation)
-- Full test suite (`uv run pytest -q`) → **443 passed in 58.71s**
-- `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 174 files formatted)
-- `uv run mypy src` → **Success: no issues found in 116 source files** (strict)
+  metadata authority overrides, policy fingerprints, deterministic odds serialization, provider isolation,
+  and M6.3 HistoricalFixtureMetadataUnavailable refusals)
+- Full test suite (`uv run pytest -q`) → **453 passed in 20.15s**
+- `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 175 files formatted)
+- `uv run mypy src` → **Success: no issues found in 118 source files** (strict)
 - `alembic upgrade head` / `downgrade -1` / `upgrade head` / `alembic check` → clean (No new upgrade operations detected)
 - `docker compose config -q` and `docker compose --profile telegram config -q` (+dev) → OK
+- GitHub Actions CI (run `36831445894` on commit `5fb6c604617c7f93117e6d42d623a92082461981`):
+  - `lint / type / test (Python 3.12)`: SUCCESS (36s)
+  - `integration tests (Postgres + Redis)`: SUCCESS (47s)
+  - `docker compose config validation`: SUCCESS (4s)
 - Secret scan: clean (zero credentials committed; no secrets in tracked files)
 - Determinism check: zero live external API calls, zero LLM calls, zero betting recommendations.
 

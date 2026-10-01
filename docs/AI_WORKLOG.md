@@ -2055,3 +2055,77 @@ next recommended action: Push build/m6, await independent review.
 
 **Next Recommended Action:**
 - Submit `build/m6` for independent review.
+
+---
+
+## 2026-10-01 09:38 (UTC+2) - Antigravity (Gemini 3.8 Flash)
+**Milestone:** M6.3
+**Task:** M6.3 Recovery, Verification, Commit, Remote CI & Review Handoff
+
+**Files Changed:**
+- `src/sports_intelligence/collectors/freshness.py`
+- `src/sports_intelligence/context/builder.py`
+- `src/sports_intelligence/context/errors.py`
+- `src/sports_intelligence/context/models.py`
+- `src/sports_intelligence/context/provenance.py`
+- `src/sports_intelligence/context/selector.py`
+- `src/sports_intelligence/db/migrations/versions/0010_m6_3_freshness_policy.py`
+- `src/sports_intelligence/db/models/context.py`
+- `src/sports_intelligence/quality/engine.py`
+- `src/sports_intelligence/workers/tasks/context.py`
+- `src/sports_intelligence/workers/tasks/pre_match.py`
+- `tests/integration/test_m6_anti_leakage_and_context.py`
+- `tests/unit/context/test_context_schema_and_hash.py`
+- `tests/unit/features/test_features_math.py`
+- `tests/unit/quality/test_quality_config_validation.py`
+- `tests/unit/quality/test_quality_engine.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Behavior Implemented:**
+- Recovered, verified, and committed all missing M6.3 source and test files to resolve remote delivery mismatch on `build/m6`.
+- Refactored `HistoricalFixtureMetadataUnavailable`: raises typed deterministic exception when no `FixtureMetadataSnapshot` exists `<= as_of`. Refuses to persist `FeatureSnapshot`, `DataQualityReport`, or `MatchContext`.
+- Metadata Team IDs: Downstream evidence queries and historical `ProviderEntityId` lookups use snapshot's `home_team_id` and `away_team_id` end-to-end.
+- Provider Mapping Provenance: Captured resolved `ProviderEntityId` lookups (`first_seen_at <= as_of_utc`) into `provider_mappings` section of source manifest.
+- Canonical Source Fingerprint: Deterministic SHA-256 hash of entire source manifest including fixture metadata, evidence snapshots, and provider mappings.
+- FreshnessPolicy & Fingerprint: Dataclass tracking TTLs and canonical fingerprint. Added migration `0010_m6_3_freshness_policy.py` for `data_quality_reports.freshness_policy_fingerprint` and extended unique constraint `uq_data_quality_reports_identity`. Symmetrical downgrade verified.
+- ContextBuildPolicy: Combines `QualityPolicy` and `FreshnessPolicy`, generating deterministic `build_config_fingerprint` embedded in Celery task idempotency key.
+- Strict Pydantic Models: Enforced `ConfigDict(extra="forbid", frozen=True)` across all 13 sections and root `MatchContextV1`.
+
+**Commands/Tests Run:**
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv run pytest -q -m "not integration"`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q -m integration`
+- `uv run pytest -q`
+- `DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check`
+- `docker compose config -q && docker compose --profile telegram config -q`
+- `git push origin build/m6`
+- `gh run view 36831445894`
+
+**Results:**
+- Ruff check: clean (All checks passed!)
+- Ruff format: clean (175 files formatted)
+- Mypy: clean (Success: no issues found in 118 source files)
+- Unit tests: 357 passed in 4.62s
+- Integration tests: 96 passed in 17.78s
+- Full pytest suite: 453 passed in 20.15s
+- Alembic downgrade/upgrade/check: clean, zero schema drift
+- Docker compose: valid
+- GitHub Actions CI (run `36831445894` on `5fb6c604617c7f93117e6d42d623a92082461981`): SUCCESS (all 3 jobs green)
+- Determinism & Security: Zero live external calls, zero credentials, zero LLM calls.
+
+**Known Problems:**
+- None.
+
+**Spec/ADR Deviations:**
+- None.
+
+**Git Commit Hash if Created:**
+- Implementation commit: `5fb6c604617c7f93117e6d42d623a92082461981`
+
+**Next Recommended Action:**
+- Submit `build/m6` for independent review. Do NOT merge M6. Do NOT start M7.
