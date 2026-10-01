@@ -28,16 +28,6 @@ def upgrade() -> None:
         "fixture_metadata_snapshots",
         sa.Column("observed_league_slug", sa.String(length=64), nullable=True),
     )
-    op.execute(
-        """
-        UPDATE fixture_metadata_snapshots fms
-        SET observed_league_name = COALESCE(l.name, 'Unknown'),
-            observed_league_slug = COALESCE(l.slug, 'unknown')
-        FROM leagues l
-        WHERE fms.league_id = l.id
-          AND fms.observed_league_name IS NULL;
-        """
-    )
 
 
 def downgrade() -> None:

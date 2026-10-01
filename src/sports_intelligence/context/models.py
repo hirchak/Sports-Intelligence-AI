@@ -18,8 +18,8 @@ class FixtureIdentitySection(BaseModel):
     venue: str | None = None
     round: str | None = None
     status: str
-    league_slug: str
-    league_name: str
+    league_slug: str | None = None
+    league_name: str | None = None
     home_team_name: str | None = None
     away_team_name: str | None = None
     fixture_metadata_snapshot_id: str | None = None

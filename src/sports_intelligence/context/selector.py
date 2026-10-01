@@ -14,13 +14,11 @@ from sports_intelligence.db.models import (
     AvailabilitySnapshot,
     Fixture,
     FixtureMetadataSnapshot,
-    League,
     LineupSnapshot,
     OddsPrice,
     OddsSnapshotSet,
     ProviderEntityId,
     StandingSnapshot,
-    Team,
     TeamFormSnapshot,
     TeamStatisticsSnapshot,
 )
@@ -50,10 +48,10 @@ class SelectedFixtureInfo:
     venue: str | None
     round: str | None
     status: str
-    league_slug: str
-    league_name: str
-    home_team_name: str | None
-    away_team_name: str | None
+    league_slug: str | None = None
+    league_name: str | None = None
+    home_team_name: str | None = None
+    away_team_name: str | None = None
     home_provider_external_ids: dict[str, str] = field(default_factory=dict)
     away_provider_external_ids: dict[str, str] = field(default_factory=dict)
     fixture_metadata_snapshot_id: uuid.UUID | None = None
@@ -117,18 +115,11 @@ async def select_evidence(
     """
     as_of_utc = as_of.astimezone(UTC) if as_of.tzinfo else as_of.replace(tzinfo=UTC)
 
-    # 1. Fixture Locator (mutable — used ONLY for existence check and league/team name resolution)
-    fix_stmt = (
-        select(Fixture, League, Team)
-        .join(League, Fixture.league_id == League.id)
-        .join(Team, Fixture.home_team_id == Team.id)
-        .where(Fixture.id == fixture_id)
-    )
-    fix_row = (await session.execute(fix_stmt)).first()
-    if fix_row is None:
+    # 1. Fixture Locator (mutable — used ONLY for existence check)
+    fix_stmt = select(Fixture.id).where(Fixture.id == fixture_id)
+    fix_exists = (await session.execute(fix_stmt)).scalar_one_or_none()
+    if fix_exists is None:
         raise ValueError(f"Fixture {fixture_id} not found in database")
-
-    fixture_obj, league_obj, _home_team_obj = fix_row
 
     # 2. Authoritative FixtureMetadataSnapshot <= as_of (MUST exist)
     meta_stmt = (
@@ -159,17 +150,9 @@ async def select_evidence(
     meta_id = meta_snapshot.id
     meta_captured = meta_snapshot.captured_at
 
-    # League display identity is authoritative from FixtureMetadataSnapshot
-    league_name = (
-        meta_snapshot.observed_league_name
-        if meta_snapshot.observed_league_name is not None
-        else (league_obj.name if league_obj else "Unknown")
-    )
-    league_slug = (
-        meta_snapshot.observed_league_slug
-        if meta_snapshot.observed_league_slug is not None
-        else (league_obj.slug if league_obj else "unknown")
-    )
+    # League display identity is authoritative from FixtureMetadataSnapshot (None if not observed)
+    league_name = meta_snapshot.observed_league_name
+    league_slug = meta_snapshot.observed_league_slug
 
     # 3. Resolve provider external IDs using AUTHORITATIVE team IDs from metadata snapshot
     # Explicit deterministic order by: provider ASC, first_seen_at DESC, external_id ASC, id ASC
@@ -235,7 +218,7 @@ async def select_evidence(
     away_mappings = _to_sorted_mapping_records(raw_away_rows)
 
     fixture_info = SelectedFixtureInfo(
-        fixture_id=fixture_obj.id,
+        fixture_id=fixture_id,
         league_id=league_id,
         season_id=season_id,
         home_team_id=home_team_id,

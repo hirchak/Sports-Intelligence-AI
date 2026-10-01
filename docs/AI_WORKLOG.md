@@ -2211,3 +2211,76 @@ next recommended action: Push build/m6, await independent review.
 **Next Recommended Action:**
 - Stage, commit, push to `origin/build/m6`, monitor GitHub Actions CI, and provide handoff report.
 
+---
+
+### 2026-10-01 — Antigravity (Milestone M6.5 Historical-Truthfulness Acceptance Pass)
+
+**Agent/Model:** Antigravity / Gemini 2.5 Pro  
+**Milestone:** M6.5 (Historical-Truthfulness Acceptance Pass on `build/m6`)  
+**Task:** Resolve M6.4 review findings regarding false historical backfill in migration 0011, mutable League fallback in context selector, and missing truthful pre-0011 regression test.
+
+**Files Changed:**
+- `src/sports_intelligence/db/migrations/versions/0011_m6_4_historical_league_metadata.py`
+- `src/sports_intelligence/context/selector.py`
+- `src/sports_intelligence/context/models.py`
+- `src/sports_intelligence/quality/engine.py`
+- `tests/unit/context/test_context_schema_and_hash.py`
+- `tests/integration/test_m6_anti_leakage_and_context.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Behavior Implemented:**
+- Elimination of False Historical Backfill:
+  - Removed SQL `UPDATE` statement in migration 0011 that backfilled pre-existing `fixture_metadata_snapshots` from current mutable `leagues` table at migration time.
+  - Pre-0011 legacy snapshots do not acquire migration-time values; legacy rows retain `NULL` for `observed_league_name` and `observed_league_slug`.
+- Elimination of Mutable League Fallback:
+  - In `select_evidence`, removed fallback to mutable `League` row attributes (`league_obj.name`/`league_obj.slug`) and eliminated placeholder sentinels (`"Unknown"`/`"unknown"`).
+  - Simplified mutable `Fixture` locator to an existence-only check (`select(Fixture.id)`).
+  - When snapshot has no observed league identity, `league_name` and `league_slug` evaluate to `None`.
+- Nullable Display Identity in Models:
+  - Made `SelectedFixtureInfo.league_name`, `SelectedFixtureInfo.league_slug`, and `FixtureIdentitySection.league_name`/`league_slug` nullable (`str | None = None`).
+  - Authoritative `league_id` remains strictly non-null.
+- Truthful Quality & Manifest Handling:
+  - In `evaluate_data_quality`, missing observed league display identity records a structured warning (`"Observed league display identity unavailable in historical metadata snapshot"`) and missing field entry (`field="observed_league_display"`).
+  - Missing display fields do not trigger `fixture_metadata_missing` and do not block `can_predict`.
+  - Manifest records `null` for `observed_league_name` and `observed_league_slug`.
+- Comprehensive Unit & Integration Regression Verification:
+  - Added unit test `test_match_context_with_none_league_display_metadata_serializes_cleanly` verifying `None` display fields serialize cleanly to canonical JSON (`"league_name":null`, `"league_slug":null`) and generate a valid SHA-256 hash.
+  - Added 10-step integration regression test `test_legacy_pre_0011_metadata_snapshot_does_not_acquire_migration_league_values` covering steps A through J: schema 0010 downgrade, legacy insert at T0, migration 0011 upgrade at T1 without backfill, context build between T0 and T1, absent mutable values, truthful provenance, League mutation at T2, and replay reproducibility with matching context hash and source fingerprint.
+
+**Commands/Tests Run:**
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv run pytest -q -m "not integration"`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q -m integration`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q`
+- `DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check`
+- `docker compose config -q && docker compose --profile telegram config -q`
+
+**Results:**
+- Ruff check: clean (All checks passed!)
+- Ruff format: clean (177 files already formatted)
+- Mypy: clean (Success: no issues found in 119 source files)
+- Unit tests: 361 passed in 3.73s (100%)
+- Integration tests: 100 passed in 15.82s (100%)
+- Full pytest suite: 461 passed in 17.65s (100%)
+- Alembic downgrade/upgrade/check: clean, zero schema drift
+- Docker compose: valid
+- Determinism & Security: Zero live external calls, zero credentials, zero LLM calls.
+
+**Known Problems:**
+- None.
+
+**Spec/ADR Deviations:**
+- None.
+
+**Git Commit Hash if Created:**
+- Pending commit and push.
+
+**Next Recommended Action:**
+- Stage, commit, push to `origin/build/m6`, monitor GitHub Actions CI, and provide handoff report.
+
+

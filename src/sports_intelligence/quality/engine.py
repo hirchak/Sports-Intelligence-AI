@@ -320,6 +320,17 @@ def evaluate_data_quality(
         scores["fixture_identity"] = 1.0
     active_weights["fixture_identity"] = w.fixture_identity
 
+    if fix.league_name is None or fix.league_slug is None:
+        warnings.append(
+            "Observed league display identity unavailable in historical metadata snapshot"
+        )
+        missing_fields.append(
+            {
+                "field": "observed_league_display",
+                "reason": "Missing observed league name or slug in metadata snapshot",
+            }
+        )
+
     # 2. Form
     has_home_form = evidence.home_form is not None
     has_away_form = evidence.away_form is not None

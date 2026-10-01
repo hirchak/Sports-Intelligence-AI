@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M6.4 — Acceptance-Fix Pass (AWAITING INDEPENDENT REVIEW)  
+**Current milestone:** M6.5 — Historical-Truthfulness Acceptance Pass (AWAITING INDEPENDENT REVIEW)  
 **Last updated:** 2026-10-01 (Antigravity)  
 **Last known good commit:** fb256ecaf2ca1a97c64f1dba8d491cff6b935c91 (tag v0.6-m5, PR #7 merged into main)
 
@@ -17,11 +17,12 @@ Milestone review verdicts:
 - M6.1 → **FAIL** (reviewed HEAD `08d253fe90883f11456b402563f4065fc4b00072`)
 - M6.2 → **FAIL** (reviewed HEAD `a307096b131b9b59fe01a799a299a26b167477d0`)
 - M6.3 → **FAIL** (reviewed HEAD `2b2dfaa30e84e9cf3a4c509093bf031f722bc6ec`, review findings: mutable league metadata dependency in historical replay, non-deterministic provider mapping order, Pydantic immutability claim discrepancy, Celery task refusal traceback)
-- **M6.4 → COMPLETED, AWAITING INDEPENDENT REVIEW** (branch `build/m6`)
+- M6.4 → **FAIL** (reviewed HEAD `0621aa576aacd21860bd6695a698f3d85082231a`, review findings: false historical backfill in migration 0011 populating pre-existing snapshots from mutable leagues table at migration time; fallback in select_evidence to mutable League attributes and "Unknown" sentinels; missing legacy pre-0011 regression test)
+- **M6.5 → COMPLETED, AWAITING INDEPENDENT REVIEW** (branch `build/m6`)
 
 Phase A: Finalized accepted M5, merged to `main` via PR #7 (`fb256ec`), created and pushed annotated tag `v0.6-m5`, branched `build/m6`.
 
-Phase B: Completed, verified, and validated Milestone M6.4 on `build/m6`.
+Phase B: Completed, verified, and validated Milestone M6.5 on `build/m6`.
 
 Development remains strictly LOCAL ONLY.
 No Hetzner deployment is authorized.
@@ -659,24 +660,46 @@ All review items implemented and independently verified:
   - Fixed migration `0010_m6_3_freshness_policy.py` revision docstring from `cb9a7f960dbe` to `0010`.
   - Migration `0011` verified through `upgrade head` -> `downgrade -1` -> `upgrade head` -> `alembic check` with zero schema drift.
 
+## M6.5 — Historical-Truthfulness Acceptance Pass (branch `build/m6`)
+
+- **Elimination of False Historical Backfill**:
+  - In migration `0011_m6_4_historical_league_metadata.py`, removed the SQL query updating pre-existing `fixture_metadata_snapshots` from current mutable `leagues` table at migration time.
+  - Pre-0011 snapshots do not acquire migration-time values; legacy rows truthfully retain `NULL` for `observed_league_name` and `observed_league_slug`.
+  - Symmetrical downgrade cleanly drops columns with zero data residue.
+- **Elimination of Mutable League Fallback**:
+  - In `select_evidence`, removed all fallbacks to mutable `League` table row attributes (`league_obj.name`/`league_obj.slug`) and eliminated invented string sentinels (`"Unknown"`/`"unknown"`).
+  - Simplified mutable `Fixture` locator to an existence check (`select(Fixture.id)`).
+  - If display league identity is unobserved in historical snapshot, `league_name` and `league_slug` evaluate to `None`.
+- **Display Metadata Nullability**:
+  - Made `SelectedFixtureInfo.league_name`, `SelectedFixtureInfo.league_slug`, and `FixtureIdentitySection.league_name`/`league_slug` nullable (`str | None = None`).
+  - Core `league_id` remains strictly authoritative and non-null.
+- **Truthful Quality & Provenance Reporting**:
+  - In `evaluate_data_quality`, missing observed league display identity records a structured warning (`"Observed league display identity unavailable in historical metadata snapshot"`) and missing field (`field="observed_league_display"`).
+  - Missing display fields do not trigger `fixture_metadata_missing` in `critical_missing` and do not block `can_predict` when core IDs and kickoff are present.
+  - Manifest truthfully records `null` for `observed_league_name` and `observed_league_slug`.
+- **Comprehensive Regression Verification**:
+  - Added unit test `test_match_context_with_none_league_display_metadata_serializes_cleanly` verifying `None` display fields serialize cleanly to canonical JSON (`"league_name":null`) with valid SHA-256 hash.
+  - Added 10-step integration regression test `test_legacy_pre_0011_metadata_snapshot_does_not_acquire_migration_league_values` covering steps A through J: schema 0010 downgrade, legacy insert at T0, migration 0011 upgrade at T1 without backfill, context build between T0 and T1, absent mutable values, truthful provenance, League mutation at T2, and replay reproducibility with matching context hash and source fingerprint.
+
 ---
 
 # 3. In progress
 
-None. Milestone M6.4 completed, awaiting independent review.
+None. Milestone M6.5 completed, awaiting independent review.
 
 ---
 
-# 4. Acceptance tests passed (actually run, M6.4 state)
+# 4. Acceptance tests passed (actually run, M6.5 state)
 
-- `uv run pytest -q -m "not integration"` → **360 passed, 99 deselected in 4.06s**
+- `uv run pytest -q -m "not integration"` → **361 passed, 100 deselected in 3.73s**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
-  **99 passed, 360 deselected in 18.72s** (all M2/M3/M4/M5 integration tests
+  **100 passed, 361 deselected in 15.82s** (all M2/M3/M4/M5 integration tests
   plus M6 strict anti-leakage, context build idempotency, Celery task execution, API endpoints,
   metadata authority overrides, policy fingerprints, deterministic odds serialization, provider isolation,
   M6.3 HistoricalFixtureMetadataUnavailable refusals, M6.4 historical league immutability,
-  M6.4 deterministic provider mapping ordering, and M6.4 Celery task refusal persistence)
-- Full test suite (`uv run pytest -q`) → **459 passed in 19.29s**
+  M6.4 deterministic provider mapping ordering, M6.4 Celery task refusal persistence,
+  and M6.5 pre-0011 legacy snapshot truthful replay without false backfill)
+- Full test suite (`uv run pytest -q`) → **461 passed in 17.65s**
 - `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 177 files formatted)
 - `uv run mypy src` → **Success: no issues found in 119 source files** (strict)
 - `alembic upgrade head` / `downgrade -1` / `upgrade head` / `alembic check` → clean (No new upgrade operations detected)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import uuid
@@ -9,8 +10,10 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from alembic import command
+from alembic.config import Config as AlembicConfig
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 
 from sports_intelligence.api.app import create_app
 from sports_intelligence.collectors.freshness import FreshnessPolicy
@@ -1965,6 +1968,264 @@ async def test_mutable_league_metadata_change_does_not_alter_historical_context_
     assert (
         hashlib.sha256(ctx2.canonical_json().encode("utf-8")).hexdigest() == ctx1_rec.context_hash
     )
+
+
+async def test_legacy_pre_0011_metadata_snapshot_does_not_acquire_migration_league_values(
+    m6_session_factory: Any,
+    alembic_config: AlembicConfig,
+) -> None:
+    """M6.5: Legacy FixtureMetadataSnapshot rows created prior to migration 0011
+    must not acquire current mutable League display values at migration time.
+
+    Test covering steps A through J:
+    A. Downgrade schema to revision 0010 (pre-0011).
+    B. Insert a legacy FixtureMetadataSnapshot row without observed league columns at T0.
+    C. Apply migration 0011 at T1.
+    D. Verify the legacy snapshot row still has observed league columns IS NULL.
+    E. Construct MatchContext for that fixture at an as_of between T0 and T1.
+    F. Verify MatchContext does NOT contain T1 mutable league name/slug.
+    G. Verify league display fields in MatchContext and SelectedFixtureInfo are None,
+       while authoritative league_id is preserved.
+    H. Verify provenance / manifest truthfully records the missing display identity state.
+    I. Mutate the mutable League row at T2.
+    J. Replay at the same historical as_of and verify source fingerprint, context hash,
+       and identity remain identical.
+    """
+    try:
+        # Step A: Downgrade to 0010
+        await asyncio.to_thread(command.downgrade, alembic_config, "0010")
+
+        # Step B: Insert fixture, teams, league, and legacy metadata snapshot at T0
+        t0 = datetime(2026, 8, 20, 10, 0, tzinfo=UTC)
+        kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+        t_as_of = datetime(2026, 8, 21, 12, 0, tzinfo=UTC)
+        meta_id = uuid.uuid4()
+        prov_seen = kickoff - timedelta(days=30)
+
+        async with m6_session_factory() as session:
+            league = League(
+                slug=f"league-{uuid.uuid4().hex[:6]}", name="Premier League", enabled=True
+            )
+            session.add(league)
+            await session.flush()
+            lid = league.id
+
+            season = Season(league_id=lid, name="2026", active=True)
+            session.add(season)
+            await session.flush()
+            sid = season.id
+
+            home_team = Team(name="Home FC", country="England")
+            away_team = Team(name="Away FC", country="England")
+            session.add_all([home_team, away_team])
+            await session.flush()
+            hid, aid = home_team.id, away_team.id
+
+            session.add_all(
+                [
+                    ProviderEntityId(
+                        provider="mock",
+                        entity_type="team",
+                        internal_entity_id=hid,
+                        external_id="101",
+                        first_seen_at=prov_seen,
+                    ),
+                    ProviderEntityId(
+                        provider="mock",
+                        entity_type="team",
+                        internal_entity_id=aid,
+                        external_id="102",
+                        first_seen_at=prov_seen,
+                    ),
+                ]
+            )
+
+            fixture = Fixture(
+                league_id=lid,
+                season_id=sid,
+                home_team_id=hid,
+                away_team_id=aid,
+                kickoff_at=kickoff,
+                status="NS",
+            )
+            session.add(fixture)
+            await session.flush()
+            fid = fixture.id
+
+            # Insert legacy metadata snapshot (schema 0010 lacks observed_league_* columns)
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO fixture_metadata_snapshots (
+                        id, fixture_id, provider, provider_fixture_id, captured_at,
+                        league_id, season_id, home_team_id, away_team_id,
+                        observed_home_team_name, observed_away_team_name,
+                        kickoff_at, venue, round, status, source_version
+                    ) VALUES (
+                        :id, :fixture_id, :provider, :provider_fixture_id, :captured_at,
+                        :league_id, :season_id, :home_team_id, :away_team_id,
+                        :observed_home_team_name, :observed_away_team_name,
+                        :kickoff_at, :venue, :round, :status, :source_version
+                    )
+                    """
+                ),
+                {
+                    "id": meta_id,
+                    "fixture_id": fid,
+                    "provider": "mock",
+                    "provider_fixture_id": f"prov-{uuid.uuid4().hex[:8]}",
+                    "captured_at": t0,
+                    "league_id": lid,
+                    "season_id": sid,
+                    "home_team_id": hid,
+                    "away_team_id": aid,
+                    "observed_home_team_name": "Home FC",
+                    "observed_away_team_name": "Away FC",
+                    "kickoff_at": kickoff,
+                    "venue": "Main Stadium",
+                    "round": "Round 1",
+                    "status": "NS",
+                    "source_version": "v1",
+                },
+            )
+            await session.commit()
+
+        # Step C: Apply migration 0011 at T1
+        await asyncio.to_thread(command.upgrade, alembic_config, "0011")
+
+        # Step D: Verify legacy snapshot still has observed_league_* IS NULL
+        async with m6_session_factory() as session:
+            raw_meta = (
+                await session.execute(
+                    text(
+                        "SELECT observed_league_name, observed_league_slug "
+                        "FROM fixture_metadata_snapshots WHERE id = :id"
+                    ),
+                    {"id": meta_id},
+                )
+            ).first()
+            assert raw_meta is not None
+            assert raw_meta[0] is None
+            assert raw_meta[1] is None
+
+            # Also check ORM
+            meta_orm = await session.get(FixtureMetadataSnapshot, meta_id)
+            assert meta_orm is not None
+            assert meta_orm.observed_league_name is None
+            assert meta_orm.observed_league_slug is None
+
+        # Step E: Construct MatchContext for that fixture at an as_of between T0 and T1
+        policy = QualityPolicy(weights=QualityWeights(form=0.1), min_predict_score=0.65)
+        freshness_policy = FreshnessPolicy(Settings(app_env="mock"))
+        build_policy = ContextBuildPolicy(
+            quality_policy=policy,
+            freshness_policy=freshness_policy,
+            research_enabled=True,
+        )
+
+        async with m6_session_factory() as session:
+            evidence1 = await select_evidence(
+                session,
+                fixture_id=fid,
+                forecast_phase=ForecastPhase.MORNING,
+                as_of=t_as_of,
+            )
+            # Step G verification on SelectedFixtureInfo:
+            assert evidence1.fixture.league_name is None
+            assert evidence1.fixture.league_slug is None
+            assert evidence1.fixture.league_id == lid
+
+            manifest1 = build_source_manifest(evidence1)
+            features1 = build_features(evidence1)
+            quality1 = evaluate_data_quality(
+                evidence1,
+                features1,
+                manifest1,
+                policy=build_policy.quality_policy,
+                freshness_policy=build_policy.freshness_policy,
+            )
+            ctx1 = assemble_match_context_v1(evidence1, features1, quality1, manifest1)
+
+            # Persist records
+            ctx1_rec, qual1_rec, feat1_rec, _ = await build_and_persist_match_context(
+                session,
+                fixture_id=fid,
+                forecast_phase=ForecastPhase.MORNING,
+                as_of=t_as_of,
+                build_policy=build_policy,
+            )
+            await session.commit()
+
+        # Step F: Verify MatchContext does NOT contain T1 mutable league name/slug
+        # Step G: Verify league display fields in MatchContext are None,
+        # while authoritative league_id is preserved
+        assert ctx1.fixture_identity.league_name is None
+        assert ctx1.fixture_identity.league_slug is None
+        assert ctx1.fixture_identity.league_id == str(lid)
+
+        # Step H: Verify provenance / manifest truthfully records the missing display identity state
+        meta_source = feat1_rec.source_manifest_jsonb["sources"]["fixture_metadata"]["details"]
+        assert meta_source["observed_league_name"] is None
+        assert meta_source["observed_league_slug"] is None
+
+        # Quality report should flag missing observed league display as warning/missing_fields
+        assert (
+            "Observed league display identity unavailable in historical metadata snapshot"
+            in qual1_rec.warnings_jsonb
+        )
+        assert any(
+            mf["field"] == "observed_league_display" for mf in qual1_rec.missing_fields_jsonb
+        )
+        assert "fixture_metadata_missing" not in qual1_rec.critical_missing_jsonb
+
+        # Step I: Mutate the mutable League row at T2
+        async with m6_session_factory() as session:
+            await session.execute(
+                update(League)
+                .where(League.id == lid)
+                .values(name="Super Altered League", slug="super-altered-league")
+            )
+            await session.commit()
+
+        # Verify mutation occurred on mutable League table
+        async with m6_session_factory() as session:
+            l_mutated = await session.get(League, lid)
+            assert l_mutated is not None
+            assert l_mutated.name == "Super Altered League"
+            assert l_mutated.slug == "super-altered-league"
+
+        # Step J: Replay at the same historical as_of and verify source fingerprint,
+        # context hash, and identity remain identical
+        async with m6_session_factory() as session:
+            evidence2 = await select_evidence(
+                session,
+                fixture_id=fid,
+                forecast_phase=ForecastPhase.MORNING,
+                as_of=t_as_of,
+            )
+            manifest2 = build_source_manifest(evidence2)
+            features2 = build_features(evidence2)
+            quality2 = evaluate_data_quality(
+                evidence2,
+                features2,
+                manifest2,
+                policy=build_policy.quality_policy,
+                freshness_policy=build_policy.freshness_policy,
+            )
+            ctx2 = assemble_match_context_v1(evidence2, features2, quality2, manifest2)
+
+        assert ctx2.fixture_identity.league_name is None
+        assert ctx2.fixture_identity.league_slug is None
+        assert ctx2.fixture_identity.league_id == str(lid)
+        assert manifest2.source_fingerprint == feat1_rec.source_fingerprint
+        assert (
+            hashlib.sha256(ctx2.canonical_json().encode("utf-8")).hexdigest()
+            == ctx1_rec.context_hash
+        )
+
+    finally:
+        # Guarantee database is restored to head for subsequent tests
+        await asyncio.to_thread(command.upgrade, alembic_config, "head")
 
 
 async def test_provider_mapping_deterministic_selection_and_ordering_across_insertion_orders(

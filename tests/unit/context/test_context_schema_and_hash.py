@@ -551,3 +551,76 @@ def test_provider_mappings_deterministic_canonical_ordering_and_hash() -> None:
         hashlib.sha256(ctx1.canonical_json().encode("utf-8")).hexdigest()
         == hashlib.sha256(ctx2.canonical_json().encode("utf-8")).hexdigest()
     )
+
+
+def test_match_context_with_none_league_display_metadata_serializes_cleanly() -> None:
+    """Historical fixture with no observed league name/slug serializes with nulls and valid hash."""
+    fix_id = uuid.uuid4()
+    l_id = uuid.uuid4()
+    s_id = uuid.uuid4()
+    h_id = uuid.uuid4()
+    a_id = uuid.uuid4()
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+    as_of = kickoff - timedelta(hours=3)
+
+    fix_info = SelectedFixtureInfo(
+        fixture_id=fix_id,
+        league_id=l_id,
+        season_id=s_id,
+        home_team_id=h_id,
+        away_team_id=a_id,
+        kickoff_at=kickoff,
+        venue="Emirates",
+        round="1",
+        status="NS",
+        league_slug=None,
+        league_name=None,
+        home_team_name="Home FC",
+        away_team_name="Away FC",
+        home_provider_mappings=[],
+        away_provider_mappings=[],
+    )
+    meta_snap = FixtureMetadataSnapshot(
+        fixture_id=fix_id,
+        provider="mock",
+        provider_fixture_id="fix-1",
+        captured_at=as_of - timedelta(days=1),
+        league_id=l_id,
+        season_id=s_id,
+        home_team_id=h_id,
+        away_team_id=a_id,
+        observed_home_team_name="Home FC",
+        observed_away_team_name="Away FC",
+        observed_league_name=None,
+        observed_league_slug=None,
+        kickoff_at=kickoff,
+        venue="Emirates",
+        round="1",
+        status="NS",
+        source_version="v1",
+    )
+
+    ev = SelectedEvidence(
+        fixture_id=fix_id,
+        forecast_phase=ForecastPhase.PREMATCH,
+        as_of=as_of,
+        fixture=fix_info,
+        fixture_metadata=meta_snap,
+    )
+    manifest = build_source_manifest(ev)
+    features = build_features(ev)
+    quality = evaluate_data_quality(ev, features, manifest)
+    ctx = assemble_match_context_v1(ev, features, quality, manifest)
+
+    assert ctx.fixture_identity.league_name is None
+    assert ctx.fixture_identity.league_slug is None
+    assert manifest.sources["fixture_metadata"].details["observed_league_name"] is None
+    assert manifest.sources["fixture_metadata"].details["observed_league_slug"] is None
+    assert "observed_league_display" in [f["field"] for f in quality.missing_fields]
+
+    canonical = ctx.canonical_json()
+    assert '"league_name":null' in canonical
+    assert '"league_slug":null' in canonical
+
+    chash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    assert isinstance(chash, str) and len(chash) == 64
