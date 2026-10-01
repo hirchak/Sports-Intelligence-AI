@@ -726,8 +726,8 @@ All review items implemented and independently verified:
 
 # 3. In progress
 
-M8 implementation complete; local gates PASS. Source CI 36935653021 on 9de8030 PASS (all jobs).
-Final scanner cutoff regression/receipt commit must pass exact-head Actions; then STOP for review. M8 is not independently accepted; M9 is not started.
+M8 implementation complete; local gates PASS. Source CI 36936292769 on 7cbf1a1148e162130a25828138f09e99f6963654 PASS (all jobs).
+All M8 code gates passed. Documentation-only closeout must pass final exact-head delivery CI; STOP for review. M8 is not independently accepted; M9 is not started.
 
 Local gates (2026-10-02): **839 unit + 146 integration = 985 full pytest PASS**;
 Ruff/format clean (227 Python files); strict mypy clean (155 source files).
@@ -879,7 +879,8 @@ LLM provider routing:
 
 Branch: `build/m8`. Accepted base/main/tag: `4eff88bcaaac387ec047d50575d25b8135baa567` / `v0.8-m7`.
 Implementation commit: a0c9332d2fca5fb8807d16015a7a331928dccbc4; UTC-test fix: 9de803022600ed761ec3af81c63b9091c47e3230.
-CI 36935653021 on that fix is all-job SUCCESS. Final origin/build/m8 receipt/HEAD is returned at handoff;
+Latest runtime-code HEAD: 7cbf1a1148e162130a25828138f09e99f6963654; CI 36936292769 all-job SUCCESS.
+Final documentation-only origin/build/m8 receipt/HEAD is returned at handoff;
 its Actions workflow must also be all-success. No M8 merge/tag authorized.
 
 ---

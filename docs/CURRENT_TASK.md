@@ -15,7 +15,9 @@ fresh and populated M7 migration cycles/drift; Compose default/dev/Telegram; sec
 Full keyless discovery→M7→result worker→evaluation→API→Telegram transport passes.
 Zero live result/LLM calls; live result provider/new live Telegram interaction unverified.
 
-Last recorded source CI: 36935653021 on 9de803022600ed761ec3af81c63b9091c47e3230 — all jobs SUCCESS.
-Final scanner regression/receipt commit must pass its own exact-head CI before delivery.
+Verified runtime-code HEAD: 7cbf1a1148e162130a25828138f09e99f6963654.
+Source CI: 36936292769 — all 3 jobs SUCCESS (lint/type/unit, integration, Compose).
+Final documentation-only closeout HEAD must pass the same CI; exact delivery receipt is returned
+in the completion message and is authoritative in GitHub Actions / origin/build/m8.
 
-Next: verify final HEAD Actions, then STOP for independent review; no further milestone work.
+Next: STOP for independent review after final exact-head delivery check. No further implementation.

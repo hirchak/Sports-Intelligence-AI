@@ -89,8 +89,10 @@ retain safe ledger/job failure, no unsafe partial settlement. See EVALUATION.md 
   integration/Compose SUCCESS, unit FAIL due to the existing UTC/Warsaw date.today test.
 - Corrected source HEAD 9de803022600ed761ec3af81c63b9091c47e3230: [36935653021](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36935653021),
   **SUCCESS** for lint/type/unit, Postgres/Redis integration, and Compose validation.
-- Final scanner cutoff regression/receipt commit requires its own all-success Actions on exact pushed
-  HEAD; resolve via `gh run list --branch build/m8` and completion receipt. Do not infer final acceptance
-  from the earlier source CI alone.
+- Final runtime-code/scanner HEAD 7cbf1a1148e162130a25828138f09e99f6963654: [36936292769](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36936292769),
+  **all three jobs SUCCESS** (lint/type/unit, integration, Compose). All code/local gates complete.
+- Documentation-only closeout follows; its exact final origin/build/m8 HEAD and CI ID are returned in
+  completion and can be resolved through `gh run list --branch build/m8`. Final delivery still requires
+  all-job SUCCESS on that HEAD. Independent acceptance is not claimed.
 
 Next: exact final HEAD Actions SUCCESS and clean tree, then STOP for independent review only.

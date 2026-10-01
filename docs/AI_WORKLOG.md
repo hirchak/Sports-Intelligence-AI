@@ -2668,3 +2668,22 @@ handoff. Live result provider/new Telegram remain unverified; zero live result/L
 **Spec/ADR deviations:** none beyond ADR 0011; no M9, merge/tag or deployment/Hetzner/Hermes.
 **Git:** implementation a0c9332..., test-fix 9de8030..., both pushed; final scanner/receipt commit follows.
 **Next:** push final scoped commit, verify exact final all-job CI and clean tree; STOP for independent review.
+
+### 2026-10-02 CEST — Codex (M8 code gates complete / independent-review stop)
+
+**Milestone/task:** M8 exact runtime-code CI receipt and documentation-only final closeout.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, append-only AI_WORKLOG.
+**Behavior:** no source/test/schema changes; record final source verification and review stop.
+**Commands/tests:** gh run watch/view 36936292769; final local UTC full 985 tests; Git status/ref checks,
+secret sanity, unchanged accepted M7 migrations. Previous local fresh/populated cycles/Compose verified.
+**Results:** runtime-code HEAD **7cbf1a1148e162130a25828138f09e99f6963654**, CI **36936292769**:
+all 3 jobs SUCCESS — lint/type/unit, Postgres/Redis integration, Docker Compose validation.
+839 unit + 146 integration = 985 local full PASS; exact CI mirrors those suites. Ruff/format/mypy clean;
+migration/Compose/secret checks passed. main and v0.8-m7 still 4eff88bcaaac387ec047d50575d25b8135baa567.
+**Known problems:** no implementation blockers. Live results/new live Telegram unverified; zero live
+result/LLM calls. Closing comparator/cost/crash-recovery limits are explicit in EVALUATION.md.
+**Spec/ADR deviations:** ADR 0011 only; no M9/model promotion/prompt optimization or deployment.
+**Git:** source 7cbf1a1 pushed; documentation-only final commit follows. Its exact HEAD/CI will be verified
+and returned in completion; GitHub Actions and origin/build/m8 provide the canonical final receipt.
+**Next:** final documentation HEAD CI SUCCESS + clean tree, then STOP for independent review.
+M8 NOT merged/tagged; M9 NOT started; zero deployment/Hetzner/SSH/Hermes interaction.
