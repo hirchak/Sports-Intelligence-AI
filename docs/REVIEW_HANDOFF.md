@@ -3,8 +3,8 @@
 **Milestone:** M6.5 — Historical-Truthfulness Acceptance Pass (Elimination of False Historical Backfill & Mutable League Fallback, Truthful Pre-0011 Legacy Replay)
 **Branch:** `build/m6`
 **Base:** `origin/main` (`fb256ecaf2ca1a97c64f1dba8d491cff6b935c91`, tag `v0.6-m5`)
-**Implementation Commit:** Pending commit
-**Remote Status:** Pending push to `origin/build/m6`
+**Implementation Commit:** `86cc3ddcbb7625723ab1fb442cac65c53be46b87`
+**Remote Status:** Pushed to `origin/build/m6` (GitHub Actions CI Run `36837766536` — SUCCESS)
 **Development Phase:** LOCAL DEVELOPMENT ONLY (No Hetzner, no SSH, no Hermes, no deployment, no M7, no LLM calls)
 
 ---
