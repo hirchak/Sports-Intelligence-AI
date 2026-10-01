@@ -716,7 +716,7 @@ All review items implemented and independently verified:
 
 # 3. In progress
 
-M7.1 code accepted by all local gates and CI. Final docs-only handoff CI is pending; then STOP for independent review. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
+M7.1 code and docs are CI verified. STOP for independent review. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
 M6 accepted merge/tag confirmed. M7.1 code CI is green on `07658d8e…`; the final docs-only handoff is also pushed and CI-verified.
 
 ---
@@ -866,13 +866,13 @@ LLM provider routing:
 Branch: `build/m7`; M7.1 code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47`.
 M7.1 CI run `36910780514`: unit/lint/type, integration, Compose all SUCCESS.
 Accepted base/main remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`).
-Final docs-only HEAD CI is verified separately. Do not modify main or merge/tag M7.
+Final docs-only HEAD and CI proof are returned in the completion report. Do not modify main or merge/tag M7.
 
 ---
 
 # 12. Next action
 
-STOP for independent review after final documentation HEAD verification. M8 and deployment remain unauthorized.
+STOP for independent review. M8 and deployment remain unauthorized.
 
 ---
 

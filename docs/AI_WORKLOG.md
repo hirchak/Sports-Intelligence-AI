@@ -2529,3 +2529,18 @@ Ruff/format/mypy clean; Alembic no drift; Compose default/dev/Telegram valid; se
 **Git:** M7.1 code commit `07658d8e9fdd29f0e642447fd1639efb0b08aa47`, pushed. Main stays at accepted M6.
 **Next action:** push this documentation-only review update, verify its exact HEAD CI, then STOP for independent
 review. M7 remains unmerged/untagged; M8 and deployment are not started.
+
+### 2026-10-01 — Codex (M7.1 review handoff CI verified)
+
+**Milestone:** M7.1; branch `build/m7`; code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47`.
+**Task:** Verify remote CI for M7.1 code and documentation-only review handoff.
+**Files changed:** review/current task/implementation status and append-only worklog documentation only.
+**Behavior:** no source behavior changes; records acceptance result and independent-review stop.
+**Commands/tests:** `gh run view 36910780514` for code HEAD and `gh run view 36911401660` for the pushed review handoff HEAD.
+**Results:** both runs SUCCESS on their exact heads; three CI jobs each (lint/type/unit, integration, Docker Compose)
+passed. Local M7.1 full pytest remains 535 unit + 128 integration = 663 passed. Final subsequent docs-only
+push/CI receipt is returned in the completion message.
+**Known problems:** none specific to M7.1; independent review is pending.
+**Spec/ADR deviations:** none. No M8, deployment, schema or source change.
+**Git:** docs-only handoff CI run `36911401660` SUCCESS; branch remains `build/m7`.
+**Next action:** STOP for independent review. M7 is not merged/tagged; M8 not started.

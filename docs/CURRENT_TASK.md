@@ -31,5 +31,5 @@ use Hetzner or interact with Hermes. Remain LOCAL DEVELOPMENT ONLY.
 ## Final state
 
 M7.1 code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47` passed all three CI jobs in run `36910780514`.
-The final pushed documentation-only handoff was also checked by CI; its exact HEAD/run are in the completion report.
+Final docs-only handoff commits are also checked by CI; exact final HEAD/run are in the completion report.
 STOP for independent review. M7 remains unmerged/untagged; M8 is not started.

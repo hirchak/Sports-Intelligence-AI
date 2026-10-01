@@ -1,9 +1,9 @@
 # M7 Review Handoff
 
-**State:** M7.1 local acceptance and source CI passed; final docs-only HEAD CI pending.
+**State:** M7.1 acceptance passed; READY FOR INDEPENDENT REVIEW.
 **M7.1 code HEAD:** `07658d8e9fdd29f0e642447fd1639efb0b08aa47` (pushed).
 **M7.1 code CI:** [36910780514](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36910780514) — all jobs SUCCESS on that exact SHA.
-The final documentation-only HEAD also passed CI; its SHA/run are in the final completion report.
+The exact final pushed HEAD and its CI run are recorded in the completion report; subsequent commits here are documentation only.
 **M7.1 reviewed starting HEAD:** `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
 **Branch:** `build/m7`; **base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a`, `v0.7-m6`.
 **Phase:** LOCAL DEVELOPMENT ONLY. M7 not merged/tagged; M8 not started.
@@ -88,8 +88,7 @@ request protocol, schema, and migrations are unchanged.
 
 Full local acceptance: **535 unit + 128 integration = 663 passed**; Ruff/format/mypy clean; Alembic
 no new operations; Docker Compose default/dev/Telegram valid; secret sanity passed. M7.1 code CI
-`36910780514` is green on HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47`. The pending docs-only
-commit must pass CI on its own exact HEAD. No live LLM calls.
+`36910780514` is green on HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47`. The review/status follow-ups do not change implementation code. No live LLM calls.
 
 
 ## M7.1 M4 canonical 1X2 acceptance (2026-10-01)
