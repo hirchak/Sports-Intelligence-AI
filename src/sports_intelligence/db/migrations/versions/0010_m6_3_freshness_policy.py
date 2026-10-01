@@ -1,6 +1,6 @@
 """M6.3 freshness policy fingerprint
 
-Revision ID: cb9a7f960dbe
+Revision ID: 0010
 Revises: 0009
 Create Date: 2026-09-30 22:48:22.399519
 

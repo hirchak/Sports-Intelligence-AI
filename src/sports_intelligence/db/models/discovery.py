@@ -204,6 +204,8 @@ class FixtureMetadataSnapshot(Base):
     )
     observed_home_team_name: Mapped[str] = mapped_column(String(128), nullable=False)
     observed_away_team_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    observed_league_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    observed_league_slug: Mapped[str | None] = mapped_column(String(64), nullable=True)
     kickoff_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     venue: Mapped[str | None] = mapped_column(String(128), nullable=True)
     round: Mapped[str | None] = mapped_column(String(64), nullable=True)

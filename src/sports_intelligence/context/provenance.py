@@ -53,6 +53,8 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
                 "provider_fixture_id": evidence.fixture_metadata.provider_fixture_id,
                 "source_version": evidence.fixture_metadata.source_version,
                 "league_id": str(evidence.fixture_metadata.league_id),
+                "observed_league_name": evidence.fixture_metadata.observed_league_name,
+                "observed_league_slug": evidence.fixture_metadata.observed_league_slug,
                 "season_id": (
                     str(evidence.fixture_metadata.season_id)
                     if evidence.fixture_metadata.season_id
@@ -60,6 +62,8 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
                 ),
                 "home_team_id": str(evidence.fixture_metadata.home_team_id),
                 "away_team_id": str(evidence.fixture_metadata.away_team_id),
+                "observed_home_team_name": evidence.fixture_metadata.observed_home_team_name,
+                "observed_away_team_name": evidence.fixture_metadata.observed_away_team_name,
                 "status": evidence.fixture_metadata.status,
                 "kickoff_at": evidence.fixture_metadata.kickoff_at.isoformat(),
                 "venue": evidence.fixture_metadata.venue,

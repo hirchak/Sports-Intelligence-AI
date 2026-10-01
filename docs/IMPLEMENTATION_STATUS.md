@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M6.3 — Reproducibility and Historical-Authority Pass (AWAITING INDEPENDENT REVIEW)  
+**Current milestone:** M6.4 — Acceptance-Fix Pass (AWAITING INDEPENDENT REVIEW)  
 **Last updated:** 2026-10-01 (Antigravity)  
 **Last known good commit:** fb256ecaf2ca1a97c64f1dba8d491cff6b935c91 (tag v0.6-m5, PR #7 merged into main)
 
@@ -16,12 +16,12 @@ Milestone review verdicts:
 - M6 → **FAIL** (reviewed HEAD `fff8df75c520696f6c25a14e19ded7b6711e7688`)
 - M6.1 → **FAIL** (reviewed HEAD `08d253fe90883f11456b402563f4065fc4b00072`)
 - M6.2 → **FAIL** (reviewed HEAD `a307096b131b9b59fe01a799a299a26b167477d0`)
-- M6.3 → **FAIL — DELIVERY / REMOTE STATE MISMATCH** (reviewed HEAD `fe8f6145c86e1d5f133d69b1e488aea05b20089f`, missing source changes)
-- **M6.3 (Recovered & Verified) → COMPLETED, AWAITING INDEPENDENT REVIEW** (remote HEAD `5fb6c604617c7f93117e6d42d623a92082461981`, branch `build/m6`)
+- M6.3 → **FAIL** (reviewed HEAD `2b2dfaa30e84e9cf3a4c509093bf031f722bc6ec`, review findings: mutable league metadata dependency in historical replay, non-deterministic provider mapping order, Pydantic immutability claim discrepancy, Celery task refusal traceback)
+- **M6.4 → COMPLETED, AWAITING INDEPENDENT REVIEW** (branch `build/m6`)
 
 Phase A: Finalized accepted M5, merged to `main` via PR #7 (`fb256ec`), created and pushed annotated tag `v0.6-m5`, branched `build/m6`.
 
-Phase B: Fully recovered, verified, committed, pushed, and validated Milestone M6.3 on `build/m6`.
+Phase B: Completed, verified, and validated Milestone M6.4 on `build/m6`.
 
 Development remains strictly LOCAL ONLY.
 No Hetzner deployment is authorized.
@@ -630,31 +630,57 @@ All review items implemented and independently verified:
   - Alembic migration lifecycle verified with zero schema drift.
   - GitHub Actions run `36831445894` passed all 3 jobs on exact remote HEAD `5fb6c604617c7f93117e6d42d623a92082461981`.
 
+## M6.4 — Acceptance-Fix Pass (branch `build/m6`)
+
+- **Historical League Metadata Authority**:
+  - Eliminated dependency on mutable canonical `League.name` and `League.slug` during historical context reconstruction.
+  - Created migration `0011_m6_4_historical_league_metadata.py` adding `observed_league_name` and `observed_league_slug` to `fixture_metadata_snapshots`.
+  - Backfilled existing snapshot records from `leagues` table at migration time; clean symmetrical downgrade drops columns.
+  - Context selector (`select_evidence`) reads league identity directly from `FixtureMetadataSnapshot.observed_league_name` and `observed_league_slug`.
+  - Provenance builder captures observed league name and slug under `fixture_metadata.details`.
+  - Regression verified: mutating `League` row after historical `as_of` leaves historical MatchContext identity, source fingerprint, and context hash 100% identical.
+- **Deterministic Provider-Mapping Selection and Order**:
+  - Query ordering in `select_evidence` explicitly orders by `ProviderEntityId.provider.asc(), ProviderEntityId.first_seen_at.desc(), ProviderEntityId.external_id.asc(), ProviderEntityId.id.asc()`.
+  - When multiple mappings exist for a provider `<= as_of`, deterministically selects the latest `first_seen_at` (tie-broken by `external_id` then `id`). Future mappings (`first_seen_at > as_of`) are excluded.
+  - Mappings in `SelectedFixtureInfo.home_provider_mappings` and `away_provider_mappings` are canonically sorted by `(provider, -first_seen_at.timestamp(), external_id, str(mapping_id))`.
+  - Regression verified: identical logical mappings inserted in opposite orders produce identical `SelectedFixtureInfo`, `source_manifest`, `source_fingerprint`, and `context_hash`.
+- **Pydantic Immutability Claim Audit**:
+  - Audited documentation and test suite regarding immutability guarantees.
+  - Clarified that `ConfigDict(frozen=True)` provides attribute-level freezing (preventing attribute reassignment or adding new attributes), but standard Python mutable containers (e.g. `list.append()`) are not deeply frozen by Pydantic.
+  - Formalized that the authoritative immutability boundary is persistence in PostgreSQL: `match_contexts` rows are immutable historical snapshots.
+  - Added unit test `test_match_context_immutability_attribute_frozen_and_nested_behavior` explicitly demonstrating attribute freeze and documenting deep container behavior.
+- **Celery Task Error Semantics**:
+  - Context build Celery task catches `HistoricalFixtureMetadataUnavailable` specifically.
+  - Logs a structured warning (zero unexpected traceback dumps).
+  - Marks Celery job `FAILED` in the database ledger (`jobs` and `job_attempts`).
+  - Re-raises the exception for Celery worker failure accounting.
+  - Regression verified: no `MatchContextRecord`, `FeatureSnapshot`, or `DataQualityReport` persisted; job recorded as `FAILED` with `error_class="HistoricalFixtureMetadataUnavailable"`.
+- **Migration & Documentation Hygiene**:
+  - Fixed migration `0010_m6_3_freshness_policy.py` revision docstring from `cb9a7f960dbe` to `0010`.
+  - Migration `0011` verified through `upgrade head` -> `downgrade -1` -> `upgrade head` -> `alembic check` with zero schema drift.
+
 ---
 
 # 3. In progress
 
-None. Milestone M6.3 completed, awaiting independent review.
+None. Milestone M6.4 completed, awaiting independent review.
 
 ---
 
-# 4. Acceptance tests passed (actually run, M6.3 state)
+# 4. Acceptance tests passed (actually run, M6.4 state)
 
-- `uv run pytest -q -m "not integration"` → **357 passed, 96 deselected in 4.62s**
+- `uv run pytest -q -m "not integration"` → **360 passed, 99 deselected in 4.06s**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
-  **96 passed, 357 deselected in 17.78s** (all M2/M3/M4/M5 integration tests
+  **99 passed, 360 deselected in 18.72s** (all M2/M3/M4/M5 integration tests
   plus M6 strict anti-leakage, context build idempotency, Celery task execution, API endpoints,
   metadata authority overrides, policy fingerprints, deterministic odds serialization, provider isolation,
-  and M6.3 HistoricalFixtureMetadataUnavailable refusals)
-- Full test suite (`uv run pytest -q`) → **453 passed in 20.15s**
-- `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 175 files formatted)
-- `uv run mypy src` → **Success: no issues found in 118 source files** (strict)
+  M6.3 HistoricalFixtureMetadataUnavailable refusals, M6.4 historical league immutability,
+  M6.4 deterministic provider mapping ordering, and M6.4 Celery task refusal persistence)
+- Full test suite (`uv run pytest -q`) → **459 passed in 19.29s**
+- `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 177 files formatted)
+- `uv run mypy src` → **Success: no issues found in 119 source files** (strict)
 - `alembic upgrade head` / `downgrade -1` / `upgrade head` / `alembic check` → clean (No new upgrade operations detected)
 - `docker compose config -q` and `docker compose --profile telegram config -q` (+dev) → OK
-- GitHub Actions CI (run `36831445894` on commit `5fb6c604617c7f93117e6d42d623a92082461981`):
-  - `lint / type / test (Python 3.12)`: SUCCESS (36s)
-  - `integration tests (Postgres + Redis)`: SUCCESS (47s)
-  - `docker compose config validation`: SUCCESS (4s)
 - Secret scan: clean (zero credentials committed; no secrets in tracked files)
 - Determinism check: zero live external API calls, zero LLM calls, zero betting recommendations.
 

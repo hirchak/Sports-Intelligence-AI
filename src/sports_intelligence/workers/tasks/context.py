@@ -7,6 +7,7 @@ from typing import Any
 
 from sports_intelligence.collectors.freshness import FreshnessPolicy
 from sports_intelligence.context.builder import ContextBuildPolicy, build_and_persist_match_context
+from sports_intelligence.context.errors import HistoricalFixtureMetadataUnavailable
 from sports_intelligence.core.config import Settings, get_settings
 from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.logging import get_logger
@@ -97,6 +98,26 @@ async def _run_build(
             "quality_band": quality_rec.quality_band,
             "can_predict": quality_rec.can_predict,
         }
+    except HistoricalFixtureMetadataUnavailable as exc:
+        logger.warning(
+            "Historical metadata unavailable for fixture %s at %s; failing context build",
+            fixture_id,
+            as_of_iso,
+            extra={"fixture_id": fixture_id, "as_of": as_of_iso, "error": str(exc)},
+        )
+        async with factory() as session:
+            await update_job_status(session, job_id, JobStatus.FAILED)
+            await session.commit()
+
+        await record_job_attempt(
+            factory,
+            job_id=uuid.UUID(job_id),
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            outcome=JobStatus.FAILED.value,
+            error=exc,
+        )
+        raise
     except Exception as exc:
         logger.exception("build_match_context_task failed", extra={"fixture_id": fixture_id})
         async with factory() as session:

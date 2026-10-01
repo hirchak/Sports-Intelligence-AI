@@ -354,3 +354,200 @@ def test_feature_provenance_mapping() -> None:
     assert feat_prov["form"]["home_snapshot_id"] == str(h_form_id)
     assert feat_prov["odds"]["current_snapshot_set_id"] == str(odds_id)
     assert feat_prov["odds"]["previous_snapshot_set_id"] == str(prev_odds_id)
+
+
+def test_match_context_immutability_attribute_frozen_and_nested_behavior() -> None:
+    """Audit and verify MatchContext immutability claims:
+    - Root MatchContextV1 attributes cannot be assigned/reassigned (ConfigDict frozen=True).
+    - Section attributes cannot be assigned/reassigned (ConfigDict frozen=True).
+    - Mutable nested containers (list) can be mutated in-place in local memory,
+      confirming that runtime Pydantic frozen=True enforces attribute-level freeze,
+      while authoritative immutability is guaranteed by PostgreSQL snapshot identity
+      and SHA-256 context hash verification.
+    """
+    import pytest
+    from pydantic import ValidationError
+
+    fix_info = _fixture_info()
+    as_of = fix_info.kickoff_at - timedelta(hours=6)
+    evidence = SelectedEvidence(
+        fixture_id=fix_info.fixture_id,
+        forecast_phase=ForecastPhase.MORNING,
+        as_of=as_of,
+        fixture=fix_info,
+    )
+    manifest = build_source_manifest(evidence)
+    features = build_features(evidence)
+    quality = evaluate_data_quality(evidence, features, manifest)
+    ctx = assemble_match_context_v1(evidence, features, quality, manifest)
+
+    # 1. Attribute assignment on root model raises ValidationError / TypeError
+    with pytest.raises((ValidationError, TypeError)):
+        ctx.fixture_identity = None  # type: ignore[misc]
+
+    # 2. Attribute assignment on nested section raises ValidationError / TypeError
+    with pytest.raises((ValidationError, TypeError)):
+        ctx.fixture_identity.venue = "Mutated Venue"  # type: ignore[misc]
+
+    # 3. In-memory nested list container mutation is standard Python behavior:
+    # Confirms that Pydantic frozen=True is an attribute-level freeze,
+    # not recursive container freeze.
+    initial_mappings_len = len(ctx.fixture_identity.home_provider_mappings)
+    ctx.fixture_identity.home_provider_mappings.append({"provider": "test", "external_id": "999"})
+    assert len(ctx.fixture_identity.home_provider_mappings) == initial_mappings_len + 1
+
+
+def test_league_historical_identity_in_provenance_and_source_fingerprint() -> None:
+    """Historical league display identity is captured in fixture_metadata provenance details
+    and contributes to deterministic source_fingerprint computation."""
+    fix_info = _fixture_info()
+    as_of = fix_info.kickoff_at - timedelta(hours=2)
+
+    meta_snap1 = FixtureMetadataSnapshot(
+        id=uuid.uuid4(),
+        fixture_id=fix_info.fixture_id,
+        provider="api_football",
+        captured_at=as_of - timedelta(days=1),
+        kickoff_at=fix_info.kickoff_at,
+        league_id=fix_info.league_id,
+        home_team_id=fix_info.home_team_id,
+        away_team_id=fix_info.away_team_id,
+        observed_home_team_name="Home Team",
+        observed_away_team_name="Away Team",
+        observed_league_name="Premier League",
+        observed_league_slug="premier-league",
+        status="NS",
+    )
+    ev1 = SelectedEvidence(
+        fixture_id=fix_info.fixture_id,
+        forecast_phase=ForecastPhase.PREMATCH,
+        as_of=as_of,
+        fixture=fix_info,
+        fixture_metadata=meta_snap1,
+    )
+    manifest1 = build_source_manifest(ev1)
+    details1 = manifest1.sources["fixture_metadata"].details
+    assert details1 is not None
+    assert details1["observed_league_name"] == "Premier League"
+    assert details1["observed_league_slug"] == "premier-league"
+
+    # If observed league name differs in an alternative observation, fingerprint must change
+    meta_snap2 = FixtureMetadataSnapshot(
+        id=meta_snap1.id,
+        fixture_id=fix_info.fixture_id,
+        provider="api_football",
+        captured_at=meta_snap1.captured_at,
+        kickoff_at=fix_info.kickoff_at,
+        league_id=fix_info.league_id,
+        home_team_id=fix_info.home_team_id,
+        away_team_id=fix_info.away_team_id,
+        observed_home_team_name="Home Team",
+        observed_away_team_name="Away Team",
+        observed_league_name="Barclays Premier League",
+        observed_league_slug="barclays-pl",
+        status="NS",
+    )
+    ev2 = SelectedEvidence(
+        fixture_id=fix_info.fixture_id,
+        forecast_phase=ForecastPhase.PREMATCH,
+        as_of=as_of,
+        fixture=fix_info,
+        fixture_metadata=meta_snap2,
+    )
+    manifest2 = build_source_manifest(ev2)
+    assert manifest1.source_fingerprint != manifest2.source_fingerprint
+
+
+def test_provider_mappings_deterministic_canonical_ordering_and_hash() -> None:
+    """Canonical ordering of provider mappings yields identical manifest and hash."""
+    from sports_intelligence.context.selector import ProviderMappingRecord
+
+    fix_id = uuid.uuid4()
+    l_id = uuid.uuid4()
+    s_id = uuid.uuid4()
+    h_id = uuid.uuid4()
+    a_id = uuid.uuid4()
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+    as_of = kickoff - timedelta(hours=2)
+
+    map_a = ProviderMappingRecord(
+        provider="api_football",
+        external_id="100",
+        mapping_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        first_seen_at=as_of - timedelta(days=5),
+    )
+    map_b = ProviderMappingRecord(
+        provider="theoddsapi",
+        external_id="200",
+        mapping_id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+        first_seen_at=as_of - timedelta(days=2),
+    )
+
+    # Order 1: [map_a, map_b]
+    fix_info1 = SelectedFixtureInfo(
+        fixture_id=fix_id,
+        league_id=l_id,
+        season_id=s_id,
+        home_team_id=h_id,
+        away_team_id=a_id,
+        kickoff_at=kickoff,
+        venue="Emirates",
+        round="1",
+        status="NS",
+        league_slug="premier-league",
+        league_name="Premier League",
+        home_team_name="Home",
+        away_team_name="Away",
+        home_provider_mappings=[map_a, map_b],
+        away_provider_mappings=[],
+    )
+    ev1 = SelectedEvidence(
+        fixture_id=fix_id,
+        forecast_phase=ForecastPhase.PREMATCH,
+        as_of=as_of,
+        fixture=fix_info1,
+    )
+    man1 = build_source_manifest(ev1)
+    ctx1 = assemble_match_context_v1(
+        ev1, build_features(ev1), evaluate_data_quality(ev1, build_features(ev1), man1), man1
+    )
+
+    # Order 2: [map_b, map_a] sorted canonically using selector sorting rule
+    sorted_maps = sorted(
+        [map_b, map_a],
+        key=lambda m: (m.provider, -m.first_seen_at.timestamp(), m.external_id, str(m.mapping_id)),
+    )
+    fix_info2 = SelectedFixtureInfo(
+        fixture_id=fix_id,
+        league_id=l_id,
+        season_id=s_id,
+        home_team_id=h_id,
+        away_team_id=a_id,
+        kickoff_at=kickoff,
+        venue="Emirates",
+        round="1",
+        status="NS",
+        league_slug="premier-league",
+        league_name="Premier League",
+        home_team_name="Home",
+        away_team_name="Away",
+        home_provider_mappings=sorted_maps,
+        away_provider_mappings=[],
+    )
+    ev2 = SelectedEvidence(
+        fixture_id=fix_id,
+        forecast_phase=ForecastPhase.PREMATCH,
+        as_of=as_of,
+        fixture=fix_info2,
+    )
+    man2 = build_source_manifest(ev2)
+    ctx2 = assemble_match_context_v1(
+        ev2, build_features(ev2), evaluate_data_quality(ev2, build_features(ev2), man2), man2
+    )
+
+    assert man1.source_fingerprint == man2.source_fingerprint
+    assert ctx1.canonical_json() == ctx2.canonical_json()
+    assert (
+        hashlib.sha256(ctx1.canonical_json().encode("utf-8")).hexdigest()
+        == hashlib.sha256(ctx2.canonical_json().encode("utf-8")).hexdigest()
+    )

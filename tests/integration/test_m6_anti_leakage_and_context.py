@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import uuid
 from collections.abc import Iterator
@@ -9,16 +10,19 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 
 from sports_intelligence.api.app import create_app
 from sports_intelligence.collectors.freshness import FreshnessPolicy
 from sports_intelligence.context.builder import (
     ContextBuildPolicy,
+    assemble_match_context_v1,
     build_and_persist_match_context,
 )
 from sports_intelligence.context.errors import HistoricalFixtureMetadataUnavailable
 from sports_intelligence.context.models import MatchContextV1
+from sports_intelligence.context.provenance import build_source_manifest
+from sports_intelligence.context.selector import select_evidence
 from sports_intelligence.core.config import Settings
 from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.phases import ForecastPhase
@@ -47,7 +51,12 @@ from sports_intelligence.db.models import (
     TeamStatisticsSnapshot,
 )
 from sports_intelligence.db.session import create_engine, create_session_factory
-from sports_intelligence.quality.engine import QualityPolicy, QualityWeights
+from sports_intelligence.features.builder import build_features
+from sports_intelligence.quality.engine import (
+    QualityPolicy,
+    QualityWeights,
+    evaluate_data_quality,
+)
 from sports_intelligence.workers.tasks.context import _run_build
 
 requires_services = pytest.mark.skipif(
@@ -154,6 +163,8 @@ async def _seed_test_fixture(
     kickoff_at: datetime,
     create_metadata: bool = True,
     metadata_captured_at: datetime | None = None,
+    home_external_id: str = "101",
+    away_external_id: str = "102",
 ) -> dict[str, uuid.UUID]:
     async with factory() as session:
         league = League(slug=f"league-{uuid.uuid4().hex[:6]}", name="Premier League", enabled=True)
@@ -177,14 +188,14 @@ async def _seed_test_fixture(
                     provider="mock",
                     entity_type="team",
                     internal_entity_id=home_team.id,
-                    external_id="101",
+                    external_id=home_external_id,
                     first_seen_at=prov_seen,
                 ),
                 ProviderEntityId(
                     provider="mock",
                     entity_type="team",
                     internal_entity_id=away_team.id,
-                    external_id="102",
+                    external_id=away_external_id,
                     first_seen_at=prov_seen,
                 ),
             ]
@@ -214,6 +225,8 @@ async def _seed_test_fixture(
                 away_team_id=away_team.id,
                 observed_home_team_name="Home FC",
                 observed_away_team_name="Away FC",
+                observed_league_name=league.name,
+                observed_league_slug=league.slug,
                 kickoff_at=kickoff_at,
                 venue="Main Stadium",
                 round="Round 1",
@@ -1851,3 +1864,278 @@ async def test_freshness_transition_creates_new_context_opportunity_and_dedupes(
         t_stale_dup = datetime(2026, 8, 22, 11, 45, tzinfo=UTC)
         await _try_enqueue_context_build(m6_session_factory, decision, as_of=t_stale_dup)
         assert len(enqueued_jobs) == 2
+
+
+async def test_mutable_league_metadata_change_does_not_alter_historical_context_replay(
+    m6_session_factory: Any,
+) -> None:
+    """Historical MatchContext reconstruction must not depend on mutable current League.name/slug.
+
+    Mutating League row after historical as_of must not change historical MatchContext identity,
+    source fingerprint, or context hash.
+    """
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+    t0_captured = kickoff - timedelta(days=2)
+    as_of = kickoff - timedelta(hours=6)
+
+    ids = await _seed_test_fixture(
+        m6_session_factory,
+        kickoff_at=kickoff,
+        create_metadata=True,
+        metadata_captured_at=t0_captured,
+    )
+    fid = ids["fixture_id"]
+    lid = ids["league_id"]
+
+    # Explicitly verify the metadata snapshot at T0 has observed league name and slug
+    async with m6_session_factory() as session:
+        meta_stmt = select(FixtureMetadataSnapshot).where(FixtureMetadataSnapshot.fixture_id == fid)
+        meta_row = (await session.execute(meta_stmt)).scalar_one()
+        assert meta_row.observed_league_name == "Premier League"
+        assert meta_row.observed_league_slug.startswith("league-")
+        original_slug = meta_row.observed_league_slug
+
+    # 1. Build historical context at T0
+    policy = QualityPolicy(weights=QualityWeights(form=0.1), min_predict_score=0.65)
+    freshness_policy = FreshnessPolicy(Settings(app_env="mock"))
+    build_policy = ContextBuildPolicy(
+        quality_policy=policy,
+        freshness_policy=freshness_policy,
+        research_enabled=True,
+    )
+    async with m6_session_factory() as session:
+        ctx1_rec, qual1_rec, feat1_rec, ctx1 = await build_and_persist_match_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=as_of,
+            build_policy=build_policy,
+        )
+        await session.commit()
+
+    assert ctx1.fixture_identity.league_name == "Premier League"
+    assert ctx1.fixture_identity.league_slug == original_slug
+    assert (
+        feat1_rec.source_manifest_jsonb["sources"]["fixture_metadata"]["details"][
+            "observed_league_name"
+        ]
+        == "Premier League"
+    )
+
+    # 2. Mutate mutable canonical League row in database
+    async with m6_session_factory() as session:
+        await session.execute(
+            update(League)
+            .where(League.id == lid)
+            .values(name="Barclays Premier League", slug="barclays-pl")
+        )
+        await session.commit()
+
+    # Verify League table was actually updated
+    async with m6_session_factory() as session:
+        l_updated = await session.get(League, lid)
+        assert l_updated is not None
+        assert l_updated.name == "Barclays Premier League"
+        assert l_updated.slug == "barclays-pl"
+
+    # 3. Rebuild historical context at the exact same as_of
+    # Select evidence and build context again
+    async with m6_session_factory() as session:
+        evidence2 = await select_evidence(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=as_of,
+        )
+        manifest2 = build_source_manifest(evidence2)
+        features2 = build_features(evidence2)
+        quality2 = evaluate_data_quality(
+            evidence2,
+            features2,
+            manifest2,
+            policy=build_policy.quality_policy,
+            freshness_policy=build_policy.freshness_policy,
+        )
+        ctx2 = assemble_match_context_v1(evidence2, features2, quality2, manifest2)
+
+    # 4. Strict assertions: identity, manifest, source_fingerprint, and context_hash MUST MATCH!
+    assert ctx2.fixture_identity.league_name == "Premier League"
+    assert ctx2.fixture_identity.league_slug == original_slug
+    assert manifest2.source_fingerprint == feat1_rec.source_fingerprint
+    assert (
+        hashlib.sha256(ctx2.canonical_json().encode("utf-8")).hexdigest() == ctx1_rec.context_hash
+    )
+
+
+async def test_provider_mapping_deterministic_selection_and_ordering_across_insertion_orders(
+    m6_session_factory: Any,
+) -> None:
+    """ProviderEntityId query/selection must be deterministic across insertion orders.
+
+    - Multiple mappings for same provider <= as_of deterministically select latest first_seen_at.
+    - Historical cutoff first_seen_at <= as_of is preserved (future mappings excluded).
+    - List ordering of mappings is deterministic across different insertion orders.
+    - Resulting source_manifest, source_fingerprint, and context_hash are identical.
+    """
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+    as_of = kickoff - timedelta(hours=3)
+
+    # We test two fixtures with the same logical team mappings inserted in opposite orders
+    # Fixture 1: Insert mappings in order [M_fut, M_old, M_new, M_other]
+    # Fixture 2: Insert mappings in order [M_other, M_new, M_old, M_fut]
+
+    ids = await _seed_test_fixture(
+        m6_session_factory,
+        kickoff_at=kickoff,
+        create_metadata=True,
+        metadata_captured_at=kickoff - timedelta(days=2),
+    )
+    fid = ids["fixture_id"]
+    hid = ids["home_team_id"]
+
+    fixed_mapping_ids = {
+        ("theoddsapi", "999"): uuid.UUID("11111111-0000-0000-0000-000000000001"),
+        ("theoddsapi", "100"): uuid.UUID("11111111-0000-0000-0000-000000000002"),
+        ("theoddsapi", "200"): uuid.UUID("11111111-0000-0000-0000-000000000003"),
+        ("api_football", "300"): uuid.UUID("11111111-0000-0000-0000-000000000004"),
+    }
+
+    async def _evaluate_mappings(
+        mapping_specs: list[tuple[str, str, datetime]],
+    ) -> tuple[str, str]:
+        # Reset mappings for this team to evaluate specific insertion order
+        async with m6_session_factory() as session:
+            await session.execute(
+                delete(ProviderEntityId).where(ProviderEntityId.internal_entity_id == hid)
+            )
+            for prov, ext_id, seen_at in mapping_specs:
+                session.add(
+                    ProviderEntityId(
+                        id=fixed_mapping_ids[(prov, ext_id)],
+                        provider=prov,
+                        entity_type="team",
+                        internal_entity_id=hid,
+                        external_id=ext_id,
+                        first_seen_at=seen_at,
+                    )
+                )
+            await session.commit()
+
+        async with m6_session_factory() as session:
+            ev = await select_evidence(
+                session,
+                fixture_id=fid,
+                forecast_phase=ForecastPhase.PREMATCH,
+                as_of=as_of,
+            )
+            # Verify latest <= as_of is selected for theoddsapi ("200"), future ("999") excluded
+            assert ev.fixture.home_provider_external_ids["theoddsapi"] == "200"
+            assert ev.fixture.home_provider_external_ids["api_football"] == "300"
+            # Verify future mapping is not in the list
+            ext_ids_in_list = [m.external_id for m in ev.fixture.home_provider_mappings]
+            assert "999" not in ext_ids_in_list
+            assert "200" in ext_ids_in_list
+            assert "100" in ext_ids_in_list
+
+            man = build_source_manifest(ev)
+            feat = build_features(ev)
+            qual = evaluate_data_quality(ev, feat, man)
+            ctx = assemble_match_context_v1(ev, feat, qual, man)
+            chash = hashlib.sha256(ctx.canonical_json().encode("utf-8")).hexdigest()
+            return man.source_fingerprint, chash
+
+    spec_order_1 = [
+        ("theoddsapi", "999", as_of + timedelta(days=1)),  # future
+        ("theoddsapi", "100", as_of - timedelta(days=4)),  # older
+        ("theoddsapi", "200", as_of - timedelta(days=1)),  # newer <= as_of
+        ("api_football", "300", as_of - timedelta(days=3)),
+    ]
+    spec_order_2 = [
+        ("api_football", "300", as_of - timedelta(days=3)),
+        ("theoddsapi", "200", as_of - timedelta(days=1)),  # newer <= as_of
+        ("theoddsapi", "100", as_of - timedelta(days=4)),  # older
+        ("theoddsapi", "999", as_of + timedelta(days=1)),  # future
+    ]
+
+    fp1, hash1 = await _evaluate_mappings(spec_order_1)
+    fp2, hash2 = await _evaluate_mappings(spec_order_2)
+
+    # Canonical order guarantees identical fingerprint and context hash
+    assert fp1 == fp2
+    assert hash1 == hash2
+
+
+async def test_historical_metadata_unavailable_task_and_refusal_persistence(
+    m6_session_factory: Any,
+) -> None:
+    """Historical context build task raises HistoricalFixtureMetadataUnavailable without traceback,
+    marks the Celery job FAILED in the database ledger, and persists zero context records."""
+    kickoff = datetime(2026, 8, 22, 15, 0, tzinfo=UTC)
+    as_of = kickoff - timedelta(hours=6)
+
+    # Seed fixture WITHOUT metadata snapshot
+    ids = await _seed_test_fixture(
+        m6_session_factory,
+        kickoff_at=kickoff,
+        create_metadata=False,
+    )
+    fid = ids["fixture_id"]
+    job_uuid = uuid.uuid4()
+
+    # Pre-create Job record in PENDING status
+    async with m6_session_factory() as session:
+        job = Job(
+            id=job_uuid,
+            job_type="context_build",
+            status=JobStatus.PENDING.value,
+            idempotency_key=f"test_job_{job_uuid.hex}",
+            scheduled_for=as_of,
+        )
+        session.add(job)
+        await session.commit()
+
+    # Running task directly raises HistoricalFixtureMetadataUnavailable
+    with pytest.raises(HistoricalFixtureMetadataUnavailable):
+        await _run_build(
+            str(job_uuid),
+            str(fid),
+            ForecastPhase.MORNING.value,
+            as_of.isoformat(),
+            session_factory=m6_session_factory,
+        )
+
+    # 1. Job must be marked FAILED in jobs table
+    async with m6_session_factory() as session:
+        job_row = await session.get(Job, job_uuid)
+        assert job_row is not None
+        assert job_row.status == JobStatus.FAILED.value
+
+        # 2. Attempt recorded in job_attempts
+        att_stmt = select(JobAttempt).where(JobAttempt.job_id == job_uuid)
+        attempts = (await session.execute(att_stmt)).scalars().all()
+        assert len(attempts) == 1
+        assert attempts[0].status == JobStatus.FAILED.value
+        assert attempts[0].error_class == "HistoricalFixtureMetadataUnavailable"
+
+        # 3. ZERO FeatureSnapshot, DataQualityReport, or MatchContext records persisted
+        feat_cnt = (
+            await session.execute(
+                select(func.count(FeatureSnapshot.id)).where(FeatureSnapshot.fixture_id == fid)
+            )
+        ).scalar_one()
+        qual_cnt = (
+            await session.execute(
+                select(func.count(DataQualityReport.id)).where(DataQualityReport.fixture_id == fid)
+            )
+        ).scalar_one()
+        ctx_cnt = (
+            await session.execute(
+                select(func.count(MatchContextRecord.id)).where(
+                    MatchContextRecord.fixture_id == fid
+                )
+            )
+        ).scalar_one()
+
+        assert feat_cnt == 0
+        assert qual_cnt == 0
+        assert ctx_cnt == 0

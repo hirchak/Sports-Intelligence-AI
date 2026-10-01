@@ -1,27 +1,29 @@
 # Current Task
 
-**Task:** M6.3 Focused Reproducibility and Historical-Authority Pass (Recovery, Verification, CI & Documentation)
-**Status:** COMPLETE (Awaiting Independent Review)
+**Task:** M6.4 Acceptance-Fix Pass (Historical League Authority, Deterministic Provider Mappings, Immutability Audit, Task Semantics)
+**Status:** COMPLETED — VERIFIED LOCALLY, READY FOR COMMIT & PUSH
 **Branch:** `build/m6`
 **Base:** `origin/main` (`fb256ecaf2ca1a97c64f1dba8d491cff6b935c91`, tag `v0.6-m5`)
-**Implementation Commit:** `5fb6c604617c7f93117e6d42d623a92082461981`
-**GitHub Actions Run:** `36831445894` (SUCCESS)
 
 ## Description
-Recovered, verified, committed, pushed, and validated all M6.3 reproducibility and historical-authority implementation files on `build/m6`. Resolved the remote delivery mismatch from `fe8f6145c86e1d5f133d69b1e488aea05b20089f`.
+Perform a narrowly scoped M6.4 acceptance-fix pass resolving review findings:
+1. Historical League Metadata Authority: eliminated dependence on mutable `League.slug` and `League.name` for historical MatchContext replay by capturing `observed_league_name` and `observed_league_slug` on `FixtureMetadataSnapshot` via migration 0011.
+2. Deterministic Provider Mapping Selection and Order: explicit deterministic query ordering (`provider.asc(), first_seen_at.desc(), external_id.asc(), id.asc()`), latest `<= as_of` selection per provider, and canonical sort ordering in `SelectedFixtureInfo`, `source_manifest`, and `MatchContext`.
+3. MatchContext Immutability Audit: reconciled documentation and test suite regarding attribute-level Pydantic freeze vs deep nested container immutability, clarifying that PostgreSQL immutable snapshots (`match_contexts`) form the authoritative boundary. Added test `test_match_context_immutability_attribute_frozen_and_nested_behavior`.
+4. Celery Task Error Semantics: `HistoricalFixtureMetadataUnavailable` is logged cleanly as a warning with structured metadata (zero unhandled tracebacks) while marking Celery job `FAILED` in the database ledger (`jobs` and `job_attempts`) and re-raising for worker accounting.
+5. Migration & Doc Hygiene: fixed migration 0010 revision docstring, created migration 0011 with clean backfill and symmetrical downgrade, zero Alembic drift.
 
-## Outcomes
-- **Historical Fixture Metadata Authority**: Context builder raises `HistoricalFixtureMetadataUnavailable` when no `FixtureMetadataSnapshot` exists `<= as_of`. No fallback to mutable canonical `Fixture` metadata. Refuses to persist incomplete/speculative `FeatureSnapshot`, `DataQualityReport`, or `MatchContext`.
-- **End-to-End Metadata Team IDs**: All downstream evidence selection (provider entity mappings, standings, team stats, form, availability, lineups) strictly uses `fixture_info.home_team_id` and `fixture_info.away_team_id` from the snapshot.
-- **Provider Mapping Provenance**: Added `provider_mappings` section to the source manifest capturing provider entity lookups evaluated historically (`first_seen_at <= as_of_utc`).
-- **Deterministic Source Manifest Fingerprint**: Canonical SHA-256 fingerprint generated from the complete source manifest (fixture metadata, evidence snapshots, provider mappings).
-- **Explicit Freshness Policy & Fingerprint**: Introduced `FreshnessPolicy` dataclass with `freshness_policy_snapshot` and deterministic SHA-256 `freshness_policy_fingerprint`. Persisted in `data_quality_reports.freshness_policy_fingerprint` via migration 0010.
-- **ContextBuildPolicy**: Combines `QualityPolicy` and `FreshnessPolicy`, producing a deterministic `build_config_fingerprint` embedded in Celery task idempotency keys.
-- **Strict Pydantic MatchContext Schema**: Enforced `ConfigDict(extra="forbid", frozen=True)` across all 13 sections and root `MatchContextV1`.
-- **Full Verification**: 357 unit tests, 96 integration tests, 453 total pytest passing. Ruff lint and format clean. Mypy 118 source files clean. Alembic upgrade/downgrade/check verified with zero schema drift. Docker compose config valid. GitHub Actions run 36831445894 succeeded 100%.
+## Verification
+- Unit tests: 360 passed (100%)
+- Integration tests: 99 passed (100%)
+- Total tests: 459 passed (100%)
+- Ruff lint & format: clean
+- Mypy (119 files): clean
+- Alembic migration check: clean (0 drift)
+- Docker Compose validation: clean
 
 ## Next Steps
-- Await independent review of M6.3.
-- DO NOT merge M6 into `main`.
-- DO NOT start M7.
-- Development remains strictly LOCAL ONLY.
+- Stage and commit M6.4 changes.
+- Push to `origin/build/m6`.
+- Monitor GitHub Actions CI until green on exact remote HEAD.
+- Do NOT merge M6. Do NOT start M7. Development remains LOCAL ONLY.

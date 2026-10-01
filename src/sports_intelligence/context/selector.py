@@ -158,34 +158,81 @@ async def select_evidence(
     away_name = meta_snapshot.observed_away_team_name
     meta_id = meta_snapshot.id
     meta_captured = meta_snapshot.captured_at
-    meta_league = await session.get(League, meta_snapshot.league_id)
-    league_slug = meta_league.slug if meta_league else league_obj.slug
-    league_name = meta_league.name if meta_league else league_obj.name
+
+    # League display identity is authoritative from FixtureMetadataSnapshot
+    league_name = (
+        meta_snapshot.observed_league_name
+        if meta_snapshot.observed_league_name is not None
+        else (league_obj.name if league_obj else "Unknown")
+    )
+    league_slug = (
+        meta_snapshot.observed_league_slug
+        if meta_snapshot.observed_league_slug is not None
+        else (league_obj.slug if league_obj else "unknown")
+    )
 
     # 3. Resolve provider external IDs using AUTHORITATIVE team IDs from metadata snapshot
-    ext_stmt = select(ProviderEntityId).where(
-        ProviderEntityId.entity_type == "team",
-        ProviderEntityId.internal_entity_id.in_([home_team_id, away_team_id]),
-        ProviderEntityId.first_seen_at <= as_of_utc,
+    # Explicit deterministic order by: provider ASC, first_seen_at DESC, external_id ASC, id ASC
+    ext_stmt = (
+        select(ProviderEntityId)
+        .where(
+            ProviderEntityId.entity_type == "team",
+            ProviderEntityId.internal_entity_id.in_([home_team_id, away_team_id]),
+            ProviderEntityId.first_seen_at <= as_of_utc,
+        )
+        .order_by(
+            ProviderEntityId.provider.asc(),
+            ProviderEntityId.first_seen_at.desc(),
+            ProviderEntityId.external_id.asc(),
+            ProviderEntityId.id.asc(),
+        )
     )
     ext_rows = (await session.execute(ext_stmt)).scalars().all()
-    home_by_prov: dict[str, str] = {}
-    away_by_prov: dict[str, str] = {}
-    home_mappings: list[ProviderMappingRecord] = []
-    away_mappings: list[ProviderMappingRecord] = []
+
+    raw_home_rows: list[ProviderEntityId] = []
+    raw_away_rows: list[ProviderEntityId] = []
     for e in ext_rows:
-        mapping_rec = ProviderMappingRecord(
-            provider=e.provider,
-            external_id=str(e.external_id),
-            mapping_id=e.id,
-            first_seen_at=e.first_seen_at,
-        )
         if e.internal_entity_id == home_team_id:
-            home_by_prov[e.provider] = str(e.external_id)
-            home_mappings.append(mapping_rec)
+            raw_home_rows.append(e)
         elif e.internal_entity_id == away_team_id:
+            raw_away_rows.append(e)
+
+    # Deterministic mapping selection for multiple mappings per provider:
+    # First mapping encountered has latest first_seen_at <= as_of_utc
+    # (tie-broken deterministically by external_id, then id)
+    home_by_prov: dict[str, str] = {}
+    for e in raw_home_rows:
+        if e.provider not in home_by_prov:
+            home_by_prov[e.provider] = str(e.external_id)
+
+    away_by_prov: dict[str, str] = {}
+    for e in raw_away_rows:
+        if e.provider not in away_by_prov:
             away_by_prov[e.provider] = str(e.external_id)
-            away_mappings.append(mapping_rec)
+
+    def _to_sorted_mapping_records(rows: list[ProviderEntityId]) -> list[ProviderMappingRecord]:
+        records = [
+            ProviderMappingRecord(
+                provider=r.provider,
+                external_id=str(r.external_id),
+                mapping_id=r.id,
+                first_seen_at=r.first_seen_at,
+            )
+            for r in rows
+        ]
+        # Canonical order: provider ASC, first_seen_at DESC, external_id ASC, mapping_id ASC
+        records.sort(
+            key=lambda m: (
+                m.provider,
+                -m.first_seen_at.timestamp(),
+                m.external_id,
+                str(m.mapping_id),
+            )
+        )
+        return records
+
+    home_mappings = _to_sorted_mapping_records(raw_home_rows)
+    away_mappings = _to_sorted_mapping_records(raw_away_rows)
 
     fixture_info = SelectedFixtureInfo(
         fixture_id=fixture_obj.id,

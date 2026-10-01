@@ -2129,3 +2129,85 @@ next recommended action: Push build/m6, await independent review.
 
 **Next Recommended Action:**
 - Submit `build/m6` for independent review. Do NOT merge M6. Do NOT start M7.
+
+---
+
+## 2026-10-01 10:10 (UTC+2) - Antigravity (Gemini 3.8 Flash)
+**Milestone:** M6.4
+**Task:** M6.4 Acceptance-Fix Pass (Historical League Authority, Deterministic Provider Mappings, Immutability Audit, Task Semantics)
+
+**Files Changed:**
+- `src/sports_intelligence/context/selector.py`
+- `src/sports_intelligence/context/provenance.py`
+- `src/sports_intelligence/db/models/discovery.py`
+- `src/sports_intelligence/db/repositories/discovery.py`
+- `src/sports_intelligence/pipelines/discover_fixtures.py`
+- `src/sports_intelligence/workers/tasks/context.py`
+- `src/sports_intelligence/db/migrations/versions/0010_m6_3_freshness_policy.py`
+- `src/sports_intelligence/db/migrations/versions/0011_m6_4_historical_league_metadata.py`
+- `tests/unit/context/test_context_schema_and_hash.py`
+- `tests/integration/test_m6_anti_leakage_and_context.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Behavior Implemented:**
+- Historical League Metadata Authority:
+  - Added migration `0011_m6_4_historical_league_metadata.py` adding `observed_league_name` and `observed_league_slug` to `fixture_metadata_snapshots` with migration-time backfill from `leagues` table and symmetrical downgrade.
+  - Updated `record_fixture_metadata_snapshot` repository method and `discover_fixtures` pipeline to record observed league identity.
+  - Refactored `select_evidence` to read league identity directly from `FixtureMetadataSnapshot.observed_league_name` and `observed_league_slug`, eliminating reliance on mutable canonical `League` table.
+  - Included `observed_league_name` and `observed_league_slug` in source manifest `fixture_metadata.details`.
+  - Added regression test demonstrating mutating `League` row does not alter historical MatchContext identity, source fingerprint, or context hash.
+- Deterministic Provider-Mapping Selection and Order:
+  - Query ordering in `select_evidence` explicitly orders by `ProviderEntityId.provider.asc(), ProviderEntityId.first_seen_at.desc(), ProviderEntityId.external_id.asc(), ProviderEntityId.id.asc()`.
+  - Deterministically selects latest mapping `<= as_of` per provider; excludes future mappings (`first_seen_at > as_of`).
+  - Canonical sort on `SelectedFixtureInfo` mapping lists: `(provider, -first_seen_at.timestamp(), external_id, str(mapping_id))`.
+  - Added unit and integration tests verifying identical source manifest, source fingerprint, and context hash across arbitrary insertion orders.
+- Pydantic Immutability Claim Audit:
+  - Audited documentation and test suite regarding immutability guarantees.
+  - Clarified that `ConfigDict(frozen=True)` provides attribute-level freezing, while mutable Python collections inside models are not deeply frozen.
+  - Reaffirmed that the authoritative immutability boundary is persistence in PostgreSQL (`match_contexts` table).
+  - Added unit test `test_match_context_immutability_attribute_frozen_and_nested_behavior`.
+- Celery Task Error Semantics:
+  - Handled `HistoricalFixtureMetadataUnavailable` cleanly in context Celery task.
+  - Logs structured warning with zero unexpected traceback dumps.
+  - Marks Celery job `FAILED` in database ledger (`jobs` and `job_attempts`) and re-raises exception for worker failure accounting.
+  - Added integration test verifying clean logging, ledger failure persistence, and zero context persistence.
+- Migration & Documentation Hygiene:
+  - Fixed migration `0010_m6_3_freshness_policy.py` revision docstring from `cb9a7f960dbe` to `0010`.
+  - Migration `0011` verified through `upgrade head` -> `downgrade -1` -> `upgrade head` -> `alembic check` with zero schema drift.
+
+**Commands/Tests Run:**
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv run pytest -q -m "not integration"`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q -m integration`
+- `uv run pytest -q`
+- `DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check`
+- `docker compose config -q && docker compose --profile telegram config -q`
+
+**Results:**
+- Ruff check: clean (All checks passed!)
+- Ruff format: clean (177 files already formatted)
+- Mypy: clean (Success: no issues found in 119 source files)
+- Unit tests: 360 passed in 4.06s
+- Integration tests: 99 passed in 18.72s
+- Full pytest suite: 459 passed in 19.29s
+- Alembic downgrade/upgrade/check: clean, zero schema drift
+- Docker compose: valid
+- Determinism & Security: Zero live external calls, zero credentials, zero LLM calls.
+
+**Known Problems:**
+- None.
+
+**Spec/ADR Deviations:**
+- None.
+
+**Git Commit Hash if Created:**
+- Implementation commit: `cedf481ca8839714b82b0dfaf75bab33023e32a8`
+
+**Next Recommended Action:**
+- Stage, commit, push to `origin/build/m6`, monitor GitHub Actions CI, and provide handoff report.
+

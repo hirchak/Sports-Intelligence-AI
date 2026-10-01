@@ -208,6 +208,8 @@ class FixtureDiscoveryService:
                     away_team_id=away_team_id,
                     observed_home_team_name=fixture.home_team_name or "",
                     observed_away_team_name=fixture.away_team_name or "",
+                    observed_league_name=entry.name,
+                    observed_league_slug=entry.slug,
                     kickoff_at=fixture.kickoff_utc,
                     venue=fixture.venue,
                     round_name=fixture.round,
