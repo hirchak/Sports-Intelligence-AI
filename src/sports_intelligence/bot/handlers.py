@@ -37,6 +37,7 @@ from sports_intelligence.bot.menu import (
     find_menu_keyboard,
     main_menu_keyboard,
 )
+from sports_intelligence.bot.predictions import fixture_prediction_keyboard
 from sports_intelligence.bot.strings import (
     FIXTURE_NOT_FOUND,
     HELP_TEXT,
@@ -56,7 +57,7 @@ logger = get_logger(__name__)
 
 router = Router()
 
-NOT_AVAILABLE_COMMANDS = ("predictions", "stats", "evaluate", "improvements")
+NOT_AVAILABLE_COMMANDS = ("stats", "evaluate", "improvements")
 
 
 @router.message(CommandStart())
@@ -249,7 +250,7 @@ async def fixture_callback_handler(callback: CallbackQuery, context: AppContext)
         callback,
         context,
         render_fixture_detail(fixture, context.settings.app_timezone),
-        reply_markup=back_to_main_keyboard(),
+        reply_markup=fixture_prediction_keyboard(fixture.id),
     )
 
 
@@ -339,7 +340,7 @@ async def _send_fixture_detail(chat_id: int, context: AppContext, fixture_id: uu
     await context.transport.send_text(
         chat_id,
         render_fixture_detail(fixture, context.settings.app_timezone),
-        reply_markup=back_to_main_keyboard(),
+        reply_markup=fixture_prediction_keyboard(fixture.id),
     )
 
 

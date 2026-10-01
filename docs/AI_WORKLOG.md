@@ -2340,3 +2340,57 @@ next recommended action: Push build/m6, await independent review.
 
 
 
+
+---
+
+### 2026-10-01 — Codex (M7 implementation checkpoint)
+
+**Milestone:** M7, `build/m7`; accepted base `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6`.
+**Task:** Implement binding user scope preserved in `docs/M7_SCOPE.md`.
+**Files changed:** prediction contracts/config/identity/projection/router/engine/baselines/service/telemetry;
+LLM providers; ranking; DB models and migration 0012; API; worker/context completion hook;
+Telegram thin UI; prompt/config/runtime packaging; unit/integration tests; current-state docs.
+**Behavior:** separate forecast and price comparison; all 12 probabilities; one repair globally;
+configured fallback/retries/budgets; immutable prompt/config snapshots at enqueue; semantic reuse
+and explicit rerun token; separate baselines; primary/challenger and with/without odds;
+DB-loaded jobs on llm queue, persisted read UI.
+**Commands/tests:** Ruff/mypy during implementation; M7 unit/provider contracts;
+M7 Postgres/Redis integration; empty `sports_intel_m7_test` upgraded through 0012.
+**Results:** 149 new unit/HTTP-contract tests passed; 21 new integration tests passed including
+keyless discovery→collectors→M6 context→MockLLM→API→Telegram fake transport.
+Full repository gates, migration cycle and exact remote CI still pending.
+**Known problems:** final hardening/coverage/docs and complete gates remain; no live LLM integration verified.
+**Spec/ADR deviations:** existing PREMATCH phase retained; DC benchmark derived from same-bookmaker
+captured 1X2 because overlapping outcomes must not normalize to sum 1; WITHOUT_ODDS conservatively
+masks arbitrary research text/quality details to avoid market leakage. Go runtime adapter disabled
+by default pending permitted-use configuration; current docs describe coding-agent traffic.
+**Git commit:** not created yet; changes understood and scoped to M7.
+**Next action:** final hardening, full local gates, documented handoff, commit/push build/m7 and exact-head CI;
+then STOP for independent review. No merge/tag, M8, deployment, Hetzner or Hermes.
+
+---
+
+### 2026-10-01 — Codex (M7 local verification and review preparation)
+
+**Milestone:** M7, build/m7, accepted base/main `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / v0.7-m6.
+**Task:** Complete implementation, integrity hardening, all local quality gates and handoff.
+**Files changed:** all M7 implementation/test files listed in Git diff; runtime docs, ADR 0010,
+.env.example, Docker prompt packaging, CI Telegram-profile validation, Makefile Redis db15 isolation.
+**Behavior:** complete scoped forecasting layer, strict bounded repair/fallback, actual identity and telemetry,
+configurable float threshold tolerance, frozen config/context checks, automatic scanner→context→prediction
+integration, immutable reruns and thin Russian Telegram. No M8/settlement/evaluation/ensembles/staking.
+**Commands/tests:** uv run ruff check .; ruff format --check .; mypy src; unit, integration and full pytest;
+fresh upgrade and populated M6→M7 regression; Alembic downgrade -1/upgrade/check; Compose default/Telegram
+validation; Git diff hygiene; secret sanity of working files and Git history (values never printed).
+**Results:** 531 unit, 128 integration, 659 total; Ruff/format clean (208 files), strict mypy clean (142 source
+files); migration zero drift and M6 content/hash preservation; Compose valid; secret scan clean.
+Keyless discovery→collectors→MatchContext→MockLLM→API→Telegram transport passed; actual scanner completion
+and duplicate scan deduplication verified; real isolated Redis broker has only job/run UUID payloads.
+**Known problems/limitations:** real runtime providers and new live Telegram flow not smoke-tested;
+no LLM provider/model/credentials locally configured, zero real LLM calls. Poisson uncalibrated/unadjusted;
+WITHOUT_ODDS also removes research free text; crash/lost-delivery recovery needs inspection/explicit rerun.
+**Spec/ADR deviations:** ADR 0010 documents scoped choices; PREMATCH existing enum retained; DC uses
+same-bookmaker captured 1X2. No changes to accepted M0–M6 migration history.
+**Git commit:** pending coherent implementation commit; exact source commit and CI recorded next.
+**Next action:** commit/push build/m7, verify exact remote HEAD Actions, then stop for independent review.
+Zero deployment, Hetzner, SSH or Hermes interaction; main unchanged; no merge/tag of M7 or M8 work.

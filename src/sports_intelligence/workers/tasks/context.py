@@ -75,6 +75,13 @@ async def _run_build(
                 build_policy=build_policy,
             )
 
+        # Canonical context completion is the only automatic prediction trigger.
+        # Errors leave context evidence intact; retrying the context job deduplicates the run.
+        from sports_intelligence.predictions.service import automatic_prediction
+
+        async with factory() as session:
+            await automatic_prediction(session, context_rec, resolved_settings)
+
         async with factory() as session:
             await update_job_status(session, job_id, JobStatus.SUCCEEDED)
             await session.commit()

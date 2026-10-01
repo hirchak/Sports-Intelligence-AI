@@ -1,10 +1,10 @@
 # Implementation Status
 
-**Project:** Sports Intelligence AI  
-**Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext (PASS / ACCEPTED; PREPARING MERGE)  
-**Last updated:** 2026-10-01 (Antigravity)  
-**Last known good commit:** fb256ecaf2ca1a97c64f1dba8d491cff6b935c91 (tag v0.6-m5, PR #7 merged into main)
+**Project:** Sports Intelligence AI
+**Development phase:** LOCAL DEVELOPMENT ONLY
+**Current milestone:** M7 — Prediction Engine / Model Router / Baselines / Ranking (LOCAL VERIFIED; REMOTE CI PENDING)
+**Last updated:** 2026-10-01 (Codex)
+**Last known good commit:** 11b6e782ab7256607992b70cc0d0dee4ebe92a3a (tag v0.7-m6, PR #8 merged into main)
 
 ---
 
@@ -20,16 +20,13 @@ Milestone review verdicts:
 - M6.4 → **FAIL** (reviewed HEAD `0621aa576aacd21860bd6695a698f3d85082231a`, review findings: false historical backfill in migration 0011 populating pre-existing snapshots from mutable leagues table at migration time; fallback in select_evidence to mutable League attributes and "Unknown" sentinels; missing legacy pre-0011 regression test)
 - M6.5 → **PASS / ACCEPTED** (pre-merge HEAD `cec7210cf440b9cc06c040611e477cfed9ad5472`, implementation `86cc3ddcbb7625723ab1fb442cac65c53be46b87`, CI run `36837924850`)
 - **M6 overall → PASS / ACCEPTED** (branch `build/m6`)
-- **M7 → NOT STARTED**
+- **M7 → IN PROGRESS**, authorized scope: `docs/M7_SCOPE.md`; independent review required before merge.
 
-Phase A: Finalized accepted M5, merged to `main` via PR #7 (`fb256ec`), created and pushed annotated tag `v0.6-m5`, branched `build/m6`.
-
-Phase B: Completed, verified, and validated Milestone M6 on `build/m6`. M6 independently reviewed and ACCEPTED. Finalizing docs, merging to `main`, tagging `v0.7-m6`, and preparing `build/m7` branch.
-
-Development remains strictly LOCAL ONLY.
-No Hetzner deployment is authorized.
-No Hermes access/dependency is authorized.
-Zero LLM calls, zero predictions, zero ranking, zero betting recommendations.
+Accepted M6 is merged into `origin/main` at `11b6e782ab7256607992b70cc0d0dee4ebe92a3a`, tagged `v0.7-m6`.
+Verified local/remote `build/m7` starts at exactly that commit with a clean tree.
+M7 implementation authorized by `docs/M7_SCOPE.md`; old review failures below remain historical evidence.
+LOCAL DEVELOPMENT ONLY. No M8, merge/tag of M7, deployment, Hetzner or Hermes interaction.
+M7 local gates passed (531 unit, 128 integration, 659 total); exact remote CI pending.
 
 
 ---
@@ -685,9 +682,30 @@ All review items implemented and independently verified:
 
 ---
 
+## M7 — LLM prediction, routing, baselines and deterministic ranking
+
+- Provider-independent Mock/OpenAI-compatible/OpenAI/MiniMax/OpenCode Go HTTP architecture;
+  structured JSON/Pydantic, explicit credentials, low supported sampling, bounded retries and one repair globally.
+- Deterministic routes/capabilities/health/fallback with actual model/usage/request metadata persisted.
+- Versioned prompt/config/policy hashes frozen at enqueue; semantic reuse and explicit immutable reruns.
+- All 12 V1 selections, compact grounded evidence, abstention vs valid NO_BET, no ensembles.
+- Separate captured no-vig baseline and unadjusted independent Poisson with truthful missing inputs/limits.
+- PRIMARY/CHALLENGER and WITH/WITHOUT_ODDS; conservative masking removes research free text too.
+- Deterministic filters, stable rank, exact odds snapshot/time, all considered reasons persisted.
+- Migration 0012 adds seven M7 tables; existing ledger and Job/JobAttempt semantics retained.
+- Analyze API queues llm jobs; list/detail endpoints and thin Russian Telegram screens read DB-backed API.
+- Opt-in context completion hook integrates with existing MORNING/PREMATCH scanner/context flow.
+- Local gates: 531 unit + 128 integration = 659 passed; Ruff/format/mypy clean (142 source files).
+- Fresh and populated M6 migration cycles/drift check + Compose and Telegram profile validation passed.
+- Zero real LLM calls (no configured runtime credentials); no new live Telegram verification.
+- See [PREDICTIONS.md](PREDICTIONS.md) / ADR 0010. Remote CI and independent review pending.
+
+---
+
 # 3. In progress
 
-Milestone M6 accepted. Phase A docs-only finalization in progress, followed by PR merge into main, release tag v0.7-m6, and preparation of build/m7 branch. Milestone M7 implementation is NOT STARTED.
+M7 implementation on `build/m7`. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
+M6 accepted merge/tag confirmed from Git; M7 local gates passed, commit/push/exact remote CI pending.
 
 ---
 
@@ -734,7 +752,7 @@ Milestone M6 accepted. Phase A docs-only finalization in progress, followed by P
 ## Mocked / not yet verified
 
 - Odds provider (interface only, M4)
-- Runtime LLM providers (interface only, M7)
+- Runtime LLM providers (M7 HTTP contract-tested with injected transports; no live runtime calls)
 
 ## Verified live (M3)
 
@@ -785,13 +803,14 @@ Milestone M6 accepted. Phase A docs-only finalization in progress, followed by P
 # 8. Database/migrations
 
 Status:
-- migrations `0001` through `0009` applied locally and verified in CI on a fresh DB
+- migrations `0001` through `0012` locally verified on a fresh isolated test DB; remote M7 CI pending
   (apply → repeat → downgrade → reapply); ORM↔migration drift check clean.
 - Historical revision `0003_provider_evidence_history_and_indexes.py` verified 100%
   byte-for-byte identical to `origin/main` (SHA-256 identical).
 
 Latest migration:
-- `0009_m6_1_fixture_metadata_and_provenance`
+- `0012_m7_prediction_engine` (M0–M6 historical migration files unchanged).
+- M7 verified on fresh `sports_intel_m7_test`, populated M6→M7, downgrade/re-upgrade and zero drift.
 
 Local DB preservation required:
 - no, until meaningful live test data exists
@@ -820,34 +839,27 @@ Cache:
 # 10. Current model/runtime configuration
 
 Development lead:
-- Antigravity (Gemini 3.8 Flash)
+- Codex (development agent; separate from runtime providers)
 
 Runtime prediction model:
 - not selected empirically
 
 LLM provider routing:
-- not implemented (M7)
+- M7 deterministic config/health/capability router implemented; MOCK defaults, real calls gated.
 
 ---
 
 # 11. Current Git state
 
-Branch:
-- `build/m6` (M6.2 complete, awaiting review); base `main` at `fb256ec` (`v0.6-m5`)
-
-Commit:
-- `e004475e120472523305945c5568ffb9bfa97859` (Milestone M6.2 HEAD)
-
-Working tree:
-- clean after commit
+Branch: `build/m7`; accepted base/main `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`).
+Working changes belong to authorized M7. Do not modify main or merge M7.
 
 ---
 
 # 12. Next action
 
-1. Await independent acceptance review of `build/m6`.
-2. Do NOT merge `build/m6` into `main`.
-3. Do NOT start Milestone M7.
+Implement M7, complete local gates, commit/push `build/m7`, verify exact remote HEAD CI.
+Then STOP for independent review. M8 and deployment remain unauthorized.
 
 ---
 

@@ -37,9 +37,8 @@ power-user fallback and reach the same screens.
   callbacks), `callback_data` (short stable payloads: `fx:<uuid>`,
   `pg:<date>:<page>`, `rf:<date>`, `disc`, `health`, `menu:*`).
 - Commands: `/start /help /dashboard /today /fixtures [YYYY-MM-DD]
-  /match <uuid> /health /discover [YYYY-MM-DD]`. `/predictions /stats
-  /evaluate /improvements` return a clear "недоступна в этой вехе
-  (M3)" message.
+  /match <uuid> /health /discover [YYYY-MM-DD]`. M7 adds `/predictions` and
+  `/analyze <uuid>`; `/stats /evaluate /improvements` remain later milestones.
 - Access control: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_USER_IDS`,
   enforced centrally by middleware for messages and callbacks; unknown
   users receive "Доступ запрещён." (or a silent callback answer). Empty
@@ -59,3 +58,17 @@ power-user fallback and reach the same screens.
 - every manual action keeps backend idempotency (no second scheme in
   Telegram); repeated taps are harmless;
 - Telegram never displays "guaranteed/safe bet" language.
+
+## M7 prediction UI
+
+Main-menu «Прогнозы» and fixture «Прогноз / Запросить анализ» buttons read or enqueue
+through the typed BackendClient. Prediction screens: candidates, full probability table,
+why/evidence, risks, runtime model metadata and explicit rerun. Russian UI, HTML escaping,
+allowlist middleware on the M7 router, callbacks under 64 bytes and exactly one acknowledgement.
+
+Default lists show PRIMARY only. CHALLENGER is labelled shadow and never shown as primary picks.
+A rerun button derives a stable UUID from its originating run: duplicate taps reuse the new run;
+its new screen can request the next rerun. The original MatchContext/phase/role/variant are pinned.
+ABSTAINED/FAILED/QUEUED are separate screens; valid forecasts without passing candidates show
+`NO HIGH-CONFIDENCE OPPORTUNITY`. No provider/DB calls from handlers; no automatic Telegram
+push was activated. M7 was verified with test transport, not a new live Telegram smoke.

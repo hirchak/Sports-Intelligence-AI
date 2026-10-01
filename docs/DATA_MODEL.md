@@ -1,7 +1,6 @@
 # Data Model
 
-Status: **M2** — discovery schema implemented (migration 0002); odds/research/
-prediction tables arrive in M4+.
+Status: **M7 implemented, review pending** — migrations 0001–0012. M0–M6 history unchanged.
 Authoritative design: `10_DATABASE_AND_DATA_LIFECYCLE.md`.
 
 ## Principles (from spec)
@@ -84,3 +83,19 @@ All timestamps UTC.
 
 Migrations are verified in CI on a fresh PostgreSQL: apply → repeat →
 downgrade → reapply (integration test `test_db_resources.py`).
+
+## M7 (migration 0012)
+
+Seven new tables: `prompt_versions`, `model_configs`, `prediction_runs`, `market_predictions`,
+`ranked_candidates`, `probability_baselines`, `llm_call_attempts`. UUID/FKs, UTC, request/selection
+uniqueness, probability range constraints and fixture/context/run/health/budget indexes.
+
+PredictionRun retains requested and actual config identities, frozen route/policy, context hash/as_of,
+variant/role, status/outcome, usage/error/audit. Successful runs have exactly twelve MarketPrediction
+and twelve considered RankedCandidate rows. Candidates reference original odds set/time and all filter
+reasons. Separate baseline rows preserve statistical inputs/limits and captured market benchmarks.
+LLMCallAttempt records physical calls including retries/repair; real requests also link existing ledger.
+
+Historical rows are append-only under application policy; M7 does not add DB immutability triggers.
+Completed predictions are never updated by reruns. Terminal failed runs are reusable as failure state;
+explicit rerun creates another row. See [PREDICTIONS.md](PREDICTIONS.md).

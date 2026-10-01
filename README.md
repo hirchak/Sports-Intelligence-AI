@@ -115,17 +115,18 @@ CI runs the same gates on every push/PR (`.github/workflows/ci.yml`).
 - `docs/LOCAL_DEVELOPMENT.md` — local workflow details
 - `docs/DATA_MODEL.md` — database plan (models arrive in M1)
 - `docs/PIPELINES.md` — pipeline plan (implementation arrives M2+)
-- `docs/TELEGRAM.md` — bot plan (implementation arrives M3)
+- `docs/TELEGRAM.md` — private bot UI
+- `docs/PREDICTIONS.md` — M7 providers, probabilities, ranking, API and local acceptance
 - `docs/DEPLOYMENT.md` — deployment status (NOT authorized yet)
 - `docs/SECURITY.md` — security requirements
 - `docs/adr/` — architecture decision records
 
 ## Milestones
 
-M0 (this repo state) → M1 core infra → M2 sports provider/fixtures →
+M0 → M1 core infra → M2 sports provider/fixtures →
 M3 Telegram → M4 match collection → M5 research → M6 features/context →
 M7 prediction → M8 settlement/evaluation → M9 improvements/experiments →
-M10 production readiness. See `00_MASTER_TECHNICAL_SPEC.md` §36.
+M10 production readiness. M0–M6 accepted; M7 awaits independent review. See `00_MASTER_TECHNICAL_SPEC.md` §36.
 
 ## Rules for AI agents
 

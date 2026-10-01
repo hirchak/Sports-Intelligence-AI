@@ -58,6 +58,7 @@ def create_celery_app(settings: Settings) -> Celery:
             "sports_intelligence.workers.tasks.scheduling",
             "sports_intelligence.workers.tasks.research",
             "sports_intelligence.workers.tasks.context",
+            "sports_intelligence.workers.tasks.llm",
         ],
     )
     application.conf.update(
@@ -69,6 +70,7 @@ def create_celery_app(settings: Settings) -> Celery:
         task_default_queue="control",
         task_queues=tuple(Queue(name) for name in QUEUE_NAMES),
         task_routes={
+            "prediction.predict_match": {"queue": "llm"},
             "sports_intelligence.workers.tasks.control.*": {"queue": "control"},
             "sports_intelligence.workers.tasks.sports.*": {"queue": "sports_io"},
             "sports_intelligence.workers.tasks.research.*": {"queue": "research_io"},

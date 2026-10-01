@@ -91,3 +91,6 @@ jobs:
 
       - name: Validate compose.dev.yaml override
         run: docker compose -f compose.yaml -f compose.dev.yaml config -q
+
+      - name: Validate Telegram profile
+        run: docker compose --profile telegram config -q
