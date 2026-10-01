@@ -645,3 +645,34 @@ async def test_display_coverage_counts_unsettled_candidates_before_results(
     assert values["candidate_display_coverage"] == (1, 1)
     assert values["candidate_hit_rate"] == (None, 0)
     assert values["research_roi_fixed_unit"] == (None, 0)
+
+
+async def test_actual_result_scanner_queues_dates_once_without_provider_calls(
+    factory, record, service_settings, monkeypatch
+):
+    from sports_intelligence.db.models import Fixture
+    from sports_intelligence.workers.tasks import evaluation as tasks
+
+    now = datetime.now(UTC)
+    settings = service_settings.model_copy(update={"result_scan_enabled": True})
+    async with factory() as s, s.begin():
+        fixture = await s.get(Fixture, record.fixture_id)
+        fixture.kickoff_at = now - timedelta(hours=3)
+    dates, evaluations = [], []
+    monkeypatch.setattr(tasks.result_date_task, "apply_async", lambda **kw: dates.append(kw))
+    monkeypatch.setattr(tasks.evaluate_task, "apply_async", lambda **kw: evaluations.append(kw))
+
+    def unexpected_provider(_):
+        raise AssertionError("scanner must only enqueue, never call a provider")
+
+    monkeypatch.setattr(tasks, "build_sports_provider", unexpected_provider)
+    first = await tasks.schedule_result_scan(settings=settings, factory=factory, now=now)
+    second = await tasks.schedule_result_scan(settings=settings, factory=factory, now=now)
+    assert first["queued"] >= 1 and second["queued"] == 0
+    assert (now - timedelta(hours=3)).date().isoformat() in {
+        item["kwargs"]["day_iso"] for item in dates
+    }
+    assert len(evaluations) == 3  # Same cutoff/period jobs reused by the repeated scan.
+    assert all(
+        set(item["kwargs"]) == {"job_id", "day_iso", "provider_name", "force"} for item in dates
+    )

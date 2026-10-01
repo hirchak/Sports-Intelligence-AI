@@ -1,7 +1,8 @@
 # M8 independent review handoff
 
 Branch `build/m8`; accepted base/main `4eff88bcaaac387ec047d50575d25b8135baa567`, tag `v0.8-m7`.
-Implementation locally complete; remote commit/CI receipt pending. M8 NOT merged or tagged.
+Implementation/local gates complete; branch pushed. Final delivery requires all jobs SUCCESS on
+exact final origin/build/m8 HEAD (receipt in completion message). M8 NOT merged or tagged.
 M9 NOT started. LOCAL DEVELOPMENT ONLY; zero deployment, Hetzner, SSH or Hermes interaction.
 
 Binding complete scope: [M8_SCOPE.md](M8_SCOPE.md). Methodology and limits:
@@ -55,8 +56,8 @@ Historical verdicts remain in IMPLEMENTATION_STATUS and append-only AI_WORKLOG.
 
 ## Verification actually run (2026-10-02)
 
-- Unit: **839 passed** (535 accepted M7 + 304 M8); integration **145 passed** (128 + 17 M8).
-- Full `pytest -q`: **984 passed**, 32.87 seconds; isolated Compose sports_intel_m8_test + Redis db15.
+- Unit: **839 passed** (535 accepted M7 + 304 M8); integration **146 passed** (128 + 18 M8).
+- Full `pytest -q`: **985 passed**, 33.32 seconds; isolated Compose sports_intel_m8_test + Redis db15.
 - Ruff check / format check clean (227 files); mypy strict clean (155 source files).
 - Migration: fresh sports_intel_m8_fresh_test→head→downgrade -1→head→alembic check PASS;
   populated 0012 M7→0013→0012→0013 integrity regression PASS, zero drift.
@@ -67,7 +68,11 @@ Historical verdicts remain in IMPLEMENTATION_STATUS and append-only AI_WORKLOG.
   M7 probability/ranking/odds/context hash regressions PASS. All settlement matrix/statuses and numeric
   examples, correction/concurrent retry, baselines/roles/variants, cutoff and combined filters tested.
 - Existing M4 scan test used a UTC date with Warsaw-day planner and failed around midnight; changed
-  test date to configured local_today only. Legacy test stub/menu assertions updated for M8 interface/UI.
+  test date to configured local_today only. CI exposed another existing discovery unit test comparing
+  Warsaw day against UTC runner date.today; it now freezes a UTC→next-Warsaw-day boundary. Runtime
+  schedulers unchanged. Legacy test stub/menu assertions updated for M8 interface/UI.
+- Actual result scanner regression: repeated frozen scan queues date/evaluation work once, never calls
+  a provider; worker uses the supplied scan time as reproducible evaluation cutoff.
 
 ## Live status / remaining limitations
 
@@ -78,4 +83,14 @@ requires explicit existing snapshot IDs; confirmed corrections are manual/explic
 broker delivery recovery remains operational/manual; no new outbox platform. Invalid result contracts
 retain safe ledger/job failure, no unsafe partial settlement. See EVALUATION.md for exact definitions.
 
-Next: push/verify exact final build/m8 Actions and clean tree, then independent review only.
+## GitHub Actions receipts
+
+- Initial implementation HEAD a0c9332d2fca5fb8807d16015a7a331928dccbc4: run 36935276839;
+  integration/Compose SUCCESS, unit FAIL due to the existing UTC/Warsaw date.today test.
+- Corrected source HEAD 9de803022600ed761ec3af81c63b9091c47e3230: [36935653021](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36935653021),
+  **SUCCESS** for lint/type/unit, Postgres/Redis integration, and Compose validation.
+- Final scanner cutoff regression/receipt commit requires its own all-success Actions on exact pushed
+  HEAD; resolve via `gh run list --branch build/m8` and completion receipt. Do not infer final acceptance
+  from the earlier source CI alone.
+
+Next: exact final HEAD Actions SUCCESS and clean tree, then STOP for independent review only.

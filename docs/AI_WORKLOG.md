@@ -2649,3 +2649,22 @@ UTC runner date.today() 2026-10-01. Ruff/format/mypy passed. Runtime scheduler w
 **Known problems:** only this test gate identified; no implementation/settlement/data leakage issue.
 **Spec/ADR deviations:** none. **Git:** fix commit pending; main unchanged; M8 unmerged/untagged.
 **Next:** run scoped checks, commit/push timezone-test correction, verify exact final remote CI; STOP.
+
+### 2026-10-02 CEST — Codex (M8 exact source CI and scanner reproducibility)
+
+**Milestone/task:** M8 final completion audit and scanner job-deduplication regression.
+**Files changed:** evaluation worker one-line scan-clock fix, actual-scanner integration regression,
+CURRENT_TASK/IMPLEMENTATION_STATUS/REVIEW_HANDOFF and this append-only receipt.
+**Behavior:** schedule_result_scan uses its fixed supplied scan time for evaluation cutoff; repeat with
+same time/config reuses both date and evaluation jobs. Scanner performs no provider I/O. No M7 changes.
+**Commands/tests:** UTC-targeted discovery test (4 PASS); TZ=UTC unit (839 PASS); actual-scanner integration
+(1 PASS); TZ=UTC full pytest on sports_intel_m8_test/Redis15; Ruff/format/mypy; exact source CI view/watch.
+**Results:** source CI 36935653021 on 9de803022600ed761ec3af81c63b9091c47e3230 **all jobs SUCCESS**.
+Final local audit after scanner fix: **839 unit + 146 integration = 985 full tests PASS** (33.32s),
+Ruff/format clean (227 Python files), mypy clean (155 source files). No schema changes; fresh/populated
+migration and Compose gates remain verified. Historical source CI failure 36935276839 remains recorded.
+**Known problems:** no code blockers; final receipt/scanner-fix HEAD CI still must be verified before
+handoff. Live result provider/new Telegram remain unverified; zero live result/LLM calls.
+**Spec/ADR deviations:** none beyond ADR 0011; no M9, merge/tag or deployment/Hetzner/Hermes.
+**Git:** implementation a0c9332..., test-fix 9de8030..., both pushed; final scanner/receipt commit follows.
+**Next:** push final scoped commit, verify exact final all-job CI and clean tree; STOP for independent review.

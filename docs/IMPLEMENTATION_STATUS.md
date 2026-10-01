@@ -31,8 +31,8 @@ Milestone review verdicts:
   Final source CI: `36911970853` (SUCCESS across all jobs). Historical failed verdicts above remain intact.
 
 Accepted M7 is merged via PR #9 at `4eff88bcaaac387ec047d50575d25b8135baa567`, tagged `v0.8-m7`.
-Current `build/m8` is the only implementation branch. M8 is locally verified and awaits commit/push,
-exact-head CI and independent review. Main remains accepted M7; no M8 merge/tag, M9 or deployment.
+Current `build/m8` is the only implementation branch. M8 is implemented, locally verified and pushed; independent review remains required.
+Final delivery requires all-success CI on exact final origin/build/m8 HEAD. Main remains accepted M7; no M8 merge/tag, M9 or deployment.
 
 M8 flow: date-level result provider → immutable result versions → regulation_v1 settlements →
 metrics_v1 evaluation (separate roles/variants/baselines) → persisted API / thin Telegram.
@@ -726,10 +726,10 @@ All review items implemented and independently verified:
 
 # 3. In progress
 
-M8 implementation complete locally. Commit/push build/m8 and verify exact final Actions HEAD;
-then stop for independent review. M8 is not independently accepted; M9 is not started.
+M8 implementation complete; local gates PASS. Source CI 36935653021 on 9de8030 PASS (all jobs).
+Final scanner cutoff regression/receipt commit must pass exact-head Actions; then STOP for review. M8 is not independently accepted; M9 is not started.
 
-Local gates (2026-10-02): **839 unit + 145 integration = 984 full pytest PASS**;
+Local gates (2026-10-02): **839 unit + 146 integration = 985 full pytest PASS**;
 Ruff/format clean (227 Python files); strict mypy clean (155 source files).
 Full keyless M2→M8 E2E + Telegram test transport PASS; original FeatureSnapshot/MatchContext/M7
 prediction/ranking/price payloads remain unchanged. Results outside evaluation cutoff excluded.
@@ -878,13 +878,15 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch: `build/m8`. Accepted base/main/tag: `4eff88bcaaac387ec047d50575d25b8135baa567` / `v0.8-m7`.
-Local implementation commit and exact remote CI receipt pending. No M8 merge/tag authorized.
+Implementation commit: a0c9332d2fca5fb8807d16015a7a331928dccbc4; UTC-test fix: 9de803022600ed761ec3af81c63b9091c47e3230.
+CI 36935653021 on that fix is all-job SUCCESS. Final origin/build/m8 receipt/HEAD is returned at handoff;
+its Actions workflow must also be all-success. No M8 merge/tag authorized.
 
 ---
 
 # 12. Next action
 
-Commit/push verified M8, confirm all Actions jobs on exact final remote HEAD, and stop for
+Confirm all Actions jobs on exact final remote HEAD, and stop for
 independent review. Do not start M9, deploy, SSH, or interact with Hetzner/Hermes.
 
 ---

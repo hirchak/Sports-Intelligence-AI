@@ -131,7 +131,7 @@ async def schedule_result_scan(
             queued += await enqueue_result_date(factory, settings, day, now=now)
         # Local catch-up works even if no provider calls are needed today.
         await settle_pending(factory)
-        await refresh_evaluations(factory, settings, now=datetime.now(UTC))
+        await refresh_evaluations(factory, settings, now=now)
         return {"status": "scheduled", "queued": queued}
     finally:
         if engine:
