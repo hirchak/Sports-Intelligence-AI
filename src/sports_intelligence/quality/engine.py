@@ -125,6 +125,8 @@ class QualityReportData:
     source_fingerprint: str | None = None
     quality_policy: dict[str, Any] = field(default_factory=dict)
     policy_fingerprint: str | None = None
+    freshness_policy: dict[str, Any] = field(default_factory=dict)
+    freshness_policy_fingerprint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -549,4 +551,6 @@ def evaluate_data_quality(
         source_fingerprint=manifest.source_fingerprint,
         quality_policy=q_policy.to_dict(),
         policy_fingerprint=q_policy.policy_fingerprint(),
+        freshness_policy=f_policy.to_dict(),
+        freshness_policy_fingerprint=f_policy.policy_fingerprint(),
     )

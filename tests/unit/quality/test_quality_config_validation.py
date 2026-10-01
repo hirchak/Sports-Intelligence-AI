@@ -6,16 +6,24 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import ValidationError
 
+from sports_intelligence.collectors.freshness import FreshnessPolicy
 from sports_intelligence.context.builder import (
     assemble_match_context_v1,
     compute_build_config_fingerprint,
 )
 from sports_intelligence.context.models import (
+    DataQualitySection,
+    DeterministicFeaturesSection,
     FixtureIdentitySection,
     MatchContextV1,
+    SourceManifestSection,
 )
 from sports_intelligence.context.provenance import build_source_manifest
-from sports_intelligence.context.selector import SelectedEvidence, SelectedFixtureInfo
+from sports_intelligence.context.selector import (
+    ProviderMappingRecord,
+    SelectedEvidence,
+    SelectedFixtureInfo,
+)
 from sports_intelligence.core.config import Settings
 from sports_intelligence.core.phases import ForecastPhase
 from sports_intelligence.db.models import LineupSnapshot
@@ -43,8 +51,8 @@ def _base_fixture_info() -> SelectedFixtureInfo:
         league_name="Premier League",
         home_team_name="Arsenal",
         away_team_name="Chelsea",
-        home_external_id="42",
-        away_external_id="49",
+        home_provider_mappings=[],
+        away_provider_mappings=[],
         fixture_metadata_snapshot_id=uuid.uuid4(),
         metadata_captured_at=datetime(2026, 8, 20, 10, 0, tzinfo=UTC),
     )
@@ -155,34 +163,39 @@ def test_policy_fingerprint_deterministic_and_variant() -> None:
 
 
 def test_compute_build_config_fingerprint_variance() -> None:
-    fp1 = compute_build_config_fingerprint(
-        context_schema_version="match_context_v1",
-        feature_schema_version="features_v1",
-        quality_schema_version="quality_v1",
-        policy_fingerprint="fp-policy-a",
-        research_enabled=True,
-    )
-    fp2 = compute_build_config_fingerprint(
-        context_schema_version="match_context_v1",
-        feature_schema_version="features_v1",
-        quality_schema_version="quality_v1",
-        policy_fingerprint="fp-policy-b",
-        research_enabled=True,
-    )
-    fp3 = compute_build_config_fingerprint(
-        context_schema_version="match_context_v1",
-        feature_schema_version="features_v1",
-        quality_schema_version="quality_v1",
-        policy_fingerprint="fp-policy-a",
-        research_enabled=False,
-    )
+    from sports_intelligence.collectors.freshness import FreshnessPolicy
+    from sports_intelligence.context.builder import ContextBuildPolicy
+    from sports_intelligence.core.config import Settings
+    from sports_intelligence.quality.engine import QualityPolicy, QualityWeights
 
-    assert fp1 != fp2
+    s = Settings(app_env="mock")
+    qp1 = QualityPolicy(weights=QualityWeights(form=0.1), min_predict_score=0.65)
+    fp_base = FreshnessPolicy(settings=s)
+
+    b1 = ContextBuildPolicy(quality_policy=qp1, freshness_policy=fp_base, research_enabled=True)
+    fp1 = compute_build_config_fingerprint(b1)
+
+    b2 = ContextBuildPolicy(quality_policy=qp1, freshness_policy=fp_base, research_enabled=True)
+    fp2 = compute_build_config_fingerprint(b2)
+    assert fp1 == fp2
+
+    # Vary quality policy
+    qp3 = QualityPolicy(weights=QualityWeights(form=0.5), min_predict_score=0.65)
+    b3 = ContextBuildPolicy(quality_policy=qp3, freshness_policy=fp_base, research_enabled=True)
+    fp3 = compute_build_config_fingerprint(b3)
     assert fp1 != fp3
-    assert len(fp1) == 64
 
+    # Vary research enabled
+    b4 = ContextBuildPolicy(quality_policy=qp1, freshness_policy=fp_base, research_enabled=False)
+    fp4 = compute_build_config_fingerprint(b4)
+    assert fp1 != fp4
 
-# --- 4. Strict MatchContext Schema Validation (extra='forbid') ---
+    # Vary freshness policy
+    s2 = Settings(app_env="mock", freshness_standings_seconds=12345)
+    fp_mod = FreshnessPolicy(settings=s2)
+    b5 = ContextBuildPolicy(quality_policy=qp1, freshness_policy=fp_mod, research_enabled=True)
+    fp5 = compute_build_config_fingerprint(b5)
+    assert fp1 != fp5
 
 
 def test_malformed_match_context_section_rejected() -> None:
@@ -219,6 +232,204 @@ def test_malformed_top_level_match_context_rejected() -> None:
 
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         MatchContextV1(**ctx_data)
+
+
+def test_malformed_deterministic_features_rejected() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        DeterministicFeaturesSection(invalid_feature="bad")  # type: ignore[call-arg]
+
+
+def test_malformed_data_quality_rejected() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        DataQualitySection(
+            schema_version="quality_v1",
+            forecast_phase="MORNING",
+            as_of="2026-08-22T10:00:00Z",
+            overall_score=0.85,
+            quality_band="usable",
+            can_predict=True,
+            dimension_scores={},
+            critical_missing=[],
+            missing_fields=[],
+            warnings=[],
+            conflicts=[],
+            provider_errors=[],
+            stale_sources=[],
+            source_manifest=SourceManifestSection(source_fingerprint="fp", sources={}),
+            extra_quality_field="bad",  # type: ignore[call-arg]
+        )
+
+
+def test_malformed_source_manifest_rejected() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        SourceManifestSection(
+            source_fingerprint="fp",
+            sources={},
+            unexpected_manifest_field="bad",  # type: ignore[call-arg]
+        )
+
+
+def test_freshness_policy_fingerprint_variance() -> None:
+    s1 = Settings(app_env="mock", freshness_odds_seconds=300)
+    s2 = Settings(app_env="mock", freshness_odds_seconds=600)
+    fp1 = FreshnessPolicy(settings=s1).policy_fingerprint()
+    fp2 = FreshnessPolicy(settings=s2).policy_fingerprint()
+    assert fp1 != fp2
+    assert len(fp1) == 64
+
+
+def test_canonical_provenance_fingerprint_order_independence() -> None:
+    fix_info = _base_fixture_info()
+    as_of = fix_info.kickoff_at - timedelta(hours=6)
+    ev = SelectedEvidence(
+        fixture_id=fix_info.fixture_id,
+        forecast_phase=ForecastPhase.MORNING,
+        as_of=as_of,
+        fixture=fix_info,
+    )
+    manifest = build_source_manifest(ev)
+    fp1 = manifest.source_fingerprint
+    manifest2 = build_source_manifest(ev)
+    assert fp1 == manifest2.source_fingerprint
+
+
+def test_provider_mappings_affect_source_fingerprint() -> None:
+    fix_info_no_map = _base_fixture_info()
+    as_of = fix_info_no_map.kickoff_at - timedelta(hours=6)
+    ev_no_map = SelectedEvidence(
+        fixture_id=fix_info_no_map.fixture_id,
+        forecast_phase=ForecastPhase.MORNING,
+        as_of=as_of,
+        fixture=fix_info_no_map,
+    )
+    manifest_no_map = build_source_manifest(ev_no_map)
+
+    fix_info_with_map = SelectedFixtureInfo(
+        fixture_id=fix_info_no_map.fixture_id,
+        league_id=fix_info_no_map.league_id,
+        season_id=fix_info_no_map.season_id,
+        home_team_id=fix_info_no_map.home_team_id,
+        away_team_id=fix_info_no_map.away_team_id,
+        kickoff_at=fix_info_no_map.kickoff_at,
+        venue=fix_info_no_map.venue,
+        round=fix_info_no_map.round,
+        status=fix_info_no_map.status,
+        league_slug=fix_info_no_map.league_slug,
+        league_name=fix_info_no_map.league_name,
+        home_team_name=fix_info_no_map.home_team_name,
+        away_team_name=fix_info_no_map.away_team_name,
+        home_provider_mappings=[
+            ProviderMappingRecord(
+                provider="api_football",
+                external_id="123",
+                mapping_id=uuid.uuid4(),
+                first_seen_at=as_of - timedelta(days=1),
+            )
+        ],
+        away_provider_mappings=[],
+    )
+    ev_with_map = SelectedEvidence(
+        fixture_id=fix_info_with_map.fixture_id,
+        forecast_phase=ForecastPhase.MORNING,
+        as_of=as_of,
+        fixture=fix_info_with_map,
+    )
+    manifest_with_map = build_source_manifest(ev_with_map)
+    assert manifest_no_map.source_fingerprint != manifest_with_map.source_fingerprint
+
+
+def test_research_selected_claim_set_affects_source_fingerprint() -> None:
+    fix_info = _base_fixture_info()
+    as_of = fix_info.kickoff_at - timedelta(hours=6)
+    from sports_intelligence.research.service import (
+        FixtureResearchView,
+        ResearchClaimView,
+        ResearchDocumentView,
+    )
+
+    doc = ResearchDocumentView(
+        id=uuid.uuid4(),
+        url="https://example.com/1",
+        title="Title",
+        snippet="Snippet",
+        domain="example.com",
+        retrieved_at=as_of - timedelta(hours=1),
+        published_at=as_of - timedelta(hours=2),
+        content_hash="hash-1",
+        relevance_score=0.9,
+        provider="mock",
+        metadata={},
+    )
+    claim1 = ResearchClaimView(
+        id=uuid.uuid4(),
+        document_id=doc.id,
+        claim_type="fitness",
+        claim_text="Player X is fit",
+        extracted_at=as_of - timedelta(hours=1),
+        confidence=0.9,
+        team_id=None,
+        conflict_flag=False,
+        conflicting_claim_id=None,
+        extraction_version="v1",
+        metadata={},
+        created_at=as_of - timedelta(hours=1),
+    )
+    claim2 = ResearchClaimView(
+        id=uuid.uuid4(),
+        document_id=doc.id,
+        claim_type="injury",
+        claim_text="Player Y is injured",
+        extracted_at=as_of - timedelta(hours=1),
+        confidence=0.95,
+        team_id=None,
+        conflict_flag=False,
+        conflicting_claim_id=None,
+        extraction_version="v1",
+        metadata={},
+        created_at=as_of - timedelta(hours=1),
+    )
+    rv1 = FixtureResearchView(
+        fixture_id=fix_info.fixture_id,
+        status="AVAILABLE",
+        last_captured_at=as_of - timedelta(hours=1),
+        documents_count=1,
+        claims_count=1,
+        conflicts_count=0,
+        run_id=uuid.uuid4(),
+        provider="mock",
+        documents=[doc],
+        claims=[claim1],
+    )
+    rv2 = FixtureResearchView(
+        fixture_id=fix_info.fixture_id,
+        status="AVAILABLE",
+        last_captured_at=as_of - timedelta(hours=1),
+        documents_count=1,
+        claims_count=2,
+        conflicts_count=0,
+        run_id=rv1.run_id,
+        provider="mock",
+        documents=[doc],
+        claims=[claim1, claim2],
+    )
+
+    ev1 = SelectedEvidence(
+        fixture_id=fix_info.fixture_id,
+        forecast_phase=ForecastPhase.MORNING,
+        as_of=as_of,
+        fixture=fix_info,
+        research=rv1,
+    )
+    ev2 = SelectedEvidence(
+        fixture_id=fix_info.fixture_id,
+        forecast_phase=ForecastPhase.MORNING,
+        as_of=as_of,
+        fixture=fix_info,
+        research=rv2,
+    )
+    m1 = build_source_manifest(ev1)
+    m2 = build_source_manifest(ev2)
+    assert m1.source_fingerprint != m2.source_fingerprint
 
 
 # --- 5. MORNING Lineup N/A Behavior ---

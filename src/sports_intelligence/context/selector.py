@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sports_intelligence.context.errors import HistoricalFixtureMetadataUnavailable
 from sports_intelligence.core.logging import get_logger
 from sports_intelligence.core.phases import ForecastPhase
 from sports_intelligence.db.models import (
@@ -29,6 +30,16 @@ logger = get_logger(__name__)
 
 
 @dataclass(frozen=True)
+class ProviderMappingRecord:
+    """A single external-ID mapping for provenance tracking."""
+
+    provider: str
+    external_id: str
+    mapping_id: uuid.UUID
+    first_seen_at: datetime
+
+
+@dataclass(frozen=True)
 class SelectedFixtureInfo:
     fixture_id: uuid.UUID
     league_id: uuid.UUID
@@ -43,22 +54,22 @@ class SelectedFixtureInfo:
     league_name: str
     home_team_name: str | None
     away_team_name: str | None
-    home_external_id: str | None
-    away_external_id: str | None
     home_provider_external_ids: dict[str, str] = field(default_factory=dict)
     away_provider_external_ids: dict[str, str] = field(default_factory=dict)
     fixture_metadata_snapshot_id: uuid.UUID | None = None
     metadata_captured_at: datetime | None = None
+    home_provider_mappings: list[ProviderMappingRecord] = field(default_factory=list)
+    away_provider_mappings: list[ProviderMappingRecord] = field(default_factory=list)
 
     def get_home_external_id(self, provider: str | None = None) -> str | None:
         if provider:
             return self.home_provider_external_ids.get(provider)
-        return self.home_external_id
+        return None
 
     def get_away_external_id(self, provider: str | None = None) -> str | None:
         if provider:
             return self.away_provider_external_ids.get(provider)
-        return self.away_external_id
+        return None
 
 
 @dataclass(frozen=True)
@@ -99,10 +110,14 @@ async def select_evidence(
     - Rows with captured_at / as_of > requested as_of are strictly excluded.
     - Standings & Team Stats strictly match exact league and season_id.
     - Research uses accepted historical as_of point-in-time semantics (mode='latest_run').
+
+    Raises:
+        HistoricalFixtureMetadataUnavailable: When no FixtureMetadataSnapshot
+            exists with captured_at <= as_of.
     """
     as_of_utc = as_of.astimezone(UTC) if as_of.tzinfo else as_of.replace(tzinfo=UTC)
 
-    # 1. Fixture Identity
+    # 1. Fixture Locator (mutable — used ONLY for existence check and league/team name resolution)
     fix_stmt = (
         select(Fixture, League, Team)
         .join(League, Fixture.league_id == League.id)
@@ -113,37 +128,9 @@ async def select_evidence(
     if fix_row is None:
         raise ValueError(f"Fixture {fixture_id} not found in database")
 
-    fixture_obj, league_obj, home_team_obj = fix_row
-    home_name: str | None = home_team_obj.name if home_team_obj else None
-    # Query away team
-    away_team_obj = await session.get(Team, fixture_obj.away_team_id)
-    away_name: str | None = away_team_obj.name if away_team_obj else None
+    fixture_obj, league_obj, _home_team_obj = fix_row
 
-    # Resolve provider external IDs if present
-    ext_stmt = select(ProviderEntityId).where(
-        ProviderEntityId.entity_type == "team",
-        ProviderEntityId.internal_entity_id.in_(
-            [fixture_obj.home_team_id, fixture_obj.away_team_id]
-        ),
-        ProviderEntityId.first_seen_at <= as_of_utc,
-    )
-    ext_rows = (await session.execute(ext_stmt)).scalars().all()
-    home_by_prov: dict[str, str] = {}
-    away_by_prov: dict[str, str] = {}
-    for e in ext_rows:
-        if e.internal_entity_id == fixture_obj.home_team_id:
-            home_by_prov[e.provider] = str(e.external_id)
-        elif e.internal_entity_id == fixture_obj.away_team_id:
-            away_by_prov[e.provider] = str(e.external_id)
-
-    home_ext = next(
-        (e.external_id for e in ext_rows if e.internal_entity_id == fixture_obj.home_team_id), None
-    )
-    away_ext = next(
-        (e.external_id for e in ext_rows if e.internal_entity_id == fixture_obj.away_team_id), None
-    )
-
-    # Query immutable point-in-time FixtureMetadataSnapshot <= as_of
+    # 2. Authoritative FixtureMetadataSnapshot <= as_of (MUST exist)
     meta_stmt = (
         select(FixtureMetadataSnapshot)
         .where(
@@ -155,41 +142,50 @@ async def select_evidence(
     )
     meta_snapshot = (await session.execute(meta_stmt)).scalar_one_or_none()
 
-    if meta_snapshot is not None:
-        kickoff_at = meta_snapshot.kickoff_at
-        venue = meta_snapshot.venue
-        round_name = meta_snapshot.round
-        status = meta_snapshot.status
-        season_id = meta_snapshot.season_id
-        league_id = meta_snapshot.league_id
-        home_team_id = meta_snapshot.home_team_id
-        away_team_id = meta_snapshot.away_team_id
-        home_name = meta_snapshot.observed_home_team_name
-        away_name = meta_snapshot.observed_away_team_name
-        meta_id = meta_snapshot.id
-        meta_captured = meta_snapshot.captured_at
-        meta_league = await session.get(League, meta_snapshot.league_id)
-        league_slug = meta_league.slug if meta_league else league_obj.slug
-        league_name = meta_league.name if meta_league else league_obj.name
-    else:
-        logger.warning(
-            "no fixture_metadata_snapshot found <= as_of; metadata unavailable",
-            extra={"fixture_id": str(fixture_id), "as_of": as_of_utc.isoformat()},
+    if meta_snapshot is None:
+        raise HistoricalFixtureMetadataUnavailable(fixture_id, as_of_utc)
+
+    # Use metadata snapshot as authoritative source for fixture identity
+    kickoff_at = meta_snapshot.kickoff_at
+    venue = meta_snapshot.venue
+    round_name = meta_snapshot.round
+    status = meta_snapshot.status
+    season_id = meta_snapshot.season_id
+    league_id = meta_snapshot.league_id
+    home_team_id = meta_snapshot.home_team_id
+    away_team_id = meta_snapshot.away_team_id
+    home_name = meta_snapshot.observed_home_team_name
+    away_name = meta_snapshot.observed_away_team_name
+    meta_id = meta_snapshot.id
+    meta_captured = meta_snapshot.captured_at
+    meta_league = await session.get(League, meta_snapshot.league_id)
+    league_slug = meta_league.slug if meta_league else league_obj.slug
+    league_name = meta_league.name if meta_league else league_obj.name
+
+    # 3. Resolve provider external IDs using AUTHORITATIVE team IDs from metadata snapshot
+    ext_stmt = select(ProviderEntityId).where(
+        ProviderEntityId.entity_type == "team",
+        ProviderEntityId.internal_entity_id.in_([home_team_id, away_team_id]),
+        ProviderEntityId.first_seen_at <= as_of_utc,
+    )
+    ext_rows = (await session.execute(ext_stmt)).scalars().all()
+    home_by_prov: dict[str, str] = {}
+    away_by_prov: dict[str, str] = {}
+    home_mappings: list[ProviderMappingRecord] = []
+    away_mappings: list[ProviderMappingRecord] = []
+    for e in ext_rows:
+        mapping_rec = ProviderMappingRecord(
+            provider=e.provider,
+            external_id=str(e.external_id),
+            mapping_id=e.id,
+            first_seen_at=e.first_seen_at,
         )
-        kickoff_at = fixture_obj.kickoff_at
-        venue = None
-        round_name = None
-        status = "METADATA_UNAVAILABLE"
-        season_id = None
-        league_id = fixture_obj.league_id
-        home_team_id = fixture_obj.home_team_id
-        away_team_id = fixture_obj.away_team_id
-        home_name = None
-        away_name = None
-        meta_id = None
-        meta_captured = None
-        league_slug = league_obj.slug
-        league_name = league_obj.name
+        if e.internal_entity_id == home_team_id:
+            home_by_prov[e.provider] = str(e.external_id)
+            home_mappings.append(mapping_rec)
+        elif e.internal_entity_id == away_team_id:
+            away_by_prov[e.provider] = str(e.external_id)
+            away_mappings.append(mapping_rec)
 
     fixture_info = SelectedFixtureInfo(
         fixture_id=fixture_obj.id,
@@ -205,15 +201,15 @@ async def select_evidence(
         league_name=league_name,
         home_team_name=home_name,
         away_team_name=away_name,
-        home_external_id=home_ext,
-        away_external_id=away_ext,
         home_provider_external_ids=home_by_prov,
         away_provider_external_ids=away_by_prov,
         fixture_metadata_snapshot_id=meta_id,
         metadata_captured_at=meta_captured,
+        home_provider_mappings=home_mappings,
+        away_provider_mappings=away_mappings,
     )
 
-    # 2. Standings (exact league + season, captured_at <= as_of)
+    # 4. Standings (exact league + season, captured_at <= as_of)
     standings: StandingSnapshot | None = None
     if fixture_info.season_id is not None:
         st_stmt = (
@@ -228,7 +224,7 @@ async def select_evidence(
         )
         standings = (await session.execute(st_stmt)).scalar_one_or_none()
 
-    # 3. Team Statistics (exact team + league + season, captured_at <= as_of)
+    # 5. Team Statistics (exact team + league + season, captured_at <= as_of)
     home_team_stats: TeamStatisticsSnapshot | None = None
     away_team_stats: TeamStatisticsSnapshot | None = None
     if fixture_info.season_id is not None:
@@ -258,7 +254,7 @@ async def select_evidence(
         )
         away_team_stats = (await session.execute(away_ts_stmt)).scalar_one_or_none()
 
-    # 4. Team Form (exact team, as_of <= requested as_of, window_size=10, scope=overall)
+    # 6. Team Form (exact team, as_of <= requested as_of, window_size=10, scope=overall)
     home_form_stmt = (
         select(TeamFormSnapshot)
         .where(
@@ -285,12 +281,13 @@ async def select_evidence(
     )
     away_form = (await session.execute(away_form_stmt)).scalar_one_or_none()
 
-    # 5. Availability (exact fixture + team, captured_at <= as_of)
+    # 7. Availability (exact fixture + team, captured_at <= as_of)
+    # Uses authoritative team IDs from metadata snapshot
     home_avail_stmt = (
         select(AvailabilitySnapshot)
         .where(
             AvailabilitySnapshot.fixture_id == fixture_id,
-            AvailabilitySnapshot.team_id == fixture_obj.home_team_id,
+            AvailabilitySnapshot.team_id == fixture_info.home_team_id,
             AvailabilitySnapshot.captured_at <= as_of_utc,
         )
         .order_by(AvailabilitySnapshot.captured_at.desc())
@@ -302,7 +299,7 @@ async def select_evidence(
         select(AvailabilitySnapshot)
         .where(
             AvailabilitySnapshot.fixture_id == fixture_id,
-            AvailabilitySnapshot.team_id == fixture_obj.away_team_id,
+            AvailabilitySnapshot.team_id == fixture_info.away_team_id,
             AvailabilitySnapshot.captured_at <= as_of_utc,
         )
         .order_by(AvailabilitySnapshot.captured_at.desc())
@@ -310,12 +307,13 @@ async def select_evidence(
     )
     away_availability = (await session.execute(away_avail_stmt)).scalar_one_or_none()
 
-    # 6. Lineups (exact fixture + team, captured_at <= as_of)
+    # 8. Lineups (exact fixture + team, captured_at <= as_of)
+    # Uses authoritative team IDs from metadata snapshot
     home_lineup_stmt = (
         select(LineupSnapshot)
         .where(
             LineupSnapshot.fixture_id == fixture_id,
-            LineupSnapshot.team_id == fixture_obj.home_team_id,
+            LineupSnapshot.team_id == fixture_info.home_team_id,
             LineupSnapshot.captured_at <= as_of_utc,
         )
         .order_by(LineupSnapshot.captured_at.desc())
@@ -327,7 +325,7 @@ async def select_evidence(
         select(LineupSnapshot)
         .where(
             LineupSnapshot.fixture_id == fixture_id,
-            LineupSnapshot.team_id == fixture_obj.away_team_id,
+            LineupSnapshot.team_id == fixture_info.away_team_id,
             LineupSnapshot.captured_at <= as_of_utc,
         )
         .order_by(LineupSnapshot.captured_at.desc())
@@ -335,7 +333,7 @@ async def select_evidence(
     )
     away_lineup = (await session.execute(away_lineup_stmt)).scalar_one_or_none()
 
-    # 7. Odds (latest captured_at <= as_of, and prior compatible set for movement)
+    # 9. Odds (latest captured_at <= as_of, and prior compatible set for movement)
     odds_stmt = (
         select(OddsSnapshotSet)
         .where(
@@ -374,7 +372,7 @@ async def select_evidence(
             )
             prev_odds_prices = list((await session.execute(prev_prices_stmt)).scalars().all())
 
-    # 8. Web Research (mode='latest_run', retrieved_at/published_at/extracted_at <= as_of)
+    # 10. Web Research (mode='latest_run', retrieved_at/published_at/extracted_at <= as_of)
     research_view = await get_research_for_fixture(
         session,
         fixture_id,

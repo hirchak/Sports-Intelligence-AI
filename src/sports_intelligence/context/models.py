@@ -22,10 +22,10 @@ class FixtureIdentitySection(BaseModel):
     league_name: str
     home_team_name: str | None = None
     away_team_name: str | None = None
-    home_external_id: str | None = None
-    away_external_id: str | None = None
     fixture_metadata_snapshot_id: str | None = None
     metadata_captured_at: str | None = None
+    home_provider_mappings: list[dict[str, Any]] = Field(default_factory=list)
+    away_provider_mappings: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TeamFormSection(BaseModel):
@@ -169,6 +169,140 @@ class MarketSnapshotSection(BaseModel):
     movement: dict[str, float | None] = Field(default_factory=dict)
 
 
+class DeterministicFeaturesSection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str = "features_v1"
+
+    # Form (Last 5 & Last 10)
+    home_last5_ppg: float | None = None
+    away_last5_ppg: float | None = None
+    home_last10_ppg: float | None = None
+    away_last10_ppg: float | None = None
+    home_last10_goals_for_per_match: float | None = None
+    away_last10_goals_for_per_match: float | None = None
+    home_last10_goals_against_per_match: float | None = None
+    away_last10_goals_against_per_match: float | None = None
+    home_last5_goals_for_per_match: float | None = None
+    away_last5_goals_for_per_match: float | None = None
+    home_last5_goals_against_per_match: float | None = None
+    away_last5_goals_against_per_match: float | None = None
+    home_home_split_ppg: float | None = None
+    away_away_split_ppg: float | None = None
+    home_scored_rate: float | None = None
+    away_scored_rate: float | None = None
+    home_conceded_rate: float | None = None
+    away_conceded_rate: float | None = None
+    home_clean_sheet_rate: float | None = None
+    away_clean_sheet_rate: float | None = None
+    home_sample_size: int | None = None
+    away_sample_size: int | None = None
+
+    # Schedule / Fatigue
+    home_days_since_last_match: float | None = None
+    away_days_since_last_match: float | None = None
+    rest_days_delta: float | None = None
+    home_matches_last_7d: int | None = None
+    away_matches_last_7d: int | None = None
+    home_matches_last_14d: int | None = None
+    away_matches_last_14d: int | None = None
+    fixture_congestion_delta: int | None = None
+
+    # Standings / Season Strength
+    home_league_position: int | None = None
+    away_league_position: int | None = None
+    league_position_delta: int | None = None
+    home_season_points_per_game: float | None = None
+    away_season_points_per_game: float | None = None
+    home_season_goals_for_per_game: float | None = None
+    away_season_goals_for_per_game: float | None = None
+    home_season_goals_against_per_game: float | None = None
+    away_season_goals_against_per_game: float | None = None
+
+    # Availability
+    home_missing_players_count: int | None = None
+    away_missing_players_count: int | None = None
+    home_availability_state: str | None = None
+    away_availability_state: str | None = None
+    home_availability_conflict_count: int | None = None
+    away_availability_conflict_count: int | None = None
+    important_absence_delta: float | None = None
+    top_scorer_missing: bool | None = None
+    starting_goalkeeper_missing: bool | None = None
+    multiple_starting_defenders_missing: bool | None = None
+
+    # Lineups
+    home_lineup_confirmed: bool | None = None
+    away_lineup_confirmed: bool | None = None
+    lineups_both_confirmed: bool | None = None
+    home_lineup_formation: str | None = None
+    away_lineup_formation: str | None = None
+    home_lineup_publication_state: str | None = None
+    away_lineup_publication_state: str | None = None
+
+    # Market (No-vig)
+    market_home_no_vig: float | None = None
+    market_draw_no_vig: float | None = None
+    market_away_no_vig: float | None = None
+    market_over15_no_vig: float | None = None
+    market_under15_no_vig: float | None = None
+    market_over25_no_vig: float | None = None
+    market_under25_no_vig: float | None = None
+    market_btts_yes_no_vig: float | None = None
+    market_btts_no_no_vig: float | None = None
+
+    # Odds Movement
+    odds_move_home: float | None = None
+    odds_move_over25: float | None = None
+
+    # Diagnostics
+    missing_features: dict[str, str] = Field(default_factory=dict)
+
+
+class DataQualitySection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: str
+    forecast_phase: str
+    as_of: str
+    overall_score: float
+    quality_band: str
+    can_predict: bool
+    dimension_scores: dict[str, float]
+    critical_missing: list[str]
+    missing_fields: list[dict[str, Any]]
+    warnings: list[str]
+    conflicts: list[dict[str, Any]]
+    provider_errors: list[dict[str, Any]]
+    stale_sources: list[str]
+    source_manifest: SourceManifestSection
+    source_fingerprint: str | None = None
+    quality_policy: dict[str, Any] = Field(default_factory=dict)
+    policy_fingerprint: str | None = None
+    freshness_policy: dict[str, Any] = Field(default_factory=dict)
+    freshness_policy_fingerprint: str | None = None
+
+
+class ProvenanceRecordSection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    category: str
+    table: str
+    snapshot_id: str | None = None
+    provider: str | None = None
+    captured_at: str | None = None
+    payload_id: str | None = None
+    fingerprint: str | None = None
+    details: dict[str, Any] | None = None
+
+
+class SourceManifestSection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source_fingerprint: str
+    sources: dict[str, ProvenanceRecordSection]
+
+
 class MatchContextV1(BaseModel):
     """Immutable, strictly typed MatchContext V1 data structure.
 
@@ -197,9 +331,9 @@ class MatchContextV1(BaseModel):
     head_to_head: HeadToHeadSection
     research_claims: ResearchClaimsSection
     market_snapshot: MarketSnapshotSection
-    deterministic_features: dict[str, Any]
-    data_quality: dict[str, Any]
-    source_manifest: dict[str, Any]
+    deterministic_features: DeterministicFeaturesSection
+    data_quality: DataQualitySection
+    source_manifest: SourceManifestSection
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()

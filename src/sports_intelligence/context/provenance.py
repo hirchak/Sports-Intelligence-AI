@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -277,13 +278,41 @@ def build_source_manifest(evidence: SelectedEvidence) -> SourceManifest:
             },
         )
 
-    # Compute stable composite fingerprint from sorted source IDs and timestamps
-    fingerprint_parts = []
-    for cat in sorted(sources.keys()):
-        rec = sources[cat]
-        fingerprint_parts.append(f"{cat}:{rec.snapshot_id or 'none'}:{rec.captured_at or 'none'}")
-    composite_str = "|".join(fingerprint_parts)
-    fingerprint = hashlib.sha256(composite_str.encode("utf-8")).hexdigest()
+    # Provider Mappings
+    if evidence.fixture.home_provider_mappings or evidence.fixture.away_provider_mappings:
+        sources["provider_mappings"] = ProvenanceRecord(
+            category="provider_mappings",
+            table="provider_entity_ids",
+            snapshot_id=None,
+            provider=None,
+            captured_at=None,
+            payload_id=None,
+            details={
+                "home_mappings": [
+                    {
+                        "provider": m.provider,
+                        "external_id": m.external_id,
+                        "mapping_id": str(m.mapping_id),
+                        "first_seen_at": m.first_seen_at.isoformat(),
+                    }
+                    for m in evidence.fixture.home_provider_mappings
+                ],
+                "away_mappings": [
+                    {
+                        "provider": m.provider,
+                        "external_id": m.external_id,
+                        "mapping_id": str(m.mapping_id),
+                        "first_seen_at": m.first_seen_at.isoformat(),
+                    }
+                    for m in evidence.fixture.away_provider_mappings
+                ],
+            },
+        )
+
+    # Compute canonical JSON fingerprint from the complete provenance manifest
+    sources_dict = {k: asdict(v) for k, v in sources.items()}
+    canonical = json.dumps(sources_dict, sort_keys=True, separators=(",", ":"))
+    fingerprint = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     return SourceManifest(sources=sources, source_fingerprint=fingerprint)
 

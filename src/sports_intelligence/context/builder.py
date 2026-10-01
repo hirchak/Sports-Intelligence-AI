@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -28,26 +29,29 @@ from sports_intelligence.features.builder import DeterministicFeatures, build_fe
 from sports_intelligence.quality.engine import (
     QualityPolicy,
     QualityReportData,
-    QualityWeights,
     evaluate_data_quality,
 )
 
 
-def compute_build_config_fingerprint(
-    *,
-    context_schema_version: str = "match_context_v1",
-    feature_schema_version: str = "features_v1",
-    quality_schema_version: str = "quality_v1",
-    policy_fingerprint: str,
-    research_enabled: bool,
-) -> str:
+@dataclass(frozen=True)
+class ContextBuildPolicy:
+    quality_policy: QualityPolicy
+    freshness_policy: FreshnessPolicy
+    research_enabled: bool
+    context_schema_version: str = "match_context_v1"
+    feature_schema_version: str = "features_v1"
+    quality_schema_version: str = "quality_v1"
+
+
+def compute_build_config_fingerprint(policy: ContextBuildPolicy) -> str:
     """Compute a deterministic SHA-256 fingerprint of all configuration affecting context build."""
     payload = {
-        "context_schema_version": context_schema_version,
-        "feature_schema_version": feature_schema_version,
-        "policy_fingerprint": policy_fingerprint,
-        "quality_schema_version": quality_schema_version,
-        "research_enabled": research_enabled,
+        "context_schema_version": policy.context_schema_version,
+        "feature_schema_version": policy.feature_schema_version,
+        "quality_schema_version": policy.quality_schema_version,
+        "policy_fingerprint": policy.quality_policy.policy_fingerprint(),
+        "freshness_policy_fingerprint": policy.freshness_policy.policy_fingerprint(),
+        "research_enabled": policy.research_enabled,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -82,8 +86,24 @@ def assemble_match_context_v1(
         "league_name": fix.league_name,
         "home_team_name": fix.home_team_name,
         "away_team_name": fix.away_team_name,
-        "home_external_id": fix.home_external_id,
-        "away_external_id": fix.away_external_id,
+        "home_provider_mappings": [
+            {
+                "provider": m.provider,
+                "external_id": m.external_id,
+                "mapping_id": str(m.mapping_id),
+                "first_seen_at": m.first_seen_at.isoformat(),
+            }
+            for m in fix.home_provider_mappings
+        ],
+        "away_provider_mappings": [
+            {
+                "provider": m.provider,
+                "external_id": m.external_id,
+                "mapping_id": str(m.mapping_id),
+                "first_seen_at": m.first_seen_at.isoformat(),
+            }
+            for m in fix.away_provider_mappings
+        ],
         "fixture_metadata_snapshot_id": (
             str(fix.fixture_metadata_snapshot_id) if fix.fixture_metadata_snapshot_id else None
         ),
@@ -306,11 +326,7 @@ async def build_and_persist_match_context(
     fixture_id: uuid.UUID,
     forecast_phase: ForecastPhase,
     as_of: datetime,
-    weights: QualityWeights | None = None,
-    min_predict_score: float = 0.65,
-    policy: QualityPolicy | None = None,
-    freshness_policy: FreshnessPolicy | None = None,
-    research_enabled: bool = True,
+    build_policy: ContextBuildPolicy,
 ) -> tuple[MatchContextRecord, DataQualityReport, FeatureSnapshot, MatchContextV1]:
     """Pure deterministic builder workflow:
 
@@ -330,7 +346,7 @@ async def build_and_persist_match_context(
         fixture_id=fixture_id,
         forecast_phase=forecast_phase,
         as_of=as_of_utc,
-        research_enabled=research_enabled,
+        research_enabled=build_policy.research_enabled,
     )
 
     # Step 2: Build source manifest
@@ -344,10 +360,8 @@ async def build_and_persist_match_context(
         evidence,
         features,
         manifest,
-        weights=weights,
-        min_predict_score=min_predict_score,
-        policy=policy,
-        freshness_policy=freshness_policy,
+        policy=build_policy.quality_policy,
+        freshness_policy=build_policy.freshness_policy,
     )
 
     # Step 5: Assemble MatchContext
@@ -389,6 +403,7 @@ async def build_and_persist_match_context(
         DataQualityReport.schema_version == quality.schema_version,
         DataQualityReport.source_fingerprint == manifest.source_fingerprint,
         DataQualityReport.policy_fingerprint == quality.policy_fingerprint,
+        DataQualityReport.freshness_policy_fingerprint == quality.freshness_policy_fingerprint,
     )
     quality_record = (await session.execute(quality_stmt)).scalar_one_or_none()
     if quality_record is None:
@@ -411,6 +426,8 @@ async def build_and_persist_match_context(
             source_fingerprint=manifest.source_fingerprint,
             quality_policy_jsonb=quality.quality_policy,
             policy_fingerprint=quality.policy_fingerprint,
+            freshness_policy_jsonb=quality.freshness_policy,
+            freshness_policy_fingerprint=quality.freshness_policy_fingerprint,
         )
         try:
             async with session.begin_nested():

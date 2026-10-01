@@ -1,6 +1,6 @@
+from __future__ import annotations
 
 import os
-from sports_intelligence.context.builder import build_and_persist_match_context
 import uuid
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -12,16 +12,13 @@ from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
 from sports_intelligence.api.app import create_app
-from sports_intelligence.context.builder import build_and_persist_match_context, ContextBuildPolicy
-
-async def __build_and_persist_match_context(session, fixture_id, forecast_phase, as_of, policy=None):
-    _s = Settings(app_env='mock')
-    if policy is None:
-        policy = QualityPolicy(weights=QualityWeights(form=0.1), min_predict_score=0.65)
-    _bp = ContextBuildPolicy(quality_policy=policy, freshness_policy=FreshnessPolicy(_s), research_enabled=True)
-    return await build_and_persist_match_context(session, fixture_id=fixture_id, forecast_phase=forecast_phase, as_of=as_of, build_policy=_bp)
-
 from sports_intelligence.collectors.freshness import FreshnessPolicy
+from sports_intelligence.context.builder import (
+    ContextBuildPolicy,
+    build_and_persist_match_context,
+)
+from sports_intelligence.context.errors import HistoricalFixtureMetadataUnavailable
+from sports_intelligence.context.models import MatchContextV1
 from sports_intelligence.core.config import Settings
 from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.phases import ForecastPhase
@@ -50,7 +47,7 @@ from sports_intelligence.db.models import (
     TeamStatisticsSnapshot,
 )
 from sports_intelligence.db.session import create_engine, create_session_factory
-from sports_intelligence.quality.engine import QualityPolicy, QualityWeights, QualityWeights
+from sports_intelligence.quality.engine import QualityPolicy, QualityWeights
 from sports_intelligence.workers.tasks.context import _run_build
 
 requires_services = pytest.mark.skipif(
@@ -118,6 +115,37 @@ async def _clean_m6_tables(m6_session_factory: Any) -> Iterator[None]:
         yield
     finally:
         await _clean()
+
+
+async def _build_test_context(
+    session: Any,
+    fixture_id: uuid.UUID,
+    forecast_phase: ForecastPhase,
+    as_of: datetime,
+    policy: QualityPolicy | None = None,
+    freshness_policy: FreshnessPolicy | None = None,
+    research_enabled: bool = True,
+) -> tuple[MatchContextRecord, DataQualityReport, FeatureSnapshot, MatchContextV1]:
+    _s = Settings(app_env="mock")
+    if policy is None:
+        policy = QualityPolicy(weights=QualityWeights(form=0.1), min_predict_score=0.65)
+    if freshness_policy is None:
+        freshness_policy = FreshnessPolicy(_s)
+    _bp = ContextBuildPolicy(
+        quality_policy=policy,
+        freshness_policy=freshness_policy,
+        research_enabled=research_enabled,
+    )
+    return await build_and_persist_match_context(
+        session,
+        fixture_id=fixture_id,
+        forecast_phase=forecast_phase,
+        as_of=as_of,
+        build_policy=_bp,
+    )
+
+
+__build_and_persist_match_context = _build_test_context
 
 
 async def _seed_test_fixture(
@@ -444,15 +472,15 @@ async def test_strict_as_of_anti_leakage_boundary(m6_session_factory: Any) -> No
     morning_manifest = m_ctx.source_manifest.sources
 
     # Standings: 08:00 row was selected, rank=3 (not rank=1 from 12:00)
-    assert getattr(morning_manifest["standings"], "snapshot_id") == str(st_past.id)
+    assert morning_manifest["standings"].snapshot_id == str(st_past.id)
     assert m_ctx.season_strength.home_league_position == 3
 
     # Form: 09:00 row was selected (2 outcomes, not 1 outcome from 13:00)
-    assert getattr(morning_manifest["home_team_form"], "snapshot_id") == str(form_past.id)
+    assert morning_manifest["home_team_form"].snapshot_id == str(form_past.id)
     assert m_ctx.team_form.home_sample_size == 2
 
     # Availability: 09:30 row was selected, 1 missing player (not 0 from 11:00)
-    assert getattr(morning_manifest["home_availability"], "snapshot_id") == str(avail_past.id)
+    assert morning_manifest["home_availability"].snapshot_id == str(avail_past.id)
     assert m_ctx.availability.home_missing_count == 1
 
     # Lineup: 18:45 row is EXCLUDED
@@ -460,7 +488,7 @@ async def test_strict_as_of_anti_leakage_boundary(m6_session_factory: Any) -> No
     assert m_ctx.lineups.home_confirmed is None
 
     # Odds: 09:55 row was selected (odds 2.10 / no-vig 0.45, not closing odds 1.50)
-    assert getattr(morning_manifest["odds"], "snapshot_id") == str(odds_past.id)
+    assert morning_manifest["odds"].snapshot_id == str(odds_past.id)
     assert m_ctx.market_snapshot.prices[0].decimal_odds == 2.10
 
     # Research: 09:40 run was selected (status AVAILABLE, not future PROVIDER_ERROR)
@@ -482,7 +510,7 @@ async def test_strict_as_of_anti_leakage_boundary(m6_session_factory: Any) -> No
     # In PREMATCH context, lineup at 18:45 is now visible
     prematch_manifest = p_ctx.source_manifest.sources
     assert "home_lineup" in prematch_manifest
-    assert getattr(prematch_manifest["home_lineup"], "snapshot_id") == str(lineup_future.id)
+    assert prematch_manifest["home_lineup"].snapshot_id == str(lineup_future.id)
     assert p_ctx.lineups.home_confirmed is True
 
     # But closing odds at 19:50 are STILL excluded at 19:00!
@@ -727,7 +755,7 @@ async def test_mutable_fixture_metadata_future_anti_leakage(m6_session_factory: 
     assert ctx_t1.fixture_identity.round == "Round 1"
     assert ctx_t1.fixture_identity.status == "NS"
     assert ctx_t1.fixture_identity.kickoff_at == kickoff_t0.isoformat()
-    assert getattr(ctx_t1.source_manifest.sources["fixture_metadata"], "snapshot_id") == str(meta_t0_id)
+    assert ctx_t1.source_manifest.sources["fixture_metadata"].snapshot_id == str(meta_t0_id)
     hash_t1 = rec_t1.context_hash
 
     # Build context at T3 (after T2)
@@ -744,7 +772,7 @@ async def test_mutable_fixture_metadata_future_anti_leakage(m6_session_factory: 
     assert ctx_t3.fixture_identity.round == "Round 2"
     assert ctx_t3.fixture_identity.status == "POSTPONED"
     assert ctx_t3.fixture_identity.kickoff_at == kickoff_t2.isoformat()
-    assert getattr(ctx_t3.source_manifest.sources["fixture_metadata"], "snapshot_id") == str(meta_t2_id)
+    assert ctx_t3.source_manifest.sources["fixture_metadata"].snapshot_id == str(meta_t2_id)
 
     # Verify old T1 context record in DB never mutated
     async with m6_session_factory() as session:
@@ -819,9 +847,10 @@ async def test_form_window_size_and_scope_filtering(m6_session_factory: Any) -> 
 
     # Must have selected the window=10, scope=overall snapshot
     manifest = ctx.source_manifest.sources
-    assert getattr(manifest["home_team_form"], "snapshot_id") == str(form_correct_id)
-    assert getattr(manifest["home_team_form"], "details")["window_size"] == 10
-    assert getattr(manifest["home_team_form"], "details")["scope"] == "overall"
+    assert manifest["home_team_form"].snapshot_id == str(form_correct_id)
+    assert manifest["home_team_form"].details is not None
+    assert manifest["home_team_form"].details["window_size"] == 10
+    assert manifest["home_team_form"].details["scope"] == "overall"
 
 
 async def test_concurrent_context_build_idempotency(m6_session_factory: Any) -> None:
@@ -1137,11 +1166,35 @@ async def test_historical_context_no_metadata_snapshot_never_leaks_mutable_fixtu
 
     t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
     async with m6_session_factory() as session:
-        import pytest
-        from sports_intelligence.context.errors import HistoricalFixtureMetadataUnavailable
         with pytest.raises(HistoricalFixtureMetadataUnavailable):
-            _bp = ContextBuildPolicy(quality_policy=QualityPolicy(weights=QualityWeights(form=0.1), min_predict_score=0.65), freshness_policy=FreshnessPolicy(Settings(app_env="mock")), research_enabled=True); await build_and_persist_match_context(session, fixture_id=fid, forecast_phase=ForecastPhase.MORNING, as_of=t_as_of, build_policy=_bp)
-        return
+            await _build_test_context(
+                session,
+                fixture_id=fid,
+                forecast_phase=ForecastPhase.MORNING,
+                as_of=t_as_of,
+            )
+
+        # M6.3 §1 & §13.2: Verify zero MatchContext/FeatureSnapshot/DataQualityReport
+        # persisted on refusal
+        ctx_row = (
+            await session.execute(
+                select(MatchContextRecord).where(MatchContextRecord.fixture_id == fid)
+            )
+        ).first()
+        assert ctx_row is None
+
+        q_row = (
+            await session.execute(
+                select(DataQualityReport).where(DataQualityReport.fixture_id == fid)
+            )
+        ).first()
+        assert q_row is None
+
+        f_row = (
+            await session.execute(select(FeatureSnapshot).where(FeatureSnapshot.fixture_id == fid))
+        ).first()
+        assert f_row is None
+
 
 async def test_metadata_snapshot_overrides_changed_canonical_fixture(
     m6_session_factory: Any,
@@ -1323,8 +1376,8 @@ async def test_odds_insertion_order_produces_identical_context_hash(
         league_name="Test League",
         home_team_name="Home",
         away_team_name="Away",
-            home_provider_mappings=[],
-            away_provider_mappings=[],
+        home_provider_mappings=[],
+        away_provider_mappings=[],
         fixture_metadata_snapshot_id=uuid.uuid4(),
         metadata_captured_at=kickoff - timedelta(days=2),
     )
@@ -1526,3 +1579,275 @@ async def test_provider_mapping_historical_semantics_and_isolation(
     # Away team mapping was first_seen_at > as_of, so it MUST be excluded at as_of
     assert info.get_away_external_id("mock") is None
     assert info.get_away_external_id() is None
+
+
+async def test_metadata_team_identity_propagation_and_isolation(
+    m6_session_factory: Any,
+) -> None:
+    """M6.3 §2 & §13.3-5: Metadata snapshot team IDs (A/B) strictly drive all evidence
+    selection even after canonical fixture teams are mutated to A/C.
+    Availability, lineups, and provider mappings for team C must never be selected.
+    """
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff, create_metadata=False)
+    fid = ids["fixture_id"]
+    lid = ids["league_id"]
+    sid = ids["season_id"]
+    hid = ids["home_team_id"]
+    aid_b = ids["away_team_id"]
+
+    t0 = datetime(2026, 8, 20, 10, 0, tzinfo=UTC)
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
+    async with m6_session_factory() as session:
+        # Team C (rogue / later mutated team)
+        team_c = Team(name="Team C", country="England")
+        session.add(team_c)
+        await session.flush()
+        aid_c = team_c.id
+
+        # Authoritative metadata snapshot has teams A and B
+        meta = FixtureMetadataSnapshot(
+            id=uuid.uuid4(),
+            fixture_id=fid,
+            provider="api_football",
+            provider_fixture_id="fix-123",
+            captured_at=t0,
+            league_id=lid,
+            season_id=sid,
+            home_team_id=hid,
+            away_team_id=aid_b,
+            observed_home_team_name="Arsenal",
+            observed_away_team_name="Team B",
+            kickoff_at=kickoff,
+            venue="Emirates Stadium",
+            round="Round 1",
+            status="NS",
+            source_version="v1",
+        )
+        session.add(meta)
+
+        # Later canonical fixture is mutated to away team C!
+        fix = await session.get(Fixture, fid)
+        assert fix is not None
+        fix.away_team_id = aid_c
+
+        # Availability: team B (historic) vs team C (rogue)
+        avail_b = AvailabilitySnapshot(
+            provider="mock",
+            fixture_id=fid,
+            team_id=aid_b,
+            captured_at=t_as_of - timedelta(hours=2),
+            availability_state="KNOWN_PRESENT",
+            players_jsonb=[{"player_name": "Player B", "missing": True}],
+            impact_flags_jsonb=[],
+            conflicts_jsonb=[],
+        )
+        avail_c = AvailabilitySnapshot(
+            provider="mock",
+            fixture_id=fid,
+            team_id=aid_c,
+            captured_at=t_as_of - timedelta(hours=1),
+            availability_state="KNOWN_PRESENT",
+            players_jsonb=[{"player_name": "Player C", "missing": True}],
+            impact_flags_jsonb=[],
+            conflicts_jsonb=[],
+        )
+        # Lineup: team B vs team C
+        lineup_b = LineupSnapshot(
+            provider="mock",
+            fixture_id=fid,
+            team_id=aid_b,
+            captured_at=t_as_of - timedelta(hours=2),
+            confirmed=True,
+            formation="4-4-2",
+            players_jsonb=[{"name": "Defender B", "position": "D"}],
+            publication_state="CONFIRMED",
+        )
+        lineup_c = LineupSnapshot(
+            provider="mock",
+            fixture_id=fid,
+            team_id=aid_c,
+            captured_at=t_as_of - timedelta(hours=1),
+            confirmed=True,
+            formation="3-5-2",
+            players_jsonb=[{"name": "Defender C", "position": "D"}],
+            publication_state="CONFIRMED",
+        )
+        # Provider mapping: team B vs team C
+        map_b = ProviderEntityId(
+            provider="api_football",
+            entity_type="team",
+            internal_entity_id=aid_b,
+            external_id="team-b-ext",
+            first_seen_at=t0,
+        )
+        map_c = ProviderEntityId(
+            provider="api_football",
+            entity_type="team",
+            internal_entity_id=aid_c,
+            external_id="team-c-ext",
+            first_seen_at=t0,
+        )
+        session.add_all([avail_b, avail_c, lineup_b, lineup_c, map_b, map_c])
+        await session.commit()
+
+    async with m6_session_factory() as session:
+        rec, q, f, ctx = await _build_test_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.PREMATCH,
+            as_of=t_as_of,
+        )
+
+    # Context must strictly preserve Team B identity, never Team C
+    assert ctx.fixture_identity.away_team_id == str(aid_b)
+    assert ctx.fixture_identity.away_team_name == "Team B"
+
+    # Availability must be from team B
+    assert ctx.availability.away_missing_count == 1
+    assert "away_availability" in ctx.source_manifest.sources
+    assert ctx.source_manifest.sources["away_availability"].snapshot_id == str(avail_b.id)
+
+    # Lineup must be from team B
+    assert ctx.lineups.away_formation == "4-4-2"
+    assert "away_lineup" in ctx.source_manifest.sources
+    assert ctx.source_manifest.sources["away_lineup"].snapshot_id == str(lineup_b.id)
+
+    # Provider mapping must be for team B, never team C
+    away_maps = ctx.fixture_identity.away_provider_mappings
+    ext_ids = {m["external_id"] for m in away_maps}
+    assert "team-b-ext" in ext_ids
+    assert "team-c-ext" not in ext_ids
+
+
+async def test_different_freshness_policies_create_separate_quality_reports(
+    m6_session_factory: Any,
+) -> None:
+    """M6.3 §5-6, §13.10-11: Reports with identical evidence and weights but different
+    freshness policy TTLs produce distinct freshness fingerprints and both persist cleanly.
+    """
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+    t_as_of = datetime(2026, 8, 22, 10, 0, tzinfo=UTC)
+
+    policy = QualityPolicy(weights=QualityWeights(form=0.20))
+    s1 = Settings(app_env="mock", freshness_odds_seconds=300)
+    s2 = Settings(app_env="mock", freshness_odds_seconds=900)
+    fp1 = FreshnessPolicy(s1)
+    fp2 = FreshnessPolicy(s2)
+
+    async with m6_session_factory() as session:
+        rec1, q1, _, _ = await _build_test_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+            policy=policy,
+            freshness_policy=fp1,
+        )
+
+    async with m6_session_factory() as session:
+        rec2, q2, _, _ = await _build_test_context(
+            session,
+            fixture_id=fid,
+            forecast_phase=ForecastPhase.MORNING,
+            as_of=t_as_of,
+            policy=policy,
+            freshness_policy=fp2,
+        )
+
+    assert q1.freshness_policy_fingerprint != q2.freshness_policy_fingerprint
+    assert q1.freshness_policy_jsonb["freshness_odds_seconds"] == 300
+    assert q2.freshness_policy_jsonb["freshness_odds_seconds"] == 900
+
+    # Both coexist in DB
+    async with m6_session_factory() as session:
+        reports = (
+            (
+                await session.execute(
+                    select(DataQualityReport).where(
+                        DataQualityReport.fixture_id == fid,
+                        DataQualityReport.as_of == t_as_of,
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(reports) == 2
+        fp_set = {r.freshness_policy_fingerprint for r in reports}
+        assert q1.freshness_policy_fingerprint in fp_set
+        assert q2.freshness_policy_fingerprint in fp_set
+
+
+async def test_freshness_transition_creates_new_context_opportunity_and_dedupes(
+    m6_session_factory: Any,
+) -> None:
+    """M6.3 §8 & §13.12-14: When evidence crosses from fresh to stale, freshness generation
+    changes and produces one new context job, while duplicate scans inside same state dedupe.
+    """
+    from unittest.mock import patch
+
+    from sports_intelligence.collectors.pre_match_scan import PreMatchDecision
+    from sports_intelligence.workers.tasks.context import build_match_context_task
+    from sports_intelligence.workers.tasks.pre_match import _try_enqueue_context_build
+
+    kickoff = datetime(2026, 8, 22, 20, 0, tzinfo=UTC)
+    ids = await _seed_test_fixture(m6_session_factory, kickoff_at=kickoff)
+    fid = ids["fixture_id"]
+
+    # Odds captured at 09:00 with TTL = 1 hour (3600s)
+    odds_id = uuid.uuid4()
+    t_odds = datetime(2026, 8, 22, 9, 0, tzinfo=UTC)
+    async with m6_session_factory() as session:
+        odds = OddsSnapshotSet(
+            id=odds_id,
+            fixture_id=fid,
+            provider="theoddsapi",
+            captured_at=t_odds,
+            market_whitelist_jsonb=["h2h_1x2"],
+        )
+        session.add(odds)
+        await session.commit()
+
+    decision = PreMatchDecision(
+        fixture_id=str(fid),
+        league_id=str(ids["league_id"]),
+        home_team_id=str(ids["home_team_id"]),
+        away_team_id=str(ids["away_team_id"]),
+        season_id=str(ids["season_id"]),
+        kickoff_at=kickoff,
+        phase=ForecastPhase.MORNING,
+        categories_to_collect=(),
+    )
+
+    enqueued_jobs: list[str] = []
+
+    def mock_apply_async(*args: Any, **kwargs: Any) -> None:
+        enqueued_jobs.append(kwargs["args"][0])
+
+    with patch.object(build_match_context_task, "apply_async", mock_apply_async):
+        # 1. At 09:30, odds are FRESH (within 1h TTL).
+        t_fresh = datetime(2026, 8, 22, 9, 30, tzinfo=UTC)
+        await _try_enqueue_context_build(m6_session_factory, decision, as_of=t_fresh)
+        assert len(enqueued_jobs) == 1
+        job1_id = enqueued_jobs[0]
+
+        # 2. Duplicate scan at 09:40 (still fresh) -> must DEDUPE (no new task)
+        t_fresh_dup = datetime(2026, 8, 22, 9, 40, tzinfo=UTC)
+        await _try_enqueue_context_build(m6_session_factory, decision, as_of=t_fresh_dup)
+        assert len(enqueued_jobs) == 1
+
+        # 3. At 11:30, odds crossed TTL and are now STALE -> new context opportunity!
+        t_stale = datetime(2026, 8, 22, 11, 30, tzinfo=UTC)
+        await _try_enqueue_context_build(m6_session_factory, decision, as_of=t_stale)
+        assert len(enqueued_jobs) == 2
+        job2_id = enqueued_jobs[1]
+        assert job2_id != job1_id
+
+        # 4. Duplicate scan at 11:45 (still in same stale generation) -> must DEDUPE!
+        t_stale_dup = datetime(2026, 8, 22, 11, 45, tzinfo=UTC)
+        await _try_enqueue_context_build(m6_session_factory, decision, as_of=t_stale_dup)
+        assert len(enqueued_jobs) == 2

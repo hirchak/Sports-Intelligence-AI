@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sports_intelligence.collectors.freshness import FreshnessPolicy
-from sports_intelligence.context.builder import build_and_persist_match_context
+from sports_intelligence.context.builder import ContextBuildPolicy, build_and_persist_match_context
 from sports_intelligence.core.config import Settings, get_settings
 from sports_intelligence.core.job_status import JobStatus
 from sports_intelligence.core.logging import get_logger
@@ -60,15 +60,18 @@ async def _run_build(
     try:
         quality_policy = build_quality_policy(resolved_settings)
         freshness_policy = FreshnessPolicy(resolved_settings)
+        build_policy = ContextBuildPolicy(
+            quality_policy=quality_policy,
+            freshness_policy=freshness_policy,
+            research_enabled=resolved_settings.research_capability_enabled,
+        )
         async with factory() as session:
             context_rec, quality_rec, feat_rec, _ = await build_and_persist_match_context(
                 session,
                 fixture_id=fid,
                 forecast_phase=forecast_phase,
                 as_of=as_of,
-                policy=quality_policy,
-                freshness_policy=freshness_policy,
-                research_enabled=resolved_settings.research_capability_enabled,
+                build_policy=build_policy,
             )
 
         async with factory() as session:

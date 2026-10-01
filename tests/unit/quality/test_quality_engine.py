@@ -33,8 +33,8 @@ def _fixture_info() -> SelectedFixtureInfo:
         league_name="Premier League",
         home_team_name="Arsenal",
         away_team_name="Chelsea",
-        home_external_id="42",
-        away_external_id="49",
+        home_provider_mappings=[],
+        away_provider_mappings=[],
     )
 
 

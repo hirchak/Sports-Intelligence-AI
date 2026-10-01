@@ -31,8 +31,8 @@ def _fixture_info(kickoff: datetime) -> SelectedFixtureInfo:
         league_name="Premier League",
         home_team_name="Arsenal",
         away_team_name="Chelsea",
-        home_external_id="42",
-        away_external_id="49",
+        home_provider_mappings=[],
+        away_provider_mappings=[],
         home_provider_external_ids={"api_football": "42"},
         away_provider_external_ids={"api_football": "49"},
     )
@@ -564,8 +564,8 @@ def test_provider_scoped_team_identity() -> None:
         league_name="Premier League",
         home_team_name="Arsenal",
         away_team_name="Chelsea",
-        home_external_id="999",  # Default from mock
-        away_external_id="888",
+        home_provider_mappings=[],
+        away_provider_mappings=[],
         home_provider_external_ids={"mock": "999", "api_football": "42"},
         away_provider_external_ids={"mock": "888", "api_football": "49"},
     )
