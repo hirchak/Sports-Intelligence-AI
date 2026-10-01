@@ -83,7 +83,12 @@ def _poisson_grid(rate: float) -> list[float]:
     return result
 
 
+_MARKET_1X2_ALIASES = frozenset({"h2h_1x2", "h2h", "1x2"})
+
 _PRICE_SELECTIONS = {
+    ("h2h_1x2", "home"): Selection.HOME,
+    ("h2h_1x2", "draw"): Selection.DRAW,
+    ("h2h_1x2", "away"): Selection.AWAY,
     ("h2h", "home"): Selection.HOME,
     ("h2h", "draw"): Selection.DRAW,
     ("h2h", "away"): Selection.AWAY,
@@ -105,8 +110,18 @@ _PRICE_SELECTIONS = {
 }
 
 
+def _canonical_market_name(market: str) -> str:
+    """Map the accepted M4 1X2 identifier (and legacy aliases) to one group key."""
+    normalized = market.strip().lower()
+    return "1x2" if normalized in _MARKET_1X2_ALIASES else normalized
+
+
 def canonical_selection(price: MarketPriceItem) -> Selection | None:
-    return _PRICE_SELECTIONS.get((price.market.lower(), price.selection.lower()))
+    market = price.market.strip().lower()
+    selection = price.selection.strip().lower()
+    if market in _MARKET_1X2_ALIASES:
+        market = "h2h_1x2"
+    return _PRICE_SELECTIONS.get((market, selection))
 
 
 def captured_market_probabilities(context: MatchContextV1) -> dict[tuple[str, Selection], float]:
@@ -114,13 +129,19 @@ def captured_market_probabilities(context: MatchContextV1) -> dict[tuple[str, Se
     for price in context.market_snapshot.prices:
         selection = canonical_selection(price)
         p = price.no_vig_probability
-        if selection is None or p is None or not math.isfinite(p) or not 0 <= p <= 1:
+        if (
+            selection is None
+            or not price.bookmaker
+            or p is None
+            or not math.isfinite(p)
+            or not 0 <= p <= 1
+        ):
             continue
-        if price.market == "double_chance":
+        market = _canonical_market_name(price.market)
+        if market == "double_chance":
             # Overlapping DC outcomes do not normalize to sum=1. Do NOT reuse M4's
             # generic mutually-exclusive margin removal for these outcomes.
             continue
-        market = "1x2" if price.market in ("h2h", "1x2") else price.market
         groups.setdefault((price.bookmaker or "", market), {})[selection] = p
     expected = {
         "1x2": {Selection.HOME, Selection.DRAW, Selection.AWAY},

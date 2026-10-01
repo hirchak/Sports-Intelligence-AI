@@ -8,7 +8,12 @@ from m7_fakes import make_context, valid_output
 from sports_intelligence.context.models import MatchContextV1
 from sports_intelligence.predictions.baselines import market_baseline, poisson_baseline
 from sports_intelligence.predictions.config import RankingPolicy
-from sports_intelligence.predictions.contracts import PredictionOutput, Selection, probability_table
+from sports_intelligence.predictions.contracts import (
+    DirectProbabilities,
+    PredictionOutput,
+    Selection,
+    probability_table,
+)
 from sports_intelligence.ranking.engine import rank_candidates
 
 
@@ -54,12 +59,71 @@ def test_zero_rates_are_known_zero():
     assert b.probabilities[Selection.DRAW] == 1 and b.probabilities[Selection.OVER_1_5] == 0
 
 
-def test_market_baseline_derived_double_chance_not_ground_truth():
+def test_m4_canonical_h2h_1x2_baseline_and_double_chance_benchmark():
     context = make_context()
+    canonical_prices = [p for p in context.market_snapshot.prices if p.market == "h2h_1x2"]
+    assert {p.selection for p in canonical_prices} == {"home", "draw", "away"}
     baseline = market_baseline(context)
     assert baseline.probabilities[Selection.HOME] == 0.46
-    assert baseline.probabilities[Selection.HOME_OR_DRAW] == pytest.approx(0.74)
+    assert baseline.probabilities[Selection.DRAW] == 0.28
+    assert baseline.probabilities[Selection.AWAY] == 0.26
+    assert baseline.probabilities[Selection.HOME_OR_DRAW] == pytest.approx(0.46 + 0.28)
+    assert baseline.probabilities[Selection.HOME_OR_AWAY] == pytest.approx(0.46 + 0.26)
+    assert baseline.probabilities[Selection.DRAW_OR_AWAY] == pytest.approx(0.28 + 0.26)
     assert "not ground truth" in baseline.limitations[0]
+
+
+def test_incomplete_m4_canonical_1x2_cannot_create_market_or_dc_baseline():
+    data = make_context().model_dump()
+    data["market_snapshot"]["prices"] = [
+        p
+        for p in data["market_snapshot"]["prices"]
+        if not (p["market"] == "h2h_1x2" and p["selection"] == "away")
+    ]
+    baseline = market_baseline(MatchContextV1.model_validate(data))
+    for selection in (
+        Selection.HOME,
+        Selection.DRAW,
+        Selection.AWAY,
+        Selection.HOME_OR_DRAW,
+        Selection.HOME_OR_AWAY,
+        Selection.DRAW_OR_AWAY,
+    ):
+        assert selection not in baseline.probabilities
+
+
+def test_canonical_1x2_probabilities_and_double_chance_never_mix_bookmakers():
+    data = make_context().model_dump()
+    for price in data["market_snapshot"]["prices"]:
+        if price["market"] == "h2h_1x2" and price["selection"] == "away":
+            price["bookmaker"] = "book-b"
+        elif price["market"] in ("h2h_1x2", "double_chance"):
+            price["bookmaker"] = "book-a"
+    baseline = market_baseline(MatchContextV1.model_validate(data))
+    for selection in (
+        Selection.HOME,
+        Selection.DRAW,
+        Selection.AWAY,
+        Selection.HOME_OR_DRAW,
+        Selection.HOME_OR_AWAY,
+        Selection.DRAW_OR_AWAY,
+    ):
+        assert selection not in baseline.probabilities
+
+
+def test_m7_ranking_uses_m4_canonical_1x2_and_same_bookmaker_double_chance():
+    context = make_context()
+    policy = RankingPolicy(min_model_probability=0, min_edge=-1)
+    candidates = rank_candidates(context, table(context), policy)
+    home = next(c for c in candidates if c.selection == Selection.HOME)
+    home_or_draw = next(c for c in candidates if c.selection == Selection.HOME_OR_DRAW)
+    assert home.captured_odds == 2.0
+    assert home.market_probability == pytest.approx(0.46)
+    assert home.edge == pytest.approx(0.5 - 0.46)
+    assert home_or_draw.captured_odds == 1.30
+    assert home_or_draw.market_probability == pytest.approx(0.46 + 0.28)
+    # The raw M4 DC margin-normalized value is intentionally ignored.
+    assert home_or_draw.market_probability != pytest.approx(0.3656)
 
 
 def test_candidate_edge_ev_math():
@@ -177,8 +241,6 @@ def test_decimal_edge_threshold_equality_ignores_only_float_drift():
     context = MatchContextV1.model_validate(data)
     direct = PredictionOutput.model_validate(valid_output(context)).probabilities.model_dump()
     direct.update(home=0.6, draw=0.2, away=0.2)
-    from sports_intelligence.predictions.contracts import DirectProbabilities
-
     probabilities = probability_table(DirectProbabilities.model_validate(direct))
     policy = RankingPolicy(min_model_probability=0, min_edge=0.05)
     home = next(

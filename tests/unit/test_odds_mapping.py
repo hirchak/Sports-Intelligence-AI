@@ -20,6 +20,7 @@ import pytest
 
 from sports_intelligence.providers.errors import ProviderMappingError
 from sports_intelligence.providers.odds.factory import TheOddsApiProvider
+from sports_intelligence.providers.odds.mock import MockOddsProvider
 
 EVENT_ID = "abcdef123456"
 SPORT_KEY = "soccer_epl"
@@ -243,4 +244,27 @@ async def test_fetch_odds_returns_rate_headers() -> None:
     )
     assert result.rate_headers["x-requests-remaining"] == "492"
     assert result.rate_headers["x-requests-last"] == "5"
+    await provider.aclose()
+
+
+@pytest.mark.asyncio
+async def test_mock_odds_emits_accepted_m4_h2h_1x2_identifier() -> None:
+    provider = MockOddsProvider(commence_time_utc=datetime(2026, 8, 21, 14, 0, tzinfo=UTC))
+    event_id = await provider.resolve_event(
+        sport_key="soccer_mock",
+        home_team="Mock United",
+        away_team="Mock City",
+        commence_time_utc=datetime(2026, 8, 21, 14, 0, tzinfo=UTC),
+    )
+    result = await provider.fetch_event_odds(
+        sport_key="soccer_mock",
+        event_id=event_id,
+        markets=["h2h"],
+        regions=["eu"],
+    )
+    assert {(price.market, price.selection) for price in result.prices} == {
+        ("h2h_1x2", "home"),
+        ("h2h_1x2", "draw"),
+        ("h2h_1x2", "away"),
+    }
     await provider.aclose()

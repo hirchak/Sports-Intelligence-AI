@@ -2416,3 +2416,74 @@ remote HEAD; final SHA and CI run are returned in the completion report.
 **Next action:** publish this documentation-only handoff commit to build/m7, verify its exact CI HEAD, then
 STOP for independent review. M7 NOT merged/tagged; main remains `11b6e782...` / v0.7-m6; M8 NOT started;
 zero deployment / Hetzner / SSH sessions / Hermes interaction.
+
+---
+
+### 2026-10-01 — Codex (M7.1 focused M4 canonical market fix, verification in progress)
+
+**Milestone:** M7.1 on `build/m7`; reviewed starting HEAD `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
+**Task:** Fix M4 `h2h_1x2` normalization compatibility in M7 baselines/ranking without redesigning M4.
+**Files changed so far:** `predictions/baselines.py`; provider Mock output in `providers/odds/mock.py`;
+M7 `tests/m7_fakes.py`, baseline/ranking regressions, M4 mock-provider contract regression; M7.1 status,
+review, prediction-method documentation. No migration/schema changes.
+**Behavior:** Accept canonical `h2h_1x2` and preserve `h2h`/`1x2` aliases; map home/draw/away and group them
+as canonical 1X2. Only complete, normalized same-bookmaker 1X2 is eligible. DC rows remain excluded from
+no-vig baseline; derive HOME_OR_DRAW / HOME_OR_AWAY / DRAW_OR_AWAY from that bookmaker's full 1X2.
+M7 synthetic canonical rows and M4 mock normalized output mirror M4 persisted DTO; raw provider request key stays `h2h`.
+**Commands/tests run:** focused baseline/ranking + odds mapping unit tests; M7 integration suite on dedicated
+`sports_intel_m7_test` and Redis db15.
+**Results:** 33 targeted unit/M4 contract tests passed; 27 M7 integration tests passed, including E2E using
+MockOddsProvider after it emits `h2h_1x2`. Full acceptance gates have not yet been rerun.
+**Known problems:** None found in focused checks; exact remote CI remains pending.
+**Spec/ADR deviations:** None. No changes to M4 normalization/parser, schema, or migration.
+**Git:** no M7.1 commit yet; working on reviewed branch only.
+**Next action:** full unit/integration/full pytest, Ruff/format/mypy, Alembic, Compose, secret sanity; update
+final handoff, commit/push `build/m7`, verify exact-head Actions, then STOP. M8/merge/tag/deploy remain prohibited.
+
+---
+
+### 2026-10-01 18:54 UTC — Codex (M7.1 canonical M4 odds acceptance)
+
+**Milestone:** M7.1 on `build/m7`; reviewed start HEAD `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
+**Task:** Fix M7 baseline/ranking support for accepted M4 canonical 1X2 odds values.
+**Files changed:** `src/sports_intelligence/predictions/baselines.py`; the M4 mock DTO emitter in
+`src/sports_intelligence/providers/odds/mock.py`; `tests/m7_fakes.py`;
+`tests/unit/predictions/test_baseline_ranking.py`; `tests/unit/test_odds_mapping.py`;
+`docs/CURRENT_TASK.md`, `IMPLEMENTATION_STATUS.md`, `REVIEW_HANDOFF.md`, `PREDICTIONS.md`.
+**Behavior:** maps canonical `h2h_1x2` + HOME/DRAW/AWAY selections while retaining earlier M7 aliases;
+normalizes all aliases into one complete 1X2 group key. Baseline accepts only complete same-bookmaker
+no-vig 1X2 with identified bookmaker. DC normalized prices are ignored; all DC probabilities are derived
+from that same book's captured 1X2. Mock DTO emits canonical M4 market; provider request `h2h` unchanged.
+No M4 live parser/schema redesign.
+**Commands/tests run:** focused M7 baseline/ranking and M4 mock-adapter unit tests; all M7 integration;
+full unit/integration/full pytest; Ruff, format, mypy, Alembic check, Compose default/dev/Telegram configs.
+**Results:** focused 33 tests initially passed. Full current results: 535 unit, 128 integration,
+663 total passed. Ruff/format clean (208 Python files), mypy clean (142 source files), Alembic check zero
+schema drift, Compose configs valid. Full keyless M7 integration/E2E runs against dedicated Docker DB/Redis.
+**Known problems:** remote CI for the M7.1 HEAD still pending. Runtime providers remain contract-tested only;
+zero live LLM calls/credentials.
+**Spec/ADR deviations:** none; no schema change/migration. The M4 `h2h` wire request key remains provider-specific.
+**Git commit:** pending local acceptance commit.
+**Next action:** secret-sanity/diff check, commit and push `build/m7`, exact-head GitHub Actions; then STOP
+for independent review. M7 not merged/tagged; M8/deploy/Hetzner/Hermes not started.
+
+### 2026-10-01 — Codex (M7.1 full local acceptance pass)
+
+**Milestone:** M7.1 on `build/m7`, start `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
+**Task:** Close canonical M4 odds mismatch and complete local acceptance.
+**Files changed:** M7 baselines/ranking compatibility; canonical synthetic M7 prices; one M4 mock normalized
+market label; M7/M4 regression tests; persistent M7.1 status/review documentation.
+**Behavior:** `h2h_1x2` home/draw/away now maps and groups with legacy M7 aliases. Only complete same-bookmaker
+1X2 is used. DC probabilities derive from that book's 1X2 and ignore overlapping generic no-vig values.
+The outgoing provider request key remains `h2h`. No M4 live parser/schema or DB changes.
+**Commands/tests:** `uv run ruff check .`; `uv run ruff format --check .`; `uv run mypy src`;
+unit, integration and full pytest; `DATABASE_URL=...sports_intel_m7_test uv run alembic check`;
+Docker Compose default/dev/Telegram config; secret sanity scan of working files and Git history.
+**Results:** 535 unit, 128 integration, **663 full tests passed**; Ruff/format clean (208 Python files),
+mypy clean (142 source files); Alembic: no new operations; all Compose configs valid; 279-file/history
+secret scan clean. Runtime LLM calls: zero.
+**Known problems:** exact remote CI for M7.1 pending; previous M7 CI does not verify this fix.
+**Spec/ADR deviations:** none. M7 DC benchmark same-book requirement remains enforced.
+**Git:** M7.1 commit and push pending.
+**Next action:** commit/push `build/m7`, verify exact-head GitHub Actions, and STOP for independent review.
+M7 unmerged/untagged, M8 not started, LOCAL DEVELOPMENT ONLY, zero deployment/Hetzner/Hermes.

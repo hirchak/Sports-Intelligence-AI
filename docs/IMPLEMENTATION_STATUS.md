@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M7 — Prediction Engine / Model Router / Baselines / Ranking (IMPLEMENTED / VERIFIED; INDEPENDENT REVIEW PENDING)
+**Current milestone:** M7.1 — Canonical odds contract acceptance fix (IMPLEMENTED; remote CI pending)
 **Last updated:** 2026-10-01 (Codex)
 **Last known good commit:** 11b6e782ab7256607992b70cc0d0dee4ebe92a3a (tag v0.7-m6, PR #8 merged into main)
 
@@ -26,9 +26,7 @@ Accepted M6 is merged into `origin/main` at `11b6e782ab7256607992b70cc0d0dee4ebe
 Verified local/remote `build/m7` starts at exactly that commit with a clean tree.
 M7 implementation authorized by `docs/M7_SCOPE.md`; old review failures below remain historical evidence.
 LOCAL DEVELOPMENT ONLY. No M8, merge/tag of M7, deployment, Hetzner or Hermes interaction.
-M7 local gates passed (531 unit, 128 integration, 659 total).
-Source `6c861b94c6300ae7da018176f5af12804f22b217` pushed; CI `36890119992` all three jobs SUCCESS.
-Final documentation HEAD is verified separately before completion; exact proof is in the final handoff.
+M7 implementation source HEAD `6c861b94c6300ae7da018176f5af12804f22b217` was independently review-submitted; focused M7.1 odds-contract acceptance fix is now in progress from reviewed HEAD `b0dd35c3606449d95c3be0723ded5f78a2883e67`. Main and `v0.7-m6` remain unchanged.
 
 
 ---
@@ -702,12 +700,24 @@ All review items implemented and independently verified:
 - Zero real LLM calls (no configured runtime credentials); no new live Telegram verification.
 - See [PREDICTIONS.md](PREDICTIONS.md) / ADR 0010. Implementation CI `36890119992` passed; independent review pending.
 
+
+### M7.1 — M4 canonical odds contract acceptance fix (LOCAL PASS; CI PENDING)
+
+- Reviewed starting HEAD: `b0dd35c3606449d95c3be0723ded5f78a2883e67` on clean `build/m7`.
+- M4 normalizer persists `h2h_1x2` with `home/draw/away`; M7 accepted aliases `h2h`/`1x2` but omitted the canonical market.
+- M7 baseline now maps all three spellings into one complete 1X2 group. Missing bookmaker or any missing/cross-book selection cannot form the benchmark.
+- Double Chance baseline still skips M4's overlapping, sum-1 generic normalization and derives all three DC values from a complete same-bookmaker M4 1X2 group.
+- M7 odds synthetic context and M4 MockOddsProvider normalized output use `h2h_1x2`; outgoing Odds API request key remains `h2h`.
+- Regressions assert HOME/DRAW/AWAY benchmark, all three DC sums, ranking with real canonical rows, incomplete-market refusal, same-book isolation, canonical mock output, and the full M7 keyless E2E.
+- Focused checks so far: **33 unit/M4-provider tests passed; 27 M7 integration tests passed**.
+- No DB/schema or live-provider changes. Full acceptance suite, docs closeout, push and exact remote CI remain pending.
+
 ---
 
 # 3. In progress
 
-M7 implementation verified on `build/m7`; STOP for independent review. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
-M6 accepted merge/tag confirmed; M7 source pushed and CI green; final documentation HEAD verification follows.
+M7.1 local acceptance passes; commit/push and exact-head CI pending; then independent review. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
+M6 accepted merge/tag confirmed. M7.1 source is locally verified; M7.1 remote CI remains pending.
 
 ---
 

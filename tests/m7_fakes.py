@@ -71,7 +71,7 @@ def make_context() -> MatchContextV1:
         captured_at=as_of.isoformat(),
         prices=[
             {
-                "market": "h2h",
+                "market": "h2h_1x2",
                 "selection": s,
                 "decimal_odds": odds,
                 "implied_probability": 1 / odds,
@@ -79,6 +79,24 @@ def make_context() -> MatchContextV1:
                 "bookmaker": "synthetic",
             }
             for s, odds, nv in (("home", 2.0, 0.46), ("draw", 3.3, 0.28), ("away", 3.5, 0.26))
+        ]
+        + [
+            {
+                "market": "double_chance",
+                "selection": selection,
+                "decimal_odds": odds,
+                "implied_probability": 1 / odds,
+                # M4 stores no-vig DC for presentation, but its generic normalization
+                # treats overlapping selections as mutually exclusive. M7 must ignore
+                # these values and derive its benchmark from same-bookmaker h2h_1x2.
+                "no_vig_probability": direct_no_vig,
+                "bookmaker": "synthetic",
+            }
+            for selection, odds, direct_no_vig in (
+                ("home_or_draw", 1.30, 0.3656),
+                ("home_or_away", 1.25, 0.3800),
+                ("draw_or_away", 1.85, 0.2544),
+            )
         ]
         + [
             {

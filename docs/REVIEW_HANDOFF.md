@@ -1,11 +1,12 @@
 # M7 Review Handoff
 
-**State:** IMPLEMENTED / VERIFIED — READY FOR INDEPENDENT REVIEW.
-**Verified source HEAD:** `6c861b94c6300ae7da018176f5af12804f22b217`, pushed.
+**State:** M7.1 implementation and full local acceptance pass; push/exact remote CI pending. Do not review until exact-head CI succeeds.
+**Previous M7 source HEAD:** `6c861b94c6300ae7da018176f5af12804f22b217`, pushed.
+**M7.1 reviewed starting HEAD:** `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
+**M7.1 reviewed starting HEAD:** `b0dd35c3606449d95c3be0723ded5f78a2883e67`. Previous M7 CI is not acceptance evidence for this fix.
 **Source CI:** [36890119992](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36890119992)
 — lint/type/unit SUCCESS; integration SUCCESS; Compose including Telegram SUCCESS.
-The final documentation commit is rechecked against its exact remote HEAD; final SHA/run proof
-is returned in the completion report (do not mistake source HEAD above for that final docs SHA).
+M7 implementation CI before the M7.1 fix is not acceptance proof for the corrected branch.
 **Branch:** `build/m7`; **base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a`, `v0.7-m6`.
 **Foundation commit:** `231d4539d074d5a3838bc535bbb81cd06855af84`.
 **Phase:** LOCAL DEVELOPMENT ONLY. M7 not merged/tagged; M8 not started.
@@ -71,9 +72,30 @@ broker delivery requires inspection/explicit rerun; no automatic reset that migh
 No disagreement aggregation, fitted ensembles, settlement/evaluation or automatic Telegram push.
 
 Main remains accepted M6; M7 not merged or tagged. Zero deployment/Hetzner/SSH/Hermes interaction.
-STOP for independent review; M7 remains unmerged. Do not start M8.
+M7 remains unmerged. M7.1 local gates passed: **535 unit + 128 integration = 663**; Ruff, format, mypy, Alembic and Compose clean. Push branch, verify exact remote CI, then STOP for independent review. Do not start M8.
 Historical M6 failures/acceptance evidence remain in IMPLEMENTATION_STATUS and append-only AI_WORKLOG.
 
 Accepted M6 reviewer packet remains in Git at
 [M6 handoff](https://github.com/hirchak/Sports-Intelligence-AI/blob/11b6e782ab7256607992b70cc0d0dee4ebe92a3a/docs/REVIEW_HANDOFF.md).
 No historical failure or acceptance worklog entries were rewritten.
+
+
+## M7.1 canonical M4 1X2 follow-up
+
+M4 `OddsPrice.market` is `h2h_1x2` (`home/draw/away`); The Odds API wire key is `h2h`.
+M7.1 aligns the baseline/ranker with normalized `h2h_1x2`, keeps backward-compatible M7 aliases,
+verifies all three DC derivations from one bookmaker's complete 1X2, rejects incomplete/cross-book
+sets, and changes M7 fixtures/M4 mock output to the accepted canonical DTO. M4 HTTP parsing and
+schema remain unchanged. Focused tests currently pass (33 unit/M4 contract, 27 M7 integration);
+complete suite/CI and final reviewed HEAD will be filled before the independent-review handoff.
+
+
+## M7.1 M4 canonical 1X2 acceptance (2026-10-01)
+
+`OddsPrice.market="h2h_1x2"`, selections `home/draw/away`, is the M4 persisted contract. M7 now maps
+these actual values into HOME/DRAW/AWAY and the complete same-bookmaker no-vig group. DC benchmarks derive
+from those 1X2 values; M4 overlapping DC margin-normalized values are ignored. Tests prove all three DC
+selections, canonical candidate odds/edge, incomplete market rejection, and refusal to combine bookmaker
+A's HOME/DRAW with bookmaker B's AWAY. Legacy M7 aliases remain compatible. Synthetic M7 odds rows and
+MockOddsProvider normalized DTO now use the production canonical name; outbound provider request `h2h`
+remains unchanged. No M4 live parsing or schema/migration changes.

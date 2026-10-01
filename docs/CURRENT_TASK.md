@@ -1,29 +1,31 @@
 # Current Task
 
-**Task:** M7 — LLM Prediction Engine, Model Router, validation, baselines and ranking
-**Status:** COMPLETE — IMPLEMENTED / VERIFIED, READY FOR INDEPENDENT REVIEW
+**Task:** M7.1 — Align M7 baselines/ranking with the accepted M4 `h2h_1x2` contract
+**Status:** IMPLEMENTED / FULL LOCAL ACCEPTANCE PASS — commit/push/exact CI pending
 **Branch:** `build/m7`
-**Base:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`origin/main`, `v0.7-m6`)
+**Reviewed start:** `b0dd35c3606449d95c3be0723ded5f78a2883e67`
+**Base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`)
 
 ## Binding scope
 
-[Complete user scope](M7_SCOPE.md). Implement M7 only. LOCAL DEVELOPMENT ONLY.
-Push `build/m7`, verify all CI jobs on exact remote HEAD, then stop for independent review.
-Do not merge, tag M7, start M8, deploy, use Hetzner or interact with Hermes.
+M4 persists normalized `h2h_1x2` with `home/draw/away`; M7 must accept and group the actual canonical values.
+Verify complete same-bookmaker 1X2 grouping and DC derivations; add M4-identifier regressions and align
+M7 synthetic fixtures. Do not redesign M4 or architecture. Do not start M8, merge/tag M7, deploy,
+use Hetzner or interact with Hermes. Remain LOCAL DEVELOPMENT ONLY.
 
-## Checkpoint
+## Verification checkpoint (2026-10-01 18:54 UTC)
 
-- M7 implementation and required local checks complete; details in [PREDICTIONS.md](PREDICTIONS.md).
-- 531 unit, 128 integration, 658 full-suite tests passed.
-- Ruff/format clean; strict mypy clean, 142 source files.
-- Fresh DB and populated M6→M7 migration, downgrade/re-upgrade/check: zero drift.
-- Docker Compose and Telegram profile valid; secret sanity scan clean.
-- Zero real runtime LLM calls; no configured credentials. Existing running stack not activated or deployed.
-- M0–M6 Git/migration history preserved; main remains accepted M6.
+- M7 baseline/grouping accepts canonical `h2h_1x2`; legacy `h2h` / `1x2` aliases remain supported.
+- Complete no-vig 1X2 is grouped per identified bookmaker. DC market rows are ignored as benchmarks;
+  HOME_OR_DRAW / HOME_OR_AWAY / DRAW_OR_AWAY derive from that bookmaker's full 1X2.
+- Incomplete 1X2 and selections split across bookmakers do not produce an M7 1X2/DC baseline.
+- M7 fixture and keyless E2E M4 mock output now exercise canonical `h2h_1x2`. Raw provider request key `h2h` unchanged.
+- Full suite: **535 unit + 128 integration = 663 passed**. Ruff/format/mypy passed; Compose passed;
+  `alembic check` reports no new upgrade operations. Focused M7 E2E also passed after mock alignment.
+- No DB schema or migrations changed; no real runtime LLM calls.
+- `docs/AI_WORKLOG.md` records this acceptance pass.
 
 ## Next action
 
-STOP for independent review. Source commit `6c861b94c6300ae7da018176f5af12804f22b217`
-is pushed and verified by CI `36890119992` (all three jobs SUCCESS). Final documentation commit
-is checked on its own exact remote HEAD; that SHA/run proof is returned in the completion report.
-Independent review is required before any merge; M8 remains unauthorized.
+Commit and push the M7.1 fix to `build/m7`, verify all CI jobs on exact remote HEAD, update handoff,
+then STOP for independent review. M7 remains unmerged; M8 is not started.

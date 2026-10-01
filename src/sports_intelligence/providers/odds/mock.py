@@ -113,7 +113,9 @@ class MockOddsProvider:
             if outcomes is None:
                 continue
             line: Decimal | None = None
-            canonical_market = market
+            # The request key `h2h` is provider-specific; persisted OddsSelectionPrice
+            # uses the accepted M4 canonical market identifier.
+            canonical_market = "h2h_1x2" if market == "h2h" else market
             if market == "totals":
                 # Emit both OU lines from one totals outcome set.
                 for selection, price in outcomes.items():

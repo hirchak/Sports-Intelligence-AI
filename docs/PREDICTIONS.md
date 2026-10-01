@@ -158,3 +158,12 @@ Fresh DB upgrade, M6→M7, downgrade -1, re-upgrade and alembic check are verifi
 The integration suite includes discovery→collectors→context→MockLLM→validation→ranking→persistence
 →API→Telegram test transport and real isolated Redis Celery message serialization. Mock output is
 explicitly synthetic and is not evidence of model accuracy or a live provider integration.
+
+## M7.1 M4 canonical odds compatibility
+
+M4 stores normalized 1X2 prices as `market="h2h_1x2"`, `selection=home|draw|away`.
+M7 accepts this canonical identifier (while retaining legacy `h2h`/`1x2` aliases), groups only complete
+no-vig sets from one identified bookmaker, and derives each Double Chance benchmark from that same
+bookmaker's 1X2 probabilities. Incomplete 1X2 rows, missing bookmaker identity, or pieces split across
+bookmakers cannot create a 1X2/DC baseline. The Odds API request key `h2h` remains provider-specific;
+M4 maps it to `h2h_1x2` before persistence. M7.1 does not change M4's live normalizer or schema.
