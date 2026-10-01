@@ -104,6 +104,21 @@ class Settings(BaseSettings):
     default_min_model_probability: float = 0.55
     default_min_edge: float = 0.05
 
+    # M6.1 Data Quality Policy
+    quality_weight_fixture_identity: float = 0.15
+    quality_weight_form: float = 0.20
+    quality_weight_season_stats: float = 0.15
+    quality_weight_availability: float = 0.15
+    quality_weight_odds: float = 0.15
+    quality_weight_research: float = 0.10
+    quality_weight_lineups: float = 0.10
+    quality_min_predict_score: float = 0.65
+    quality_band_excellent_min: float = 0.90
+    quality_band_good_min: float = 0.80
+    quality_band_usable_min: float = 0.65
+    quality_staleness_penalty: float = 0.05
+    quality_max_staleness_penalty: float = 0.20
+
     @field_validator("app_env", mode="before")
     @classmethod
     def normalize_app_env(cls, value: object) -> object:
@@ -161,6 +176,47 @@ class Settings(BaseSettings):
             missing.append("LLM_API_KEY")
         if missing:
             raise ValueError(f"APP_ENV={self.app_env} requires: {', '.join(missing)}")
+        return self
+
+    @model_validator(mode="after")
+    def validate_quality_settings(self) -> Settings:
+        weights = [
+            ("fixture_identity", self.quality_weight_fixture_identity),
+            ("form", self.quality_weight_form),
+            ("season_stats", self.quality_weight_season_stats),
+            ("availability", self.quality_weight_availability),
+            ("odds", self.quality_weight_odds),
+            ("research", self.quality_weight_research),
+            ("lineups", self.quality_weight_lineups),
+        ]
+        for name, w in weights:
+            if w < 0:
+                raise ValueError(f"Quality weight '{name}' must be >= 0, got {w}")
+        total = sum(w for _, w in weights)
+        if total <= 0:
+            raise ValueError(f"Total quality weight must be > 0, got {total}")
+        if not (0.0 <= self.quality_min_predict_score <= 1.0):
+            raise ValueError(
+                "quality_min_predict_score must be between 0 and 1, "
+                f"got {self.quality_min_predict_score}"
+            )
+        usable = self.quality_band_usable_min
+        good = self.quality_band_good_min
+        excellent = self.quality_band_excellent_min
+        if not (0.0 <= usable <= good <= excellent <= 1.0):
+            raise ValueError(
+                "Quality band thresholds must satisfy 0 <= usable <= good <= excellent <= 1, "
+                f"got usable={usable}, good={good}, excellent={excellent}"
+            )
+        if self.quality_staleness_penalty < 0:
+            raise ValueError(
+                f"quality_staleness_penalty must be >= 0, got {self.quality_staleness_penalty}"
+            )
+        if not (0.0 <= self.quality_max_staleness_penalty <= 1.0):
+            raise ValueError(
+                "quality_max_staleness_penalty must be between 0 and 1, "
+                f"got {self.quality_max_staleness_penalty}"
+            )
         return self
 
     @property

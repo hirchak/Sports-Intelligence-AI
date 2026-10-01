@@ -1777,5 +1777,566 @@ results:
 - Working tree clean, build/m5 up to date with origin/build/m5.
 known problems: None.
 spec/ADR deviations: None.
-Git commit hash if created: to be recorded
-next recommended action: Commit docs, push build/m5, open PR build/m5 -> main, wait for CI, merge to main, tag v0.6-m5, create build/m6.
+Git commit hash if created: 94a0511470ce2385b297b1b3fb3bcbe741639d48
+next recommended action: Open PR build/m5 -> main, wait for CI, merge to main, tag v0.6-m5, create build/m6.
+
+---
+timestamp: 2026-09-30T07:15:00+02:00
+agent/model: Antigravity (Gemini 3.8 Flash)
+milestone: M5
+task: Finalize M5 merge to main, tag v0.6-m5, create branch build/m6
+files changed:
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/AI_WORKLOG.md
+behavior implemented:
+- Verified M5 acceptance verdict: PASS / ACCEPTED (HEAD b38229b0874e9ab992ae25ea2a63e1e6109f8ca7).
+- Merged PR #7 (build/m5 -> main) with merge commit fb256ecaf2ca1a97c64f1dba8d491cff6b935c91.
+- Created and pushed annotated tag v0.6-m5 on commit fb256ec.
+- Created branch build/m6 from updated accepted main (fb256ec).
+commands/tests run:
+- gh pr merge 7 --merge
+- git tag -a v0.6-m5 -m "Milestone M5 — Web Research Subsystem"
+- git push origin v0.6-m5
+- git checkout -b build/m6
+results:
+- Clean merge, annotated tag v0.6-m5 pushed to remote, branch build/m6 checked out.
+known problems: None.
+spec/ADR deviations: None.
+Git commit hash if created: fb256ecaf2ca1a97c64f1dba8d491cff6b935c91
+next recommended action: Implement Milestone M6.
+
+---
+timestamp: 2026-09-30T09:25:00+02:00
+agent/model: Antigravity (Gemini 3.8 Flash)
+milestone: M6
+task: Implement Milestone M6: deterministic Feature Builder + Data Quality Engine + immutable MatchContext
+files changed:
+- src/sports_intelligence/api/app.py
+- src/sports_intelligence/api/routes/context.py
+- src/sports_intelligence/collectors/pre_match_scan.py
+- src/sports_intelligence/collectors/sports_collectors.py
+- src/sports_intelligence/context/__init__.py
+- src/sports_intelligence/context/builder.py
+- src/sports_intelligence/context/models.py
+- src/sports_intelligence/context/provenance.py
+- src/sports_intelligence/context/selector.py
+- src/sports_intelligence/db/migrations/versions/0008_m6_match_context_features_quality.py
+- src/sports_intelligence/db/models/__init__.py
+- src/sports_intelligence/db/models/context.py
+- src/sports_intelligence/db/models/snapshots.py
+- src/sports_intelligence/features/__init__.py
+- src/sports_intelligence/features/builder.py
+- src/sports_intelligence/providers/sports/mock.py
+- src/sports_intelligence/quality/__init__.py
+- src/sports_intelligence/quality/engine.py
+- src/sports_intelligence/schemas/context.py
+- src/sports_intelligence/workers/celery_app.py
+- src/sports_intelligence/workers/tasks/context.py
+- src/sports_intelligence/workers/tasks/pre_match.py
+- tests/integration/test_m6_anti_leakage_and_context.py
+- tests/unit/collectors/test_pre_match_scan.py
+- tests/unit/context/test_context_schema_and_hash.py
+- tests/unit/features/test_features_math.py
+- tests/unit/quality/test_quality_engine.py
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/AI_WORKLOG.md
+- docs/REVIEW_HANDOFF.md
+behavior implemented:
+- Extended mock sports provider to 10 completed fixtures; updated FormInputsCollector default window to 10 and populated is_home and result; added FreshnessCategory.TEAM_FORM dispatch to execute_plan().
+- Created Alembic migration 0008 adding feature_snapshots, data_quality_reports, and match_contexts tables with proper indexes and unique constraints.
+- Built strict point-in-time evidence selector (pure <= as_of across 8 evidence tables with zero future data leakage).
+- Built machine-readable source provenance manifest with composite SHA-256 fingerprint.
+- Built deterministic Feature Builder V1 calculating form PPG, scoring/conceding rates, clean sheets, home/away splits, schedule rest days/congestion, standings deltas, availability counts/state, market no-vig probabilities, and odds movement; preserved missing != 0.0 with diagnostics.
+- Built deterministic Data Quality Engine evaluating 7 dimensions with conflict penalties, critical missing rules (odds/form missing -> can_predict=False), and phase-aware lineups policy (MORNING: N/A and excluded from denominator; PREMATCH: evaluated per publication/confirmation).
+- Built MatchContext V1 schema (13 sections), canonical JSON serialization, and stable SHA-256 context_hash.
+- Integrated background context build Celery task (context.build_match_context) on evaluation queue and wired scanner dispatch.
+- Added read-only endpoints GET /v1/fixtures/{id}/quality and GET /v1/fixtures/{id}/context.
+commands/tests run:
+- uv run ruff check .
+- uv run ruff format --check .
+- uv run mypy src
+- uv run pytest -q -m 'not integration'
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q
+- DATABASE_URL=... uv run alembic downgrade -1 && alembic upgrade head && alembic check
+- docker compose config -q && docker compose --profile telegram config -q
+results:
+- Lint: clean
+- Format: clean (172 files)
+- Mypy: clean (115 files)
+- Unit tests: 328 passed, 80 deselected
+- Integration tests: 80 passed, 328 deselected
+- Full suite: 408 passed in 14.20s
+- Alembic: clean, no schema drift
+- Docker compose: valid
+- Zero live external calls, zero credentials, zero LLM calls.
+known problems: None.
+spec/ADR deviations: None.
+Git commit hash if created: fff8df75c520696f6c25a14e19ded7b6711e7688
+next recommended action: Independent review (verdict: FAIL; focused M6.1 requested).
+
+---
+timestamp: 2026-09-30T10:40:00+02:00
+agent/model: Antigravity (Gemini 3.8 Flash)
+milestone: M6.1
+task: Milestone M6.1 correctness, provenance, freshness, and orchestration pass on build/m6
+files changed:
+- src/sports_intelligence/api/routes/context.py
+- src/sports_intelligence/collectors/sports_collectors.py
+- src/sports_intelligence/context/builder.py
+- src/sports_intelligence/context/models.py
+- src/sports_intelligence/context/provenance.py
+- src/sports_intelligence/context/selector.py
+- src/sports_intelligence/core/config.py
+- src/sports_intelligence/db/migrations/versions/0003_provider_evidence_history_and_indexes.py
+- src/sports_intelligence/db/migrations/versions/0009_m6_1_fixture_metadata_and_provenance.py
+- src/sports_intelligence/db/models/__init__.py
+- src/sports_intelligence/db/models/context.py
+- src/sports_intelligence/db/models/discovery.py
+- src/sports_intelligence/db/models/snapshots.py
+- src/sports_intelligence/db/repositories/discovery.py
+- src/sports_intelligence/features/builder.py
+- src/sports_intelligence/pipelines/discover_fixtures.py
+- src/sports_intelligence/quality/engine.py
+- src/sports_intelligence/research/service.py
+- src/sports_intelligence/workers/tasks/pre_match.py
+- tests/integration/test_m6_anti_leakage_and_context.py
+- tests/unit/context/test_context_schema_and_hash.py
+- tests/unit/features/test_features_math.py
+- tests/unit/quality/test_quality_engine.py
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/AI_WORKLOG.md
+- docs/REVIEW_HANDOFF.md
+behavior implemented:
+- Immutable Fixture Metadata Observation Model: created migration 0009 with fixture_metadata_snapshots tracking point-in-time kickoff, status, venue, round, league, season, team names, and payload_id. Updated discovery pipeline to persist snapshot on fixture discovery/update. Selector queries fixture_metadata_snapshots <= as_of.
+- Added payload_id ForeignKey to team_form_snapshots and linked in FormInputsCollector.
+- Provenance manifest updated to include fixture_metadata_snapshot, form payload_id, current and previous odds snapshot set IDs, and real research run ID with document/claim IDs.
+- Deterministic multi-bookmaker market consensus: calculated median odds and median no-vig probabilities per market/selection across bookmakers; odds movement calculated from delta of medians.
+- Form selection: strictly filtered to window_size == 10 and scope == "overall".
+- Provider-scoped external team ID mapping: matched standings and team statistics rows using provider-specific external team IDs.
+- Fixed form math: preserved missing != 0; missing goals_for does not count as failed to score; missing goals_against does not count as clean sheet; independent valid sample counts tracked.
+- Freshness-aware Data Quality Engine: evaluated snapshot age against configured phase TTLs at as_of, populating stale_sources and applying staleness penalties. Canonical lineup publication states handled (CONFIRMED=1.0, NOT_YET_PUBLISHED=0.40, UNSUPPORTED=0.50, PROVIDER_ERROR=0.20 + error record). Distinguished uncollected research (0.50 + warning) from NO_USEFUL_RESULTS (0.85). Persisted quality_policy dictionary with quality bands excellent/good/usable_with_warnings/abstain.
+- Feature-level provenance: mapped each derived feature group to contributing source snapshot IDs in feature_provenance_jsonb.
+- Context-build orchestration: scanner blocks context build if any collector is PENDING, RUNNING, or needs enqueue. Context build job uses source-generation key format. FAILED context jobs retry via CAS FAILED -> PENDING with same UUID without downgrading RUNNING or SUCCEEDED.
+- API validation: typed ForecastPhase enum query parameter on /quality and /context endpoints (HTTP 422 on invalid).
+commands/tests run:
+- uv run ruff check .
+- uv run ruff format --check .
+- uv run mypy src
+- uv run pytest -q -m 'not integration'
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q
+- DATABASE_URL=... uv run alembic check
+- docker compose config -q && docker compose --profile telegram config -q
+results:
+- Ruff: clean (all checks passed)
+- Ruff format: clean (173 files already formatted)
+- Mypy: clean (116 files checked, 0 errors)
+- Unit tests: 339 passed in 3.81s
+- Integration tests: 87 passed in 15.23s
+- Full pytest suite: 426 passed in 16.64s
+- Alembic check: clean, no schema drift
+- Docker compose: valid
+- Zero live external calls, zero credentials, zero LLM calls.
+known problems: None.
+spec/ADR deviations: None.
+Git commit hash if created: ecba462cb9059a5df30193dc2eb3e112f85d3aee
+next recommended action: Push build/m6, await independent review.
+
+---
+
+timestamp: 2026-09-30T21:18:00+02:00
+agent/model if known: Antigravity (Gemini 3.8 Flash)
+milestone: M6.2
+task: Milestone M6.2 Final Acceptance-Hardening Pass on build/m6
+files changed:
+- src/sports_intelligence/context/builder.py
+- src/sports_intelligence/context/models.py
+- src/sports_intelligence/context/provenance.py
+- src/sports_intelligence/context/selector.py
+- src/sports_intelligence/core/config.py
+- src/sports_intelligence/db/migrations/versions/0003_provider_evidence_history_and_indexes.py
+- src/sports_intelligence/db/migrations/versions/0009_m6_1_fixture_metadata_and_provenance.py
+- src/sports_intelligence/db/models/context.py
+- src/sports_intelligence/quality/engine.py
+- src/sports_intelligence/workers/tasks/context.py
+- src/sports_intelligence/workers/tasks/pre_match.py
+- tests/integration/test_m6_anti_leakage_and_context.py
+- tests/unit/context/test_context_schema_and_hash.py
+- tests/unit/features/test_features_math.py
+- tests/unit/quality/test_quality_config_validation.py
+- docs/CURRENT_TASK.md
+- docs/IMPLEMENTATION_STATUS.md
+- docs/REVIEW_HANDOFF.md
+- docs/AI_WORKLOG.md
+behavior implemented:
+- Historical Migration 0003 Integrity: Restored 0003_provider_evidence_history_and_indexes.py byte-for-byte to match origin/main (SHA-256 verified 8573d9cc3790166c2b365c627b99b2789c314716839b0fa6da64dc3e184dafaf).
+- Authoritative Fixture Metadata & Historical Fallback Removal: When FixtureMetadataSnapshot is missing <= as_of, status is set to METADATA_UNAVAILABLE, venue=None, round=None, fixture_metadata_snapshot_id=None without falling back to mutable canonical Fixture status (e.g. FT). Quality flags fixture_metadata_missing in critical_missing, evaluating quality band to abstain and setting can_predict=False. When snapshot is present <= as_of, strictly uses its dimensions and resolves league using the snapshot's league_id.
+- Migration 0009 Legacy Baseline Backfill: Added backfill of legacy_baseline snapshot for pre-existing fixtures at clock_timestamp() (not backdated). Added policy_fingerprint column to data_quality_reports and bound in uq_data_quality_reports_identity unique constraint. Symmetrical downgrade cleanly drops constraint, columns, and tables.
+- Complete Fixture Provenance: Manifest includes snapshot_id, provider, captured_at, payload_id, provider_fixture_id, source_version, league_id, season_id, home_team_id, away_team_id. No fake legacy snapshot IDs.
+- Runtime Quality Settings Wiring: Context worker uses build_quality_policy(settings) and FreshnessPolicy(settings) constructed from real runtime Settings and passes them to build_and_persist_match_context. Uses configurable staleness_penalty and max_staleness_penalty directly in evaluation.
+- Strict Quality Configuration Validation: Enforced validation rules in Settings and QualityPolicy: all weights >= 0, total active weight > 0, 0 <= min_predict_score <= 1, monotonic 0 <= usable <= good <= excellent <= 1, staleness_penalty >= 0, 0 <= max_staleness_penalty <= 1.
+- Quality Policy Fingerprint & Identity: Policy SHA-256 fingerprint persisted in data_quality_reports.policy_fingerprint and bound in unique constraint. Separate policies for same fixture and as_of produce distinct reports without conflict.
+- Build Configuration Generation in Context Job Identity: Deterministic compute_build_config_fingerprint embedded in job key format context_build:{fixture_id}:{phase}:{source_fingerprint}:{build_config_fingerprint}.
+- Deterministic Market Snapshot Serialization: OddsPrice rows sorted by (market, selection, bookmaker, line, decimal_odds, id). Replaced singular bookmaker with bookmakers: list[str]. Verified identical canonical JSON and hash regardless of DB row insertion order.
+- Compatible Previous Odds Snapshot Requirement: Query strictly requires OddsSnapshotSet.provider == odds_set.provider and captured_at < odds_set.captured_at.
+- Strict Typed MatchContext Schema: Converted MatchContextV1 and all section models to Pydantic with ConfigDict(extra="forbid", frozen=True). Full context validated before canonical serialization, hash, and persistence.
+- Complete Structured Research Claim Source References: ResearchClaimSource object with document_id, url, domain, title, published_at, retrieved_at, content_hash, provider.
+- Historical Provider Mapping Semantics & Isolation: ProviderEntityId queries filter first_seen_at <= as_of_utc. get_home_external_id(provider) strictly returns None if provider is unmapped (no fallback).
+- MORNING Lineups Fully N/A: Excluded from score denominator, stale lineups do not enter stale_sources, and no staleness penalties or warnings are triggered.
+commands/tests run:
+- uv run ruff check .
+- uv run ruff format --check .
+- uv run mypy src
+- uv run pytest -q -m 'not integration'
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q -m integration
+- TEST_DATABASE_URL=... TEST_REDIS_URL=... uv run pytest -q
+- DATABASE_URL=... uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check
+- docker compose config -q && docker compose --profile telegram config -q
+results:
+- Ruff: clean (All checks passed!)
+- Ruff format: clean (174 files already formatted)
+- Mypy: clean (Success: no issues found in 116 source files)
+- Unit tests: 350 passed in 4.78s
+- Integration tests: 93 passed in 26.30s
+- Full pytest suite: 443 passed in 58.71s
+- Alembic downgrade/upgrade/check: clean, 0 schema drift
+- Docker compose & telegram profile: valid
+- Zero live external calls, zero credentials, zero LLM calls.
+known problems: None.
+spec/ADR deviations: None.
+Git commit hash if created: e004475e120472523305945c5568ffb9bfa97859
+next recommended action: Push build/m6, await independent review.
+
+
+
+---
+
+## 2026-09-30 23:25 (UTC+2) - Antigravity
+**Milestone:** M6
+**Task:** M6.3 Reproducibility and Historical-Authority Pass Implementation
+
+**Behavior Implemented:**
+- Implemented `FreshnessPolicy` inside `ContextBuildPolicy` to compute staleness deterministically without injecting runtime side effects.
+- Rewrote `select_evidence` to strictly rely on `FixtureMetadataSnapshot` for league/team data rather than mutable `Fixture` objects.
+- Refactored `MatchContext` sections to strictly enforce schemas using Pydantic `ConfigDict(extra="forbid")`.
+- Updated all integration and unit tests for schema compliance and `HistoricalFixtureMetadataUnavailable` logic.
+
+**Files Changed:**
+- `src/sports_intelligence/context/builder.py`
+- `src/sports_intelligence/context/selector.py`
+- `src/sports_intelligence/context/models.py`
+- `src/sports_intelligence/collectors/freshness.py`
+- `tests/integration/test_m6_anti_leakage_and_context.py`
+- `tests/unit/...` (various config/mock updates)
+
+**Commands/Tests Run:**
+- `uv run ruff check . --fix`
+- `uv run ruff format .`
+- `uv run mypy src`
+- `uv run pytest -q -m "not integration"`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q -m integration`
+- `uv run pytest -q`
+
+**Results:**
+- Linting, formatting, and type checks passed 100%.
+- Unit tests: 350/350 passed.
+- Integration tests: 93/93 passed.
+- Total pytest: 443/443 passed.
+
+**Known Problems:**
+- None.
+
+**Spec/ADR Deviations:**
+- None.
+
+**Next Recommended Action:**
+- Submit `build/m6` for independent review.
+
+---
+
+## 2026-10-01 09:38 (UTC+2) - Antigravity (Gemini 3.8 Flash)
+**Milestone:** M6.3
+**Task:** M6.3 Recovery, Verification, Commit, Remote CI & Review Handoff
+
+**Files Changed:**
+- `src/sports_intelligence/collectors/freshness.py`
+- `src/sports_intelligence/context/builder.py`
+- `src/sports_intelligence/context/errors.py`
+- `src/sports_intelligence/context/models.py`
+- `src/sports_intelligence/context/provenance.py`
+- `src/sports_intelligence/context/selector.py`
+- `src/sports_intelligence/db/migrations/versions/0010_m6_3_freshness_policy.py`
+- `src/sports_intelligence/db/models/context.py`
+- `src/sports_intelligence/quality/engine.py`
+- `src/sports_intelligence/workers/tasks/context.py`
+- `src/sports_intelligence/workers/tasks/pre_match.py`
+- `tests/integration/test_m6_anti_leakage_and_context.py`
+- `tests/unit/context/test_context_schema_and_hash.py`
+- `tests/unit/features/test_features_math.py`
+- `tests/unit/quality/test_quality_config_validation.py`
+- `tests/unit/quality/test_quality_engine.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Behavior Implemented:**
+- Recovered, verified, and committed all missing M6.3 source and test files to resolve remote delivery mismatch on `build/m6`.
+- Refactored `HistoricalFixtureMetadataUnavailable`: raises typed deterministic exception when no `FixtureMetadataSnapshot` exists `<= as_of`. Refuses to persist `FeatureSnapshot`, `DataQualityReport`, or `MatchContext`.
+- Metadata Team IDs: Downstream evidence queries and historical `ProviderEntityId` lookups use snapshot's `home_team_id` and `away_team_id` end-to-end.
+- Provider Mapping Provenance: Captured resolved `ProviderEntityId` lookups (`first_seen_at <= as_of_utc`) into `provider_mappings` section of source manifest.
+- Canonical Source Fingerprint: Deterministic SHA-256 hash of entire source manifest including fixture metadata, evidence snapshots, and provider mappings.
+- FreshnessPolicy & Fingerprint: Dataclass tracking TTLs and canonical fingerprint. Added migration `0010_m6_3_freshness_policy.py` for `data_quality_reports.freshness_policy_fingerprint` and extended unique constraint `uq_data_quality_reports_identity`. Symmetrical downgrade verified.
+- ContextBuildPolicy: Combines `QualityPolicy` and `FreshnessPolicy`, generating deterministic `build_config_fingerprint` embedded in Celery task idempotency key.
+- Strict Pydantic Models: Enforced `ConfigDict(extra="forbid", frozen=True)` across all 13 sections and root `MatchContextV1`.
+
+**Commands/Tests Run:**
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv run pytest -q -m "not integration"`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q -m integration`
+- `uv run pytest -q`
+- `DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check`
+- `docker compose config -q && docker compose --profile telegram config -q`
+- `git push origin build/m6`
+- `gh run view 36831445894`
+
+**Results:**
+- Ruff check: clean (All checks passed!)
+- Ruff format: clean (175 files formatted)
+- Mypy: clean (Success: no issues found in 118 source files)
+- Unit tests: 357 passed in 4.62s
+- Integration tests: 96 passed in 17.78s
+- Full pytest suite: 453 passed in 20.15s
+- Alembic downgrade/upgrade/check: clean, zero schema drift
+- Docker compose: valid
+- GitHub Actions CI (run `36831445894` on `5fb6c604617c7f93117e6d42d623a92082461981`): SUCCESS (all 3 jobs green)
+- Determinism & Security: Zero live external calls, zero credentials, zero LLM calls.
+
+**Known Problems:**
+- None.
+
+**Spec/ADR Deviations:**
+- None.
+
+**Git Commit Hash if Created:**
+- Implementation commit: `5fb6c604617c7f93117e6d42d623a92082461981`
+
+**Next Recommended Action:**
+- Submit `build/m6` for independent review. Do NOT merge M6. Do NOT start M7.
+
+---
+
+## 2026-10-01 10:10 (UTC+2) - Antigravity (Gemini 3.8 Flash)
+**Milestone:** M6.4
+**Task:** M6.4 Acceptance-Fix Pass (Historical League Authority, Deterministic Provider Mappings, Immutability Audit, Task Semantics)
+
+**Files Changed:**
+- `src/sports_intelligence/context/selector.py`
+- `src/sports_intelligence/context/provenance.py`
+- `src/sports_intelligence/db/models/discovery.py`
+- `src/sports_intelligence/db/repositories/discovery.py`
+- `src/sports_intelligence/pipelines/discover_fixtures.py`
+- `src/sports_intelligence/workers/tasks/context.py`
+- `src/sports_intelligence/db/migrations/versions/0010_m6_3_freshness_policy.py`
+- `src/sports_intelligence/db/migrations/versions/0011_m6_4_historical_league_metadata.py`
+- `tests/unit/context/test_context_schema_and_hash.py`
+- `tests/integration/test_m6_anti_leakage_and_context.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Behavior Implemented:**
+- Historical League Metadata Authority:
+  - Added migration `0011_m6_4_historical_league_metadata.py` adding `observed_league_name` and `observed_league_slug` to `fixture_metadata_snapshots` with migration-time backfill from `leagues` table and symmetrical downgrade.
+  - Updated `record_fixture_metadata_snapshot` repository method and `discover_fixtures` pipeline to record observed league identity.
+  - Refactored `select_evidence` to read league identity directly from `FixtureMetadataSnapshot.observed_league_name` and `observed_league_slug`, eliminating reliance on mutable canonical `League` table.
+  - Included `observed_league_name` and `observed_league_slug` in source manifest `fixture_metadata.details`.
+  - Added regression test demonstrating mutating `League` row does not alter historical MatchContext identity, source fingerprint, or context hash.
+- Deterministic Provider-Mapping Selection and Order:
+  - Query ordering in `select_evidence` explicitly orders by `ProviderEntityId.provider.asc(), ProviderEntityId.first_seen_at.desc(), ProviderEntityId.external_id.asc(), ProviderEntityId.id.asc()`.
+  - Deterministically selects latest mapping `<= as_of` per provider; excludes future mappings (`first_seen_at > as_of`).
+  - Canonical sort on `SelectedFixtureInfo` mapping lists: `(provider, -first_seen_at.timestamp(), external_id, str(mapping_id))`.
+  - Added unit and integration tests verifying identical source manifest, source fingerprint, and context hash across arbitrary insertion orders.
+- Pydantic Immutability Claim Audit:
+  - Audited documentation and test suite regarding immutability guarantees.
+  - Clarified that `ConfigDict(frozen=True)` provides attribute-level freezing, while mutable Python collections inside models are not deeply frozen.
+  - Reaffirmed that the authoritative immutability boundary is persistence in PostgreSQL (`match_contexts` table).
+  - Added unit test `test_match_context_immutability_attribute_frozen_and_nested_behavior`.
+- Celery Task Error Semantics:
+  - Handled `HistoricalFixtureMetadataUnavailable` cleanly in context Celery task.
+  - Logs structured warning with zero unexpected traceback dumps.
+  - Marks Celery job `FAILED` in database ledger (`jobs` and `job_attempts`) and re-raises exception for worker failure accounting.
+  - Added integration test verifying clean logging, ledger failure persistence, and zero context persistence.
+- Migration & Documentation Hygiene:
+  - Fixed migration `0010_m6_3_freshness_policy.py` revision docstring from `cb9a7f960dbe` to `0010`.
+  - Migration `0011` verified through `upgrade head` -> `downgrade -1` -> `upgrade head` -> `alembic check` with zero schema drift.
+
+**Commands/Tests Run:**
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv run pytest -q -m "not integration"`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q -m integration`
+- `uv run pytest -q`
+- `DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check`
+- `docker compose config -q && docker compose --profile telegram config -q`
+
+**Results:**
+- Ruff check: clean (All checks passed!)
+- Ruff format: clean (177 files already formatted)
+- Mypy: clean (Success: no issues found in 119 source files)
+- Unit tests: 360 passed in 4.06s
+- Integration tests: 99 passed in 18.72s
+- Full pytest suite: 459 passed in 19.29s
+- Alembic downgrade/upgrade/check: clean, zero schema drift
+- Docker compose: valid
+- Determinism & Security: Zero live external calls, zero credentials, zero LLM calls.
+
+**Known Problems:**
+- None.
+
+**Spec/ADR Deviations:**
+- None.
+
+**Git Commit Hash if Created:**
+- Implementation commit: `cedf481ca8839714b82b0dfaf75bab33023e32a8`
+
+**Next Recommended Action:**
+- Stage, commit, push to `origin/build/m6`, monitor GitHub Actions CI, and provide handoff report.
+
+---
+
+### 2026-10-01 — Antigravity (Milestone M6.5 Historical-Truthfulness Acceptance Pass)
+
+**Agent/Model:** Antigravity / Gemini 2.5 Pro  
+**Milestone:** M6.5 (Historical-Truthfulness Acceptance Pass on `build/m6`)  
+**Task:** Resolve M6.4 review findings regarding false historical backfill in migration 0011, mutable League fallback in context selector, and missing truthful pre-0011 regression test.
+
+**Files Changed:**
+- `src/sports_intelligence/db/migrations/versions/0011_m6_4_historical_league_metadata.py`
+- `src/sports_intelligence/context/selector.py`
+- `src/sports_intelligence/context/models.py`
+- `src/sports_intelligence/quality/engine.py`
+- `tests/unit/context/test_context_schema_and_hash.py`
+- `tests/integration/test_m6_anti_leakage_and_context.py`
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Behavior Implemented:**
+- Elimination of False Historical Backfill:
+  - Removed SQL `UPDATE` statement in migration 0011 that backfilled pre-existing `fixture_metadata_snapshots` from current mutable `leagues` table at migration time.
+  - Pre-0011 legacy snapshots do not acquire migration-time values; legacy rows retain `NULL` for `observed_league_name` and `observed_league_slug`.
+- Elimination of Mutable League Fallback:
+  - In `select_evidence`, removed fallback to mutable `League` row attributes (`league_obj.name`/`league_obj.slug`) and eliminated placeholder sentinels (`"Unknown"`/`"unknown"`).
+  - Simplified mutable `Fixture` locator to an existence-only check (`select(Fixture.id)`).
+  - When snapshot has no observed league identity, `league_name` and `league_slug` evaluate to `None`.
+- Nullable Display Identity in Models:
+  - Made `SelectedFixtureInfo.league_name`, `SelectedFixtureInfo.league_slug`, and `FixtureIdentitySection.league_name`/`league_slug` nullable (`str | None = None`).
+  - Authoritative `league_id` remains strictly non-null.
+- Truthful Quality & Manifest Handling:
+  - In `evaluate_data_quality`, missing observed league display identity records a structured warning (`"Observed league display identity unavailable in historical metadata snapshot"`) and missing field entry (`field="observed_league_display"`).
+  - Missing display fields do not trigger `fixture_metadata_missing` and do not block `can_predict`.
+  - Manifest records `null` for `observed_league_name` and `observed_league_slug`.
+- Comprehensive Unit & Integration Regression Verification:
+  - Added unit test `test_match_context_with_none_league_display_metadata_serializes_cleanly` verifying `None` display fields serialize cleanly to canonical JSON (`"league_name":null`, `"league_slug":null`) and generate a valid SHA-256 hash.
+  - Added 10-step integration regression test `test_legacy_pre_0011_metadata_snapshot_does_not_acquire_migration_league_values` covering steps A through J: schema 0010 downgrade, legacy insert at T0, migration 0011 upgrade at T1 without backfill, context build between T0 and T1, absent mutable values, truthful provenance, League mutation at T2, and replay reproducibility with matching context hash and source fingerprint.
+
+**Commands/Tests Run:**
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv run pytest -q -m "not integration"`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q -m integration`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q`
+- `DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check`
+- `docker compose config -q && docker compose --profile telegram config -q`
+
+**Results:**
+- Ruff check: clean (All checks passed!)
+- Ruff format: clean (177 files already formatted)
+- Mypy: clean (Success: no issues found in 119 source files)
+- Unit tests: 361 passed in 3.73s (100%)
+- Integration tests: 100 passed in 15.82s (100%)
+- Full pytest suite: 461 passed in 17.65s (100%)
+- Alembic downgrade/upgrade/check: clean, zero schema drift
+- Docker compose: valid
+- Determinism & Security: Zero live external calls, zero credentials, zero LLM calls.
+
+**Known Problems:**
+- None.
+
+**Spec/ADR Deviations:**
+- None.
+
+**Git Commit Hash if Created:**
+- Implementation commit: `86cc3ddcbb7625723ab1fb442cac65c53be46b87` (GitHub Actions CI Run `36837766536` — SUCCESS)
+
+**Next Recommended Action:**
+- Independent review handoff for M6.5. Do NOT merge M6. Do NOT start M7. Development remains LOCAL ONLY.
+
+---
+
+### 2026-10-01 — Antigravity (Milestone M6 Acceptance & Final Merge Preparation)
+
+**Agent/Model:** Antigravity / Gemini 2.5 Pro  
+**Milestone:** M6 (Final Acceptance & Documentation Finalization on `build/m6`)  
+**Task:** Independent review verdict received: M6 / M6.5 = PASS / ACCEPTED. Perform Phase A documentation-only finalization prior to merging into `main`.
+
+**Files Changed:**
+- `docs/CURRENT_TASK.md`
+- `docs/IMPLEMENTATION_STATUS.md`
+- `docs/REVIEW_HANDOFF.md`
+- `docs/AI_WORKLOG.md`
+
+**Independent Review Verdict:**
+- M6 / M6.5 = **PASS / ACCEPTED**
+- Reviewed accepted pre-merge HEAD: `cec7210cf440b9cc06c040611e477cfed9ad5472`
+- Implementation commit: `86cc3ddcbb7625723ab1fb442cac65c53be46b87`
+- Final CI run for accepted HEAD: `36837924850` (Conclusion: SUCCESS across all 3 jobs)
+- Verified remote results: unit (361 passed, 100 deselected), integration (100 passed, 361 deselected), Ruff check clean, Ruff format clean, mypy clean (119 files), Alembic check clean (0 drift), Docker Compose validation clean.
+- Zero remaining source-code blockers.
+
+**Behavior Implemented:**
+- Phase A docs-only finalization:
+  - Updated `docs/CURRENT_TASK.md`: recorded M6 accepted, review verdict PASS/ACCEPTED, pre-merge HEAD, final CI run, and next merge actions.
+  - Updated `docs/IMPLEMENTATION_STATUS.md`: recorded M6.5 and M6 overall as PASS / ACCEPTED, preserving historical review findings; marked M7 as NOT STARTED.
+  - Updated `docs/REVIEW_HANDOFF.md`: synchronized commits and CI run IDs; aligned immutability semantics (attribute-level Pydantic freeze vs collection mutability, application-level PostgreSQL persistence boundary, context hash comparison vs read-time recomputation).
+  - Appended review outcome to `docs/AI_WORKLOG.md`.
+
+**Commands/Tests Run:**
+- `uv run ruff check .`
+- `uv run ruff format --check .`
+- `uv run mypy src`
+- `uv run pytest -q -m "not integration"`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q -m integration`
+- `TEST_DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' TEST_REDIS_URL='redis://localhost:6380/15' uv run pytest -q`
+- `DATABASE_URL='postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel_test' uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check`
+- `docker compose config -q && docker compose --profile telegram config -q`
+
+**Results:**
+- All acceptance checks previously verified green and unchanged.
+- Documentation-only changes; zero source code or test changes.
+
+**Known Problems:**
+- None. M6 is fully accepted.
+
+**Spec/ADR Deviations:**
+- None.
+
+**Git Commit Hash if Created:**
+- Docs-only finalization commit pending.
+
+**Next Recommended Action:**
+- Commit docs changes, push `build/m6`, wait for GitHub Actions CI green, open PR to `main`, merge, tag `v0.7-m6`, and create `build/m7`.
+
+
+

@@ -112,3 +112,41 @@ def test_execute_plan_skips_standings_and_team_stats_without_season() -> None:
     assert counters2["standings"] == 1
     assert counters2["team_stats"] == 2
     assert counters2["availability"] == 2
+
+
+def test_execute_plan_dispatches_form_inputs() -> None:
+    import asyncio
+    from unittest.mock import MagicMock
+
+    from sports_intelligence.collectors.pre_match_scan import PreMatchDecision, execute_plan
+
+    enqueued: list[tuple[str, dict[str, object]]] = []
+
+    async def fake_enqueue(name: str, **kwargs: object) -> None:
+        enqueued.append((name, kwargs))
+
+    decision = PreMatchDecision(
+        fixture_id="fix-form-1",
+        league_id="lg-1",
+        home_team_id="tm-home",
+        away_team_id="tm-away",
+        season_id="sea-1",
+        kickoff_at=datetime.now(UTC),
+        phase=ForecastPhase.MORNING,
+        categories_to_collect=(FreshnessCategory.TEAM_FORM,),
+    )
+
+    ctx = MagicMock()
+    settings = _settings()
+    counters = asyncio.run(
+        execute_plan(settings, ctx, decisions=[decision], enqueue_collector=fake_enqueue)
+    )
+
+    assert counters.get("form_inputs") == 2
+    assert len(enqueued) == 2
+    assert enqueued[0][0] == "form_inputs"
+    assert enqueued[0][1]["team_id"] == "tm-home"
+    assert enqueued[0][1]["window_size"] == 10
+    assert enqueued[1][0] == "form_inputs"
+    assert enqueued[1][1]["team_id"] == "tm-away"
+    assert enqueued[1][1]["window_size"] == 10

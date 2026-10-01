@@ -2,37 +2,35 @@
 
 **Project:** Sports Intelligence AI  
 **Development phase:** LOCAL DEVELOPMENT ONLY  
-**Current milestone:** M5 — PASS / ACCEPTED (finalizing merge to main, v0.6-m5 tag, and M6 kickoff)  
-**Last updated:** 2026-09-29 (Antigravity)  
-**Last known good commit:** b38229b0874e9ab992ae25ea2a63e1e6109f8ca7 (M5 accepted implementation HEAD)
+**Current milestone:** M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext (PASS / ACCEPTED; PREPARING MERGE)  
+**Last updated:** 2026-10-01 (Antigravity)  
+**Last known good commit:** fb256ecaf2ca1a97c64f1dba8d491cff6b935c91 (tag v0.6-m5, PR #7 merged into main)
 
 ---
 
 # 1. Current objective
 
-M4 passed independent review (PASS / ACCEPTED, HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`).
+Milestone review verdicts:
+- M4 → **PASS / ACCEPTED** (HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`, tagged `v0.5-m4`)
+- M5 / M5.3 → **PASS / ACCEPTED** (HEAD `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`, merged in PR #7 `fb256ecaf2ca1a97c64f1dba8d491cff6b935c91`, tagged `v0.6-m5`)
+- M6 → **FAIL** (reviewed HEAD `fff8df75c520696f6c25a14e19ded7b6711e7688`)
+- M6.1 → **FAIL** (reviewed HEAD `08d253fe90883f11456b402563f4065fc4b00072`)
+- M6.2 → **FAIL** (reviewed HEAD `a307096b131b9b59fe01a799a299a26b167477d0`)
+- M6.3 → **FAIL** (reviewed HEAD `2b2dfaa30e84e9cf3a4c509093bf031f722bc6ec`, review findings: mutable league metadata dependency in historical replay, non-deterministic provider mapping order, Pydantic immutability claim discrepancy, Celery task refusal traceback)
+- M6.4 → **FAIL** (reviewed HEAD `0621aa576aacd21860bd6695a698f3d85082231a`, review findings: false historical backfill in migration 0011 populating pre-existing snapshots from mutable leagues table at migration time; fallback in select_evidence to mutable League attributes and "Unknown" sentinels; missing legacy pre-0011 regression test)
+- M6.5 → **PASS / ACCEPTED** (pre-merge HEAD `cec7210cf440b9cc06c040611e477cfed9ad5472`, implementation `86cc3ddcbb7625723ab1fb442cac65c53be46b87`, CI run `36837924850`)
+- **M6 overall → PASS / ACCEPTED** (branch `build/m6`)
+- **M7 → NOT STARTED**
 
-Milestone M5 independent review verdicts:
-- M5 initial: **FAIL** (HEAD `6c52b1f1df85163b0aeef1f3a16d223bd3296cff`)
-- M5.1 pass: **FAIL** (HEAD `30dd97a4a948f906d6e690b9acbd14550c75dec8`)
-- M5.2 pass: **FAIL** (HEAD `42f2277d8f7dde2f0b315c259f22c210da05cefb`)
-- **M5.3 pass / Milestone M5: PASS / ACCEPTED**
-  - **Accepted implementation remote HEAD:** `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`
-  - **Eventual main merge commit:** to be recorded upon merge.
+Phase A: Finalized accepted M5, merged to `main` via PR #7 (`fb256ec`), created and pushed annotated tag `v0.6-m5`, branched `build/m6`.
 
-Phase A: Finalize accepted M5:
-1. Ensure `build/m5` is pushed and clean.
-2. Create/update PR `build/m5` → `main`.
-3. Wait for CI and merge without force.
-4. Update local `main` from `origin/main`.
-5. Create and push annotated tag `v0.6-m5`.
-6. Create `build/m6` from updated accepted `main`.
-
-Phase B: Milestone M6 — Deterministic Feature Builder + Data Quality Engine + immutable MatchContext.
+Phase B: Completed, verified, and validated Milestone M6 on `build/m6`. M6 independently reviewed and ACCEPTED. Finalizing docs, merging to `main`, tagging `v0.7-m6`, and preparing `build/m7` branch.
 
 Development remains strictly LOCAL ONLY.
 No Hetzner deployment is authorized.
 No Hermes access/dependency is authorized.
+Zero LLM calls, zero predictions, zero ranking, zero betting recommendations.
+
 
 ---
 
@@ -475,26 +473,242 @@ All review items implemented and independently verified:
 - **Respect Retry-After for 429**: `compute_retry_delay()` parses `Retry-After` header on `ProviderRateLimitError`, bounded by `research_max_retry_after_seconds` (default 30s); deterministic exponential backoff fallback; injectable sleeper and clock for offline tests.
 - **Fixture status capability-awareness**: Extended `CategoryState` Literal to include `"disabled"`; `GET /v1/fixtures/{fixture_id}/status` reports research freshness as `"disabled"` when research capability is disabled and no run exists.
 
+## M6 — Deterministic Feature Builder + Data Quality Engine + Immutable MatchContext (branch `build/m6`)
+
+- **Prerequisite Form Inputs Fix**: Extended mock provider canned completed fixtures to 10 fixtures (`src/sports_intelligence/providers/sports/mock.py`); updated `FormInputsCollector` default window_size to 10 and populated `is_home` and `result` fields; added `FreshnessCategory.TEAM_FORM` dispatch to `execute_plan()` in `pre_match_scan.py`.
+- **Database Schema & Models (Migration 0008)**:
+  - `feature_snapshots`: versioned (`features_v1`), composite unique on `(fixture_id, forecast_phase, as_of)`.
+  - `data_quality_reports`: versioned (`quality_v1`), composite unique on `(fixture_id, forecast_phase, as_of)`, storing overall score, band (`gold`, `silver`, `bronze`, `abstain`), `can_predict`, and dimension scores.
+  - `match_contexts`: versioned (`context_v1`), composite unique on `(fixture_id, forecast_phase, as_of)`, storing canonical context document and SHA-256 `context_hash`.
+  - Migration cycle verified: `upgrade head`, `downgrade -1`, `upgrade head`, `alembic check` with 0 schema drift.
+- **Point-in-Time Evidence Selector (`sports_intelligence.context.selector`)**:
+  - Pure point-in-time queries strictly enforcing `<= as_of` across Fixture, Standings (exact league + season match), Team Stats, Form, Availability, Lineups, Odds (current + previous for movement), and Research (`get_research_for_fixture(mode="latest_run")`).
+  - Zero leakage of future records.
+- **Source Provenance Manifest (`sports_intelligence.context.provenance`)**:
+  - Machine-readable manifest mapping each category to table, snapshot_id, provider, captured_at, payload reference.
+  - Composite SHA-256 `source_fingerprint` uniquely capturing the source evidence snapshot state.
+- **Deterministic Feature Builder V1 (`sports_intelligence.features.builder`)**:
+  - Pure deterministic math calculating form PPG, goals for/against, scoring/conceding rates, clean sheets, home/away splits.
+  - Schedule rest days and 7d/14d match congestion.
+  - Standings rank and points deltas.
+  - Availability counts and state.
+  - Market no-vig probabilities and odds movement.
+  - Strict preservation of `None` for missing data (never converts missing to 0.0). Missing diagnostics tracked in `missing_features`.
+- **Deterministic Data Quality Engine (`sports_intelligence.quality.engine`)**:
+  - Evaluates 7 dimensions (`fixture_identity`, `form`, `season_stats`, `availability`, `odds`, `research`, `lineups`).
+  - Lineups policy strictly enforced: in `MORNING` phase, lineups are N/A and excluded from denominator; in `PREMATCH` phase, evaluated per publication/confirmation state.
+  - Critical missing rules: `can_predict = False` if odds or form missing.
+  - Quality bands: gold (>=0.85), silver (>=0.70), bronze (>=0.50), abstain (<0.50).
+- **MatchContext V1 Schema & Idempotent Persistence (`sports_intelligence.context.models`, `builder`)**:
+  - Strictly ordered 13 sections per spec.
+  - Canonical JSON serialization with SHA-256 `context_hash`.
+  - Idempotent upsert/re-read semantics in `build_and_persist_match_context`.
+- **Celery Worker Task & Orchestration**:
+  - Background task `context.build_match_context` on queue `evaluation`.
+  - Pre-match scanner dispatches context build job when all required collector jobs are fresh.
+- **Read-Only API Endpoints**:
+  - `GET /v1/fixtures/{fixture_id}/quality`: returns quality report with dimension scores and quality band.
+  - `GET /v1/fixtures/{fixture_id}/context`: returns full immutable MatchContext document and context hash.
+  - Zero live external calls, read-only DB access.
+
+## M6.1 — Correctness, Provenance, Freshness, and Orchestration Pass (branch `build/m6`)
+
+- **Immutable Fixture Metadata Observation Model (`fixture_metadata_snapshots`)**:
+  - Migration 0009: table `fixture_metadata_snapshots` tracking point-in-time fixture identity (kickoff, status, venue, round, league_id, season_id, observed team names, payload_id).
+  - Added `payload_id` (ForeignKey to `raw_provider_payloads.id`, nullable=True) to `team_form_snapshots`.
+  - Selector queries `fixture_metadata_snapshots` `<= as_of`.
+- **Fixture Identity in Provenance**:
+  - Added fixture metadata snapshot to source manifest and composite source fingerprint.
+- **Research Provenance**:
+  - Exposed real `ResearchRun.id` in `FixtureResearchView`.
+  - Manifest includes run ID, status, selected document IDs, claim IDs, URLs, and extraction version.
+- **Complete Odds Provenance**:
+  - Included both current and previous odds snapshot set IDs in source manifest and fingerprint.
+- **Deterministic Multi-Bookmaker Aggregation**:
+  - Consensus median per market/selection across bookmakers.
+  - Movement = current consensus median - previous consensus median.
+- **Form Selection Filtering**:
+  - Selector strictly filters `window_size == 10` and `scope == "overall"`.
+- **Provider-Scoped Team External IDs**:
+  - Match standings/team stats external IDs using `provider == snapshot.provider`.
+- **Preserve Missing != 0 in Form Math**:
+  - Do not convert missing GF/GA to 0. Do not treat missing GA as clean sheet or missing GF as failed to score.
+- **Real Freshness in Data Quality**:
+  - Evaluate snapshot age at `as_of` using configured phase TTLs. Populate `stale_sources` and penalties.
+- **Canonical Lineup Publication States**:
+  - `CONFIRMED`, `NOT_YET_PUBLISHED`, `UNSUPPORTED`, `PROVIDER_ERROR`.
+- **Distinguish Research Not-Collected from NO_USEFUL_RESULTS**:
+  - Distinguish `no_run_collected` (0.50 score + warning) from `NO_USEFUL_RESULTS` (0.85 score), `DISABLED`, `PROVIDER_ERROR`, `QUOTA_DENIED`.
+- **Configurable Quality Policy**:
+  - Runtime configurable weights/thresholds via Settings.
+- **Context-Build Readiness Semantics**:
+  - Scanner refuses context build if required collector job is `PENDING`, `RUNNING`, or has pending enqueues.
+- **Source-Generation Context Build Identity**:
+  - Idempotency key: `context_build:{fixture_id}:{phase}:{schema_version}:{source_fingerprint}`.
+- **Safe Context Job Retry**:
+  - CAS transition `FAILED -> PENDING` on retry with same UUID.
+- **Concurrent Context Build Idempotency**:
+  - Safe upsert / unique conflict handling across `feature_snapshots`, `data_quality_reports`, `match_contexts`.
+- **Feature-Level Provenance**:
+  - Feature family provenance map linking feature groups to source snapshot IDs stored in `feature_provenance_jsonb`.
+- **API Input Validation**:
+  - Typed `ForecastPhase` enum query parameter (HTTP 422 on invalid).
+
+## M6.2 — Final Acceptance-Hardening Pass (branch `build/m6`)
+
+- **Historical Migration 0003 Integrity**:
+  - Reverted `0003_provider_evidence_history_and_indexes.py` to be 100% byte-for-byte identical to `origin/main` (SHA-256 verified).
+- **Authoritative Fixture Metadata & Historical Fallback Removal**:
+  - FixtureMetadataSnapshot is authoritative for historical MatchContext fixture metadata.
+  - When no snapshot exists `<= as_of`, status is `"METADATA_UNAVAILABLE"`, `venue=None`, `round=None`, `fixture_metadata_snapshot_id=None`. Does NOT fall back to mutable canonical Fixture status (e.g. "FT").
+  - Data quality flags `"fixture_metadata_missing"` in `critical_missing`, evaluating band to `"abstain"` and setting `can_predict=False`.
+  - When snapshot exists `<= as_of`, uses its `league_id`, `season_id`, `home_team_id`, `away_team_id`, observed team names, kickoff_at, venue, round, status, provider, provider_fixture_id, captured_at, payload_id, source_version, and fetches league using the snapshot's `league_id`.
+- **Migration 0009 Legacy Baseline Backfill**:
+  - Migration 0009 backfills `legacy_baseline` snapshot for pre-existing fixtures at `clock_timestamp()` (NOT backdated).
+  - Added `policy_fingerprint` to `data_quality_reports` table and model.
+  - Updated unique constraint `uq_data_quality_reports_identity` to include `policy_fingerprint`.
+  - Symmetrical downgrade drops constraint, columns, and tables cleanly.
+- **Complete Fixture Provenance**:
+  - Source manifest fixture_metadata record includes `snapshot_id`, `provider`, `captured_at`, `payload_id`, `provider_fixture_id`, `source_version`, `league_id`, `season_id`, `home_team_id`, `away_team_id`. No fake legacy IDs.
+  - When missing, records `snapshot_id=None`, `details={"error": "fixture_metadata_missing", "authoritative": False}`.
+- **Runtime Quality Settings Wiring**:
+  - Implemented `build_quality_policy(settings: Settings) -> QualityPolicy`.
+  - Context worker builds `QualityPolicy` and `FreshnessPolicy` from real `resolved_settings` and passes them to `build_and_persist_match_context`.
+  - Removed hardcoded staleness penalties: uses `staleness_penalty` and `max_staleness_penalty` from `QualityPolicy`.
+- **Strict Quality Configuration Validation**:
+  - `Settings.validate_quality_settings` and `QualityPolicy.__post_init__` validate: all weights >= 0, total active weight > 0, `0 <= min_predict_score <= 1`, `0 <= usable <= good <= excellent <= 1`, `staleness_penalty >= 0`, `0 <= max_staleness_penalty <= 1`.
+- **Quality Policy Fingerprint & Identity**:
+  - Deterministic SHA-256 `policy_fingerprint` from canonical JSON of `QualityPolicy.to_dict()`.
+  - Persisted in `data_quality_reports.policy_fingerprint` and bound in `uq_data_quality_reports_identity`.
+  - Distinct policies for the same evidence and as_of create separate quality report identities and persist without conflict.
+- **Build Configuration Generation in Context Job Identity**:
+  - Deterministic `compute_build_config_fingerprint` from context schema version, feature schema version, quality schema version, policy fingerprint, and research enabled.
+  - Pre-match scanner constructs job key: `context_build:{fixture_id}:{phase}:{source_fingerprint}:{build_config_fingerprint}`.
+- **Deterministic Market Snapshot Serialization**:
+  - Sorted OddsPrice rows deterministically by `(market, selection, bookmaker, line, decimal_odds, id)`.
+  - Replaced misleading singular `bookmaker` with `bookmakers: list[str]`.
+  - Insertion order in database does not affect canonical JSON or `context_hash`.
+- **Compatible Previous Odds Snapshot Requirement**:
+  - Query strictly requires `OddsSnapshotSet.provider == odds_set.provider` and `captured_at < odds_set.captured_at`.
+  - Cross-provider snapshots are never paired for movement; movement defaults to None.
+- **Strict Typed MatchContext Schema**:
+  - Converted `MatchContextV1` and all section models to Pydantic with `ConfigDict(extra="forbid", frozen=True)`.
+  - Validates full context before canonical serialization, hash, and persistence. Unexpected extra fields fail immediately with `ValidationError`.
+- **Complete Structured Research Claim Source References**:
+  - Added `ResearchClaimSource` with document_id, url, domain, title, published_at, retrieved_at, content_hash, provider.
+  - Every claim in MatchContext contains a structured `source` reference.
+- **Historical Provider Mapping Semantics & Isolation**:
+  - `ProviderEntityId` queries filter `first_seen_at <= as_of_utc`.
+  - `get_home_external_id(provider)` and `get_away_external_id(provider)` return `None` when the requested provider is unmapped (never falls back to an arbitrary provider).
+- **MORNING Lineups Fully N/A**:
+  - Lineups dimension weight excluded from score denominator.
+  - Missing lineups do not hurt; stale lineups do not enter `stale_sources` and do not trigger staleness penalties or warnings.
+
+## M6.3 — Reproducibility and Historical-Authority Pass (branch `build/m6`)
+
+- **Authoritative Fixture Metadata & Historical Refusal**:
+  - Context selector and builder strictly enforce `FixtureMetadataSnapshot` as the single source of truth for fixture dimensions.
+  - When no `FixtureMetadataSnapshot` exists with `captured_at <= as_of`, the context builder raises typed `HistoricalFixtureMetadataUnavailable` error instead of falling back to mutable canonical `Fixture` attributes (e.g. status, kickoff, teams).
+  - No `FeatureSnapshot`, `DataQualityReport`, or `MatchContext` is persisted for historical builds lacking authoritative metadata.
+  - Worker safely handles `HistoricalFixtureMetadataUnavailable` without exposing internal traces or crashing workers.
+- **End-to-End Metadata Snapshot Team IDs**:
+  - Authoritative `home_team_id` and `away_team_id` from the selected snapshot are propagated to all downstream queries: availability, lineups, standings, team stats, and form.
+  - Provider mapping lookup resolves `ProviderEntityId` using the snapshot's authoritative team IDs with `first_seen_at <= as_of_utc`.
+- **Complete Provider Mapping Provenance**:
+  - Source manifest records all resolved provider entity mappings under `provider_mappings` section with `provider`, `internal_id`, `external_id`, `entity_type`, and `first_seen_at`.
+- **Deterministic Source Manifest Fingerprint**:
+  - Deterministic serialization of the entire source manifest (fixture metadata, evidence snapshots, and provider entity mappings) into canonical JSON, computing a reproducible SHA-256 `source_fingerprint`.
+- **Explicit Freshness Policy Identity & Snapshot**:
+  - Introduced `FreshnessPolicy` dataclass with `freshness_policy_snapshot` dictionary and SHA-256 `freshness_policy_fingerprint`.
+  - Added Alembic migration `0010_m6_3_freshness_policy.py` adding `freshness_policy_fingerprint` to `data_quality_reports` table and updated unique constraint `uq_data_quality_reports_identity` across `(fixture_id, phase, as_of, schema_version, source_fingerprint, policy_fingerprint, freshness_policy_fingerprint)`.
+  - Migration includes clean symmetrical downgrade.
+- **ContextBuildPolicy**:
+  - Unified `QualityPolicy` and `FreshnessPolicy` into `ContextBuildPolicy`.
+  - Computes `build_config_fingerprint` embedded in Celery task idempotency key: `context_build:{fixture_id}:{phase}:{source_fingerprint}:{build_config_fingerprint}`.
+- **Strict Pydantic MatchContext Schema**:
+  - Enforced `ConfigDict(extra="forbid", frozen=True)` across all 13 sections and root `MatchContextV1`.
+- **Full Test & CI Validation**:
+  - All 453 tests passing (357 unit + 96 integration).
+  - Ruff, format, and mypy (118 source files) 100% clean.
+  - Alembic migration lifecycle verified with zero schema drift.
+  - GitHub Actions run `36831445894` passed all 3 jobs on exact remote HEAD `5fb6c604617c7f93117e6d42d623a92082461981`.
+
+## M6.4 — Acceptance-Fix Pass (branch `build/m6`)
+
+- **Historical League Metadata Authority**:
+  - Eliminated dependency on mutable canonical `League.name` and `League.slug` during historical context reconstruction.
+  - Created migration `0011_m6_4_historical_league_metadata.py` adding `observed_league_name` and `observed_league_slug` to `fixture_metadata_snapshots`.
+  - Backfilled existing snapshot records from `leagues` table at migration time; clean symmetrical downgrade drops columns.
+  - Context selector (`select_evidence`) reads league identity directly from `FixtureMetadataSnapshot.observed_league_name` and `observed_league_slug`.
+  - Provenance builder captures observed league name and slug under `fixture_metadata.details`.
+  - Regression verified: mutating `League` row after historical `as_of` leaves historical MatchContext identity, source fingerprint, and context hash 100% identical.
+- **Deterministic Provider-Mapping Selection and Order**:
+  - Query ordering in `select_evidence` explicitly orders by `ProviderEntityId.provider.asc(), ProviderEntityId.first_seen_at.desc(), ProviderEntityId.external_id.asc(), ProviderEntityId.id.asc()`.
+  - When multiple mappings exist for a provider `<= as_of`, deterministically selects the latest `first_seen_at` (tie-broken by `external_id` then `id`). Future mappings (`first_seen_at > as_of`) are excluded.
+  - Mappings in `SelectedFixtureInfo.home_provider_mappings` and `away_provider_mappings` are canonically sorted by `(provider, -first_seen_at.timestamp(), external_id, str(mapping_id))`.
+  - Regression verified: identical logical mappings inserted in opposite orders produce identical `SelectedFixtureInfo`, `source_manifest`, `source_fingerprint`, and `context_hash`.
+- **Pydantic Immutability Claim Audit**:
+  - Audited documentation and test suite regarding immutability guarantees.
+  - Clarified that `ConfigDict(frozen=True)` provides attribute-level freezing (preventing attribute reassignment or adding new attributes), but standard Python mutable containers (e.g. `list.append()`) are not deeply frozen by Pydantic.
+  - Formalized that the authoritative immutability boundary is persistence in PostgreSQL: `match_contexts` rows are immutable historical snapshots.
+  - Added unit test `test_match_context_immutability_attribute_frozen_and_nested_behavior` explicitly demonstrating attribute freeze and documenting deep container behavior.
+- **Celery Task Error Semantics**:
+  - Context build Celery task catches `HistoricalFixtureMetadataUnavailable` specifically.
+  - Logs a structured warning (zero unexpected traceback dumps).
+  - Marks Celery job `FAILED` in the database ledger (`jobs` and `job_attempts`).
+  - Re-raises the exception for Celery worker failure accounting.
+  - Regression verified: no `MatchContextRecord`, `FeatureSnapshot`, or `DataQualityReport` persisted; job recorded as `FAILED` with `error_class="HistoricalFixtureMetadataUnavailable"`.
+- **Migration & Documentation Hygiene**:
+  - Fixed migration `0010_m6_3_freshness_policy.py` revision docstring from `cb9a7f960dbe` to `0010`.
+  - Migration `0011` verified through `upgrade head` -> `downgrade -1` -> `upgrade head` -> `alembic check` with zero schema drift.
+
+## M6.5 — Historical-Truthfulness Acceptance Pass (branch `build/m6`)
+
+- **Elimination of False Historical Backfill**:
+  - In migration `0011_m6_4_historical_league_metadata.py`, removed the SQL query updating pre-existing `fixture_metadata_snapshots` from current mutable `leagues` table at migration time.
+  - Pre-0011 snapshots do not acquire migration-time values; legacy rows truthfully retain `NULL` for `observed_league_name` and `observed_league_slug`.
+  - Symmetrical downgrade cleanly drops columns with zero data residue.
+- **Elimination of Mutable League Fallback**:
+  - In `select_evidence`, removed all fallbacks to mutable `League` table row attributes (`league_obj.name`/`league_obj.slug`) and eliminated invented string sentinels (`"Unknown"`/`"unknown"`).
+  - Simplified mutable `Fixture` locator to an existence check (`select(Fixture.id)`).
+  - If display league identity is unobserved in historical snapshot, `league_name` and `league_slug` evaluate to `None`.
+- **Display Metadata Nullability**:
+  - Made `SelectedFixtureInfo.league_name`, `SelectedFixtureInfo.league_slug`, and `FixtureIdentitySection.league_name`/`league_slug` nullable (`str | None = None`).
+  - Core `league_id` remains strictly authoritative and non-null.
+- **Truthful Quality & Provenance Reporting**:
+  - In `evaluate_data_quality`, missing observed league display identity records a structured warning (`"Observed league display identity unavailable in historical metadata snapshot"`) and missing field (`field="observed_league_display"`).
+  - Missing display fields do not trigger `fixture_metadata_missing` in `critical_missing` and do not block `can_predict` when core IDs and kickoff are present.
+  - Manifest truthfully records `null` for `observed_league_name` and `observed_league_slug`.
+- **Comprehensive Regression Verification**:
+  - Added unit test `test_match_context_with_none_league_display_metadata_serializes_cleanly` verifying `None` display fields serialize cleanly to canonical JSON (`"league_name":null`) with valid SHA-256 hash.
+  - Added 10-step integration regression test `test_legacy_pre_0011_metadata_snapshot_does_not_acquire_migration_league_values` covering steps A through J: schema 0010 downgrade, legacy insert at T0, migration 0011 upgrade at T1 without backfill, context build between T0 and T1, absent mutable values, truthful provenance, League mutation at T2, and replay reproducibility with matching context hash and source fingerprint.
+
 ---
 
 # 3. In progress
 
-None. Milestone M5.3 implemented, awaiting independent review.
+Milestone M6 accepted. Phase A docs-only finalization in progress, followed by PR merge into main, release tag v0.7-m6, and preparation of build/m7 branch. Milestone M7 implementation is NOT STARTED.
 
 ---
 
-# 4. Acceptance tests passed (actually run, M5.3 state)
+# 4. Acceptance tests passed (actually run, M6.5 state)
 
-- `uv run pytest -q -m "not integration"` → **318 passed, 76 deselected in 5.30s**
+- `uv run pytest -q -m "not integration"` → **361 passed, 100 deselected in 3.73s**
 - Integration suite (isolated `sports_intel_test` DB + Redis db15) →
-  **76 passed, 318 deselected in 17.16s** (all M2/M3/M4/M5 integration tests
-  plus M5.3 lifecycle, quota-denial, observation timestamp anti-leakage, and status tests)
-- Full test suite (`uv run pytest -q`) → **394 passed in 16.24s**
-- `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 157 files formatted)
-- `uv run mypy src` → **Success: no issues found in 104 source files** (strict)
-- `uv run alembic check` → clean (No new upgrade operations detected)
+  **100 passed, 361 deselected in 15.82s** (all M2/M3/M4/M5 integration tests
+  plus M6 strict anti-leakage, context build idempotency, Celery task execution, API endpoints,
+  metadata authority overrides, policy fingerprints, deterministic odds serialization, provider isolation,
+  M6.3 HistoricalFixtureMetadataUnavailable refusals, M6.4 historical league immutability,
+  M6.4 deterministic provider mapping ordering, M6.4 Celery task refusal persistence,
+  and M6.5 pre-0011 legacy snapshot truthful replay without false backfill)
+- Full test suite (`uv run pytest -q`) → **461 passed in 17.65s**
+- `uv run ruff check .` / `ruff format --check .` → clean (All checks passed! / 177 files formatted)
+- `uv run mypy src` → **Success: no issues found in 119 source files** (strict)
+- `alembic upgrade head` / `downgrade -1` / `upgrade head` / `alembic check` → clean (No new upgrade operations detected)
 - `docker compose config -q` and `docker compose --profile telegram config -q` (+dev) → OK
 - Secret scan: clean (zero credentials committed; no secrets in tracked files)
+- Determinism check: zero live external API calls, zero LLM calls, zero betting recommendations.
+
 
 ## M3-era live smoke (historical, still valid)
 
@@ -571,13 +785,13 @@ None. Milestone M5.3 implemented, awaiting independent review.
 # 8. Database/migrations
 
 Status:
-- migrations `0001` (jobs), `0002` (discovery), `0003` (evidence history +
-  composite indexes + nullable team name), `0004` (M4 snapshots + odds +
-  quota ledger) applied locally and verified in CI on a fresh DB
+- migrations `0001` through `0009` applied locally and verified in CI on a fresh DB
   (apply → repeat → downgrade → reapply); ORM↔migration drift check clean.
+- Historical revision `0003_provider_evidence_history_and_indexes.py` verified 100%
+  byte-for-byte identical to `origin/main` (SHA-256 identical).
 
 Latest migration:
-- `0004_pre_match_snapshots_quota_ledger`
+- `0009_m6_1_fixture_metadata_and_provenance`
 
 Local DB preservation required:
 - no, until meaningful live test data exists
@@ -619,10 +833,10 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch:
-- `build/m5` (M5.3 complete, awaiting review); base `main` at `2e4683a` (`v0.5-m4`)
+- `build/m6` (M6.2 complete, awaiting review); base `main` at `fb256ec` (`v0.6-m5`)
 
 Commit:
-- `8833d9e7c47a6dd7aeef9dd24d999b4bad214b59` (Milestone M5.3 HEAD)
+- `e004475e120472523305945c5568ffb9bfa97859` (Milestone M6.2 HEAD)
 
 Working tree:
 - clean after commit
@@ -631,11 +845,9 @@ Working tree:
 
 # 12. Next action
 
-1. Merge accepted `build/m5` into `main` via PR with CI verification.
-2. Fast-forward local `main` to `origin/main`.
-3. Create and push annotated tag `v0.6-m5`.
-4. Create branch `build/m6` from accepted `main`.
-5. Implement Milestone M6.
+1. Await independent acceptance review of `build/m6`.
+2. Do NOT merge `build/m6` into `main`.
+3. Do NOT start Milestone M7.
 
 ---
 
@@ -656,6 +868,18 @@ Safe to begin M5: YES.
 **Final review verdict (2026-09-29): M5.3 / M5 PASS — M5 ACCEPTED.**
 Accepted implementation remote HEAD: `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`.
 Safe to begin M6: YES (following merge and tag).
+
+**Review verdict (2026-09-30): M6 FAIL — focused M6.1 required.**
+Reviewed HEAD: `fff8df75c520696f6c25a14e19ded7b6711e7688`
+Verdict: FAIL
+
+**Review verdict (2026-09-30): M6.1 FAIL — focused M6.2 required.**
+Reviewed HEAD: `08d253fe90883f11456b402563f4065fc4b00072`
+Verdict: FAIL
+
+**Milestone M6.2: Final Acceptance-Hardening Pass completed and AWAITING INDEPENDENT REVIEW.**
+Quality Bands: `excellent` (>= 0.90 default), `good` (>= 0.80), `usable_with_warnings` (>= 0.65), `abstain` (< 0.65 or critical missing).
+All 14 work items and 19 regression scenarios verified.
 
 ---
 

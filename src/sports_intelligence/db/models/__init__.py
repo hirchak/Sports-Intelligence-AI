@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 from sports_intelligence.db.models.base import Base
+from sports_intelligence.db.models.context import (
+    DataQualityReport,
+    FeatureSnapshot,
+    MatchContextRecord,
+)
 from sports_intelligence.db.models.discovery import (
     Fixture,
+    FixtureMetadataSnapshot,
     League,
     ProviderEntityId,
     ProviderObservation,
@@ -30,12 +36,16 @@ from sports_intelligence.db.models.snapshots import (
 __all__ = [
     "AvailabilitySnapshot",
     "Base",
+    "DataQualityReport",
     "ExternalApiRequest",
+    "FeatureSnapshot",
     "Fixture",
+    "FixtureMetadataSnapshot",
     "Job",
     "JobAttempt",
     "League",
     "LineupSnapshot",
+    "MatchContextRecord",
     "OddsEventMapping",
     "OddsPrice",
     "OddsSnapshotSet",

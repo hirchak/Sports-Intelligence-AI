@@ -1,29 +1,50 @@
 # Current Task
 
-**Task**: Finalize accepted Milestone M5, merge to main, tag `v0.6-m5`, create `build/m6`, and implement Milestone M6  
-**Status**: IN PROGRESS (Phase A: Finalizing accepted M5 and preparing merge)
+**Task:** Finalize Independently Accepted Milestone M6 (Phase A — Documentation Cleanup & Merge Preparation)
+**Status:** M6 ACCEPTED — DOCS CLEANUP IN PROGRESS
+**Branch:** `build/m6`
+**Base:** `origin/main` (`fb256ecaf2ca1a97c64f1dba8d491cff6b935c91`, tag `v0.6-m5`)
 
-## Milestone Review Verdicts
-- M4 → PASS / ACCEPTED (`0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`)
-- M5 → FAIL (`6c52b1f1df85163b0aeef1f3a16d223bd3296cff`)
-- M5.1 → FAIL (`30dd97a4a948f906d6e690b9acbd14550c75dec8`)
-- M5.2 → FAIL (`42f2277d8f7dde2f0b315c259f22c210da05cefb`)
-- **M5.3 / M5 → PASS / ACCEPTED** (Accepted implementation remote HEAD: `b38229b0874e9ab992ae25ea2a63e1e6109f8ca7`)
+## Milestone Acceptance Status
+- **Milestone:** M6 (M6.5 Historical-Truthfulness Acceptance Pass)
+- **Independent Review Verdict:** **PASS / ACCEPTED**
+- **Accepted Pre-Merge Branch HEAD:** `cec7210cf440b9cc06c040611e477cfed9ad5472`
+- **Implementation Commit:** `86cc3ddcbb7625723ab1fb442cac65c53be46b87`
+- **Final CI Run for Accepted HEAD:** `36837924850` (Conclusion: SUCCESS across all 3 jobs)
+- **Branch Pushed:** Yes (`origin/build/m6` synchronized with local HEAD)
 
-## Next Steps
-1. Finalize accepted M5 persistent documentation.
-2. Open PR `build/m5` -> `main`.
-3. Wait for CI on PR and merge without force.
-4. Update local `main` from `origin/main`.
-5. Create and push annotated tag `v0.6-m5`.
-6. Create branch `build/m6` from accepted `main`.
-7. Implement Milestone M6:
-   - Form inputs collector prerequisite fix
-   - Strict `as_of` snapshot selection layer
-   - Provenance manifest
-   - Deterministic Feature Builder V1
-   - Data Quality Engine
-   - Immutable MatchContext V1 schema, persistence, canonical SHA-256 hash
-   - Pre-match scanner orchestration
-   - API endpoints for quality and context
-   - Comprehensive tests and acceptance verification
+## Summary of Accepted M6 Behavior
+1. **Historical Metadata & Anti-Leakage Authority**:
+   - Strict refusal via `HistoricalFixtureMetadataUnavailable` when no metadata snapshot exists `<= as_of`.
+   - Migration 0011 contains zero migration-time backfill from mutable tables; legacy pre-0011 snapshots truthfully retain `NULL` for `observed_league_name` and `observed_league_slug`.
+   - Evidence selector reads league identity strictly from metadata snapshot (`None` if unobserved), completely eliminating mutable `League` fallback queries and placeholder string sentinels.
+   - Tested and verified: historical MatchContext identity, source fingerprint, and context hash are 100% reproducible and invariant to subsequent mutations of the `League` row.
+2. **Deterministic Provider Mapping Selection & Ordering**:
+   - Explicit SQL ordering: `ORDER BY provider ASC, first_seen_at DESC, external_id ASC, id ASC`.
+   - Deterministic selection of latest mapping `<= as_of` per provider; exclusion of future mappings (`first_seen_at > as_of`).
+   - Canonical list sorting: `(provider, -first_seen_at.timestamp(), external_id, str(mapping_id))`.
+3. **Pydantic Immutability & Persistence Boundary**:
+   - `ConfigDict(frozen=True)` enforces attribute-level freezing.
+   - Immutable persistence boundary enforced by application/data-lifecycle policy on `match_contexts`, `feature_snapshots`, and `data_quality_reports`.
+   - SHA-256 `context_hash` persisted for deterministic identity and integrity comparison.
+4. **Celery Task Error Semantics**:
+   - Clean structured warning on `HistoricalFixtureMetadataUnavailable` (zero traceback dumps).
+   - Marks Celery job `FAILED` in `jobs` and `job_attempts` ledger; re-raises for worker failure accounting.
+   - Zero context, feature, or quality records persisted on refusal.
+
+## Verification
+- Unit tests: 361 passed (100%)
+- Integration tests: 100 passed (100%)
+- Total tests: 461 passed (100%)
+- Ruff lint & format: clean (177 files formatted, 0 errors)
+- Mypy (119 files): clean (0 issues)
+- Alembic migration check: clean (0 drift)
+- Docker Compose validation: clean
+
+## Next Actions
+1. Complete docs-only commit on `build/m6` and push.
+2. Verify GitHub Actions CI run on docs-only HEAD.
+3. Open PR `build/m6` -> `main`.
+4. Merge accepted M6 into `main`.
+5. Create and push annotated release tag `v0.7-m6` on merged `main`.
+6. Create and push `build/m7` from merged `main` (M7 NOT STARTED).
