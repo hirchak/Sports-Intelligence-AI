@@ -1,12 +1,12 @@
 # M7 Review Handoff
 
-**State:** M7.1 acceptance passed; READY FOR INDEPENDENT REVIEW.
-**M7.1 code HEAD:** `07658d8e9fdd29f0e642447fd1639efb0b08aa47` (pushed).
-**M7.1 code CI:** [36910780514](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36910780514) — all jobs SUCCESS on that exact SHA.
-The exact final pushed HEAD and its CI run are recorded in the completion report; subsequent commits here are documentation only.
-**M7.1 reviewed starting HEAD:** `b0dd35c3606449d95c3be0723ded5f78a2883e67`.
-**Branch:** `build/m7`; **base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a`, `v0.7-m6`.
-**Phase:** LOCAL DEVELOPMENT ONLY. M7 not merged/tagged; M8 not started.
+**Independent review verdict:** M7 / M7.1 PASS / ACCEPTED (owner-provided).
+**Accepted remote `build/m7` HEAD:** `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`.
+**M7.1 implementation commit:** `07658d8e9fdd29f0e642447fd1639efb0b08aa47`.
+**Final accepted CI:** [36911970853](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36911970853) — SUCCESS, all jobs on the exact accepted HEAD.
+**Base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6`; M7 awaits the requested PR merge.
+**Phase:** LOCAL DEVELOPMENT ONLY. M8 NOT STARTED; no deployment, Hetzner or Hermes interaction.
+
 
 
 ## Scope and architecture
@@ -69,8 +69,7 @@ No DB immutability triggers; existing append-only application policy applies. Wo
 broker delivery requires inspection/explicit rerun; no automatic reset that might repeat paid calls.
 No disagreement aggregation, fitted ensembles, settlement/evaluation or automatic Telegram push.
 
-Main remains accepted M6; M7 not merged or tagged. Zero deployment/Hetzner/SSH/Hermes interaction.
-M7 remains unmerged. M7.1 local gates passed: **535 unit + 128 integration = 663**; Ruff, format, mypy, Alembic and Compose clean. Push branch, verify exact remote CI, then STOP for independent review. Do not start M8.
+M7 is PASS / ACCEPTED; M8 settlement/evaluation NOT STARTED. No deployment, Hetzner or Hermes interaction.
 Historical M6 failures/acceptance evidence remain in IMPLEMENTATION_STATUS and append-only AI_WORKLOG.
 
 Accepted M6 reviewer packet remains in Git at
@@ -78,25 +77,25 @@ Accepted M6 reviewer packet remains in Git at
 No historical failure or acceptance worklog entries were rewritten.
 
 
-## M7.1 canonical M4 1X2 follow-up
+## M7.1 M4 canonical 1X2 acceptance
 
-M4 `OddsPrice.market` is `h2h_1x2` (`home/draw/away`); the The Odds API request key remains `h2h`.
-M7.1 aligns baseline/ranking with normalized `h2h_1x2`, retains backward-compatible M7 aliases,
-verifies all three DC derivations from one bookmaker's complete 1X2, rejects incomplete/cross-book
-sets, and updates M7 synthetic prices and the M4 mock DTO to the canonical output. M4 live parsing,
-request protocol, schema, and migrations are unchanged.
+M4 persists canonical `h2h_1x2` prices with `home/draw/away`; the Odds API request key remains `h2h`.
+M7.1 maps canonical M4 prices into the complete same-bookmaker 1X2 benchmark and derives all three DC
+probabilities from that same group. Incomplete or cross-book groups cannot produce an M7 market baseline.
+Synthetic M7 odds and MockOddsProvider normalized outputs now mirror M4's canonical DTO. The M4 live
+normalizer, request protocol, schema and migrations are unchanged. Regression tests cover baseline values,
+all DC sums, ranking with canonical captured prices, incompleteness and same-book enforcement.
 
-Full local acceptance: **535 unit + 128 integration = 663 passed**; Ruff/format/mypy clean; Alembic
-no new operations; Docker Compose default/dev/Telegram valid; secret sanity passed. M7.1 code CI
-`36910780514` is green on HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47`. The review/status follow-ups do not change implementation code. No live LLM calls.
+Acceptance evidence: 535 unit + 128 integration = 663 passed; Ruff/format/mypy clean; Alembic no drift;
+Compose default/dev/Telegram valid; secret scan clean. CI `36911970853` green on accepted exact HEAD.
+No runtime LLM calls. M7 not merged; M8 not started. No deployment/Hetzner/Hermes interaction.
 
 
-## M7.1 M4 canonical 1X2 acceptance (2026-10-01)
+## Independent acceptance and finalization
 
-`OddsPrice.market="h2h_1x2"`, selections `home/draw/away`, is the M4 persisted contract. M7 now maps
-these actual values into HOME/DRAW/AWAY and the complete same-bookmaker no-vig group. DC benchmarks derive
-from those 1X2 values; M4 overlapping DC margin-normalized values are ignored. Tests prove all three DC
-selections, canonical candidate odds/edge, incomplete market rejection, and refusal to combine bookmaker
-A's HOME/DRAW with bookmaker B's AWAY. Legacy M7 aliases remain compatible. Synthetic M7 odds rows and
-MockOddsProvider normalized DTO now use the production canonical name; outbound provider request `h2h`
-remains unchanged. No M4 live parsing or schema/migration changes.
+The independent review verdict is M7 / M7.1 PASS / ACCEPTED. Accepted `build/m7` HEAD is
+`3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`; implementation fix is
+`07658d8e9fdd29f0e642447fd1639efb0b08aa47`; final acceptance CI is `36911970853` (SUCCESS, all jobs).
+Accepted main/base remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6` until PR merge.
+The authorized finalization path is build/m7 → normal merge PR → verify main CI → annotated `v0.8-m7` →
+`build/m8` from that exact main SHA. `build/m8` is a clean starting branch only; do not implement on it.

@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M7.1 — Canonical odds contract acceptance fix (PASS / ACCEPTANCE VERIFIED; independent review pending)
+**Current milestone:** M7 — LLM Prediction Engine + Model Router + Validation + Candidate Ranking (PASS / ACCEPTED; merge finalization in progress)
 **Last updated:** 2026-10-01 (Codex)
 **Last known good commit:** 11b6e782ab7256607992b70cc0d0dee4ebe92a3a (tag v0.7-m6, PR #8 merged into main)
 
@@ -20,13 +20,21 @@ Milestone review verdicts:
 - M6.4 → **FAIL** (reviewed HEAD `0621aa576aacd21860bd6695a698f3d85082231a`, review findings: false historical backfill in migration 0011 populating pre-existing snapshots from mutable leagues table at migration time; fallback in select_evidence to mutable League attributes and "Unknown" sentinels; missing legacy pre-0011 regression test)
 - M6.5 → **PASS / ACCEPTED** (pre-merge HEAD `cec7210cf440b9cc06c040611e477cfed9ad5472`, implementation `86cc3ddcbb7625723ab1fb442cac65c53be46b87`, CI run `36837924850`)
 - **M6 overall → PASS / ACCEPTED** (branch `build/m6`)
-- **M7 → IMPLEMENTED / VERIFIED; independent review pending**, authorized scope: `docs/M7_SCOPE.md`; independent review required before merge.
+- **M7 / M7.1 → PASS / ACCEPTED**; independent verdict supplied by owner.
+  Accepted `origin/build/m7` HEAD: `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`.
+  M7.1 implementation: `07658d8e9fdd29f0e642447fd1639efb0b08aa47`.
+  Final source CI: `36911970853` (SUCCESS across all jobs). Historical failed verdicts above remain intact.
 
 Accepted M6 is merged into `origin/main` at `11b6e782ab7256607992b70cc0d0dee4ebe92a3a`, tagged `v0.7-m6`.
 Verified local/remote `build/m7` starts at exactly that commit with a clean tree.
 M7 implementation authorized by `docs/M7_SCOPE.md`; old review failures below remain historical evidence.
 LOCAL DEVELOPMENT ONLY. No M8, merge/tag of M7, deployment, Hetzner or Hermes interaction.
-M7.1 code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47` passed local acceptance and CI run `36910780514` (all jobs SUCCESS). The final docs-only handoff received its own green CI run, whose exact HEAD/run appear in the final completion report. Main remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6`. M7 is unmerged; M8 is not started.
+M7 / M7.1 independent review verdict: PASS / ACCEPTED. Accepted `origin/build/m7` HEAD `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`; M7.1 source commit `07658d8e9fdd29f0e642447fd1639efb0b08aa47`; exact final source CI `36911970853` SUCCESS across all jobs. No remaining M7 code blockers. Main remains accepted M6 at `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` / `v0.7-m6` until PR #/merge finalization. M8 NOT STARTED. LOCAL DEVELOPMENT ONLY.
+
+**M7 independent review verdict:** PASS / ACCEPTED (M7 / M7.1).
+Accepted branch HEAD `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`.
+Final accepted CI run `36911970853`: SUCCESS across all jobs.
+
 
 
 ---
@@ -701,23 +709,22 @@ All review items implemented and independently verified:
 - See [PREDICTIONS.md](PREDICTIONS.md) / ADR 0010. Implementation CI `36890119992` passed; independent review pending.
 
 
-### M7.1 — M4 canonical odds contract acceptance fix (PASS / ACCEPTANCE VERIFIED)
+### M7.1 — M4 canonical odds contract acceptance fix (PASS / ACCEPTED)
 
-- Reviewed starting HEAD: `b0dd35c3606449d95c3be0723ded5f78a2883e67` on clean `build/m7`.
-- M4 normalizer persists `h2h_1x2` with `home/draw/away`; M7 accepted aliases `h2h`/`1x2` but omitted the canonical market.
-- M7 baseline now maps all three spellings into one complete 1X2 group. Missing bookmaker or any missing/cross-book selection cannot form the benchmark.
-- Double Chance baseline still skips M4's overlapping, sum-1 generic normalization and derives all three DC values from a complete same-bookmaker M4 1X2 group.
-- M7 odds synthetic context and M4 MockOddsProvider normalized output use `h2h_1x2`; outgoing Odds API request key remains `h2h`.
-- Regressions assert HOME/DRAW/AWAY benchmark, all three DC sums, ranking with real canonical rows, incomplete-market refusal, same-book isolation, canonical mock output, and the full M7 keyless E2E.
-- Focused checks so far: **33 unit/M4-provider tests passed; 27 M7 integration tests passed**.
-- No DB/schema or live-provider changes. Full acceptance suite, docs closeout, push and exact remote CI remain pending.
+- Independent verdict: M7 / M7.1 = PASS / ACCEPTED.
+- Accepted build/m7 HEAD: `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`; implementation fix: `07658d8e9fdd29f0e642447fd1639efb0b08aa47`.
+- M4's `h2h_1x2` + `home/draw/away` market maps into the M7 complete canonical 1X2 baseline; backward aliases remain supported.
+- Double Chance derives all three overlapping selections from the same bookmaker's complete 1X2. Incomplete/cross-book groups are rejected; ranking uses canonical prices and odds.
+- Synthetic M7 fixtures and the M4 mock normalized DTO use `h2h_1x2`; provider request key `h2h`, live normalizer, M4 schema and migrations are unchanged.
+- Acceptance: 535 unit + 128 integration = 663 passed; Ruff/format/mypy clean; Alembic clean; Docker Compose default/dev/Telegram clean; secret scan clean.
+- Final accepted source CI `36911970853`: SUCCESS across lint/type/unit, Postgres/Redis integration, and Compose/Telegram.
+- No M7 code blockers remain. No M8 work; no schema migration; no deployment/Hetzner/Hermes interaction.
 
 ---
 
 # 3. In progress
 
-M7.1 code and docs are CI verified. STOP for independent review. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
-M6 accepted merge/tag confirmed. M7.1 code CI is green on `07658d8e…`; the final docs-only handoff is also pushed and CI-verified.
+M7 / M7.1 has been independently ACCEPTED. Execute the owner-authorized PR → merge → main CI → tag → empty build/m8 setup. No code work on build/m8.
 
 ---
 
@@ -863,16 +870,14 @@ LLM provider routing:
 
 # 11. Current Git state
 
-Branch: `build/m7`; M7.1 code HEAD `07658d8e9fdd29f0e642447fd1639efb0b08aa47`.
-M7.1 CI run `36910780514`: unit/lint/type, integration, Compose all SUCCESS.
-Accepted base/main remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`).
-Final docs-only HEAD and CI proof are returned in the completion report. Do not modify main or merge/tag M7.
+Branch: `build/m7`; accepted HEAD `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`.
+Final acceptance CI `36911970853` is SUCCESS on that exact HEAD. Main remains `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`) pending the authorized PR merge. M7 is accepted; do not implement M8.
 
 ---
 
 # 12. Next action
 
-STOP for independent review. M8 and deployment remain unauthorized.
+1. Commit/push docs-only acceptance record and verify exact-head CI. 2. Open PR `build/m7` → `main`; wait for checks; merge normally. 3. Verify merged main and CI; tag/push `v0.8-m7` on that commit. 4. Create/push `build/m8` from that exact accepted main HEAD and STOP without implementing M8.
 
 ---
 

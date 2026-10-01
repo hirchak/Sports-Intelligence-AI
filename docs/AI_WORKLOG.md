@@ -2544,3 +2544,18 @@ push/CI receipt is returned in the completion message.
 **Spec/ADR deviations:** none. No M8, deployment, schema or source change.
 **Git:** docs-only handoff CI run `36911401660` SUCCESS; branch remains `build/m7`.
 **Next action:** STOP for independent review. M7 is not merged/tagged; M8 not started.
+
+---
+
+### 2026-10-01 21:50 CEST — Codex (record owner-supplied M7 acceptance verdict)
+
+**Milestone:** M7 / M7.1 — PASS / ACCEPTED.
+**Task:** Finalize accepted M7 documentation and release flow; no new source implementation.
+**Files changed:** docs/CURRENT_TASK.md, IMPLEMENTATION_STATUS.md, REVIEW_HANDOFF.md, AI_WORKLOG.md.
+**Independent review verdict:** User supplied PASS / ACCEPTED. Accepted branch HEAD `3c75d09676d84e31a2f6d5b0265cd9b629f87f9b`; M7.1 implementation `07658d8e9fdd29f0e642447fd1639efb0b08aa47`; final accepted CI `36911970853` SUCCESS across all jobs.
+**Completed behavior:** status and reviewer entry updated. Historical M6 failures and prior worklog entries remain unchanged.
+**Verification:** starting `main`/tag `v0.7-m6` still equals accepted M6 SHA; branch is build/m7; no open M7 PR, tag v0.8-m7, or build/m8 existed before this finalization.
+**Known problems:** no M7 blockers. Main merge/tag/branch-creation steps remain to complete under this request.
+**Spec/ADR deviations:** none. LOCAL DEVELOPMENT ONLY. No M8 code or deployment/Hetzner/Hermes interaction.
+**Git:** docs-finalization commit pending.
+**Next action:** commit/push docs; exact docs-head CI; create PR to main, normal merge after checks; verify merged-main CI; annotated v0.8-m7; create/push empty build/m8 from accepted main and stop.
