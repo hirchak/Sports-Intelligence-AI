@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M7 — Prediction Engine / Model Router / Baselines / Ranking (LOCAL VERIFIED; REMOTE CI PENDING)
+**Current milestone:** M7 — Prediction Engine / Model Router / Baselines / Ranking (IMPLEMENTED / VERIFIED; INDEPENDENT REVIEW PENDING)
 **Last updated:** 2026-10-01 (Codex)
 **Last known good commit:** 11b6e782ab7256607992b70cc0d0dee4ebe92a3a (tag v0.7-m6, PR #8 merged into main)
 
@@ -20,13 +20,15 @@ Milestone review verdicts:
 - M6.4 → **FAIL** (reviewed HEAD `0621aa576aacd21860bd6695a698f3d85082231a`, review findings: false historical backfill in migration 0011 populating pre-existing snapshots from mutable leagues table at migration time; fallback in select_evidence to mutable League attributes and "Unknown" sentinels; missing legacy pre-0011 regression test)
 - M6.5 → **PASS / ACCEPTED** (pre-merge HEAD `cec7210cf440b9cc06c040611e477cfed9ad5472`, implementation `86cc3ddcbb7625723ab1fb442cac65c53be46b87`, CI run `36837924850`)
 - **M6 overall → PASS / ACCEPTED** (branch `build/m6`)
-- **M7 → IN PROGRESS**, authorized scope: `docs/M7_SCOPE.md`; independent review required before merge.
+- **M7 → IMPLEMENTED / VERIFIED; independent review pending**, authorized scope: `docs/M7_SCOPE.md`; independent review required before merge.
 
 Accepted M6 is merged into `origin/main` at `11b6e782ab7256607992b70cc0d0dee4ebe92a3a`, tagged `v0.7-m6`.
 Verified local/remote `build/m7` starts at exactly that commit with a clean tree.
 M7 implementation authorized by `docs/M7_SCOPE.md`; old review failures below remain historical evidence.
 LOCAL DEVELOPMENT ONLY. No M8, merge/tag of M7, deployment, Hetzner or Hermes interaction.
-M7 local gates passed (531 unit, 128 integration, 659 total); exact remote CI pending.
+M7 local gates passed (531 unit, 128 integration, 659 total).
+Source `6c861b94c6300ae7da018176f5af12804f22b217` pushed; CI `36890119992` all three jobs SUCCESS.
+Final documentation HEAD is verified separately before completion; exact proof is in the final handoff.
 
 
 ---
@@ -698,14 +700,14 @@ All review items implemented and independently verified:
 - Local gates: 531 unit + 128 integration = 659 passed; Ruff/format/mypy clean (142 source files).
 - Fresh and populated M6 migration cycles/drift check + Compose and Telegram profile validation passed.
 - Zero real LLM calls (no configured runtime credentials); no new live Telegram verification.
-- See [PREDICTIONS.md](PREDICTIONS.md) / ADR 0010. Remote CI and independent review pending.
+- See [PREDICTIONS.md](PREDICTIONS.md) / ADR 0010. Implementation CI `36890119992` passed; independent review pending.
 
 ---
 
 # 3. In progress
 
-M7 implementation on `build/m7`. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
-M6 accepted merge/tag confirmed from Git; M7 local gates passed, commit/push/exact remote CI pending.
+M7 implementation verified on `build/m7`; STOP for independent review. Binding scope: [M7_SCOPE.md](M7_SCOPE.md).
+M6 accepted merge/tag confirmed; M7 source pushed and CI green; final documentation HEAD verification follows.
 
 ---
 
@@ -803,7 +805,7 @@ M6 accepted merge/tag confirmed from Git; M7 local gates passed, commit/push/exa
 # 8. Database/migrations
 
 Status:
-- migrations `0001` through `0012` locally verified on a fresh isolated test DB; remote M7 CI pending
+- migrations `0001` through `0012` locally verified on a fresh isolated test DB; implementation CI `36890119992` passed
   (apply → repeat → downgrade → reapply); ORM↔migration drift check clean.
 - Historical revision `0003_provider_evidence_history_and_indexes.py` verified 100%
   byte-for-byte identical to `origin/main` (SHA-256 identical).
@@ -852,14 +854,15 @@ LLM provider routing:
 # 11. Current Git state
 
 Branch: `build/m7`; accepted base/main `11b6e782ab7256607992b70cc0d0dee4ebe92a3a` (`v0.7-m6`).
-Working changes belong to authorized M7. Do not modify main or merge M7.
+Implementation commits: foundation `231d4539d074d5a3838bc535bbb81cd06855af84`,
+integration `6c861b94c6300ae7da018176f5af12804f22b217`. Source pushed and CI green.
+Final docs commit is rechecked on its remote HEAD. Do not modify main or merge M7.
 
 ---
 
 # 12. Next action
 
-Implement M7, complete local gates, commit/push `build/m7`, verify exact remote HEAD CI.
-Then STOP for independent review. M8 and deployment remain unauthorized.
+STOP for independent review after final documentation HEAD verification. M8 and deployment remain unauthorized.
 
 ---
 

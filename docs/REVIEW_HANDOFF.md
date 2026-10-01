@@ -1,6 +1,11 @@
 # M7 Review Handoff
 
-**State:** local implementation verified; push/exact remote CI pending.
+**State:** IMPLEMENTED / VERIFIED — READY FOR INDEPENDENT REVIEW.
+**Verified source HEAD:** `6c861b94c6300ae7da018176f5af12804f22b217`, pushed.
+**Source CI:** [36890119992](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36890119992)
+— lint/type/unit SUCCESS; integration SUCCESS; Compose including Telegram SUCCESS.
+The final documentation commit is rechecked against its exact remote HEAD; final SHA/run proof
+is returned in the completion report (do not mistake source HEAD above for that final docs SHA).
 **Branch:** `build/m7`; **base/main:** `11b6e782ab7256607992b70cc0d0dee4ebe92a3a`, `v0.7-m6`.
 **Foundation commit:** `231d4539d074d5a3838bc535bbb81cd06855af84`.
 **Phase:** LOCAL DEVELOPMENT ONLY. M7 not merged/tagged; M8 not started.
@@ -66,5 +71,9 @@ broker delivery requires inspection/explicit rerun; no automatic reset that migh
 No disagreement aggregation, fitted ensembles, settlement/evaluation or automatic Telegram push.
 
 Main remains accepted M6; M7 not merged or tagged. Zero deployment/Hetzner/SSH/Hermes interaction.
-Next: push branch and verify exact remote CI; independent review only. Do not start M8.
+STOP for independent review; M7 remains unmerged. Do not start M8.
 Historical M6 failures/acceptance evidence remain in IMPLEMENTATION_STATUS and append-only AI_WORKLOG.
+
+Accepted M6 reviewer packet remains in Git at
+[M6 handoff](https://github.com/hirchak/Sports-Intelligence-AI/blob/11b6e782ab7256607992b70cc0d0dee4ebe92a3a/docs/REVIEW_HANDOFF.md).
+No historical failure or acceptance worklog entries were rewritten.

@@ -2394,3 +2394,25 @@ same-bookmaker captured 1X2. No changes to accepted M0–M6 migration history.
 **Git commit:** pending coherent implementation commit; exact source commit and CI recorded next.
 **Next action:** commit/push build/m7, verify exact remote HEAD Actions, then stop for independent review.
 Zero deployment, Hetzner, SSH or Hermes interaction; main unchanged; no merge/tag of M7 or M8 work.
+
+---
+
+### 2026-10-01 — Codex (M7 remote verification / final handoff)
+
+**Milestone:** M7, build/m7. **Task:** Complete remote CI verification and synchronize review state.
+**Files changed:** docs/CURRENT_TASK.md, IMPLEMENTATION_STATUS.md, REVIEW_HANDOFF.md, AI_WORKLOG.md.
+**Behavior:** documentation only; mark implementation verified, preserve independent-review stop boundary.
+**Commands/tests:** git push origin build/m7; gh run watch/view 36890119992; exact head/job/log verification;
+Git status/diff, unchanged accepted main/tag and old migration history confirmed. No source changes since gates.
+**Results:** source HEAD `6c861b94c6300ae7da018176f5af12804f22b217`; CI run `36890119992` SUCCESS on that
+exact HEAD, all three jobs (lint/type/unit, integration, Compose+Telegram) SUCCESS. Local 531 unit,
+128 integration, 659 full; Ruff/format/mypy, Alembic cycles/drift, Compose and secret sanity all passed.
+**Known problems:** no runtime LLM credentials/calls; live providers/new live Telegram not verified;
+Poisson/anti-anchoring/operational recovery limitations retained in PREDICTIONS.md and REVIEW_HANDOFF.md.
+**Spec/ADR deviations:** ADR 0010 scoped choices; no new deviation or M8 work.
+**Git commits:** foundation `231d4539d074d5a3838bc535bbb81cd06855af84`; integration
+`6c861b94c6300ae7da018176f5af12804f22b217`. Final documentation commit follows and is rechecked on its own
+remote HEAD; final SHA and CI run are returned in the completion report.
+**Next action:** publish this documentation-only handoff commit to build/m7, verify its exact CI HEAD, then
+STOP for independent review. M7 NOT merged/tagged; main remains `11b6e782...` / v0.7-m6; M8 NOT started;
+zero deployment / Hetzner / SSH sessions / Hermes interaction.
