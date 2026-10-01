@@ -2633,3 +2633,19 @@ migration and Compose results remain PASS; no ORM/migration changes since those 
 **Spec/ADR deviations:** none beyond documented ADR 0011 analytical conventions; no M9 or deployment.
 **Git:** scoped build/m8 commit pending; main unchanged at accepted 4eff88b / v0.8-m7.
 **Next:** commit/push, exact remote CI, final review receipt, stop unmerged for independent review.
+
+### 2026-10-02 CEST — Codex (M8 source CI timezone-test repair)
+
+**Milestone:** M8. **Task:** Repair CI-only date assertion flake before independent-review handoff.
+**Source commit:** a0c9332d2fca5fb8807d16015a7a331928dccbc4, pushed build/m8.
+**Evidence:** Actions 36935276839: integration and Compose SUCCESS; unit job FAIL in pre-existing
+`test_schedule_morning_creates_job_and_enqueues_full_tuple`: Warsaw fixture_date 2026-10-02 versus
+UTC runner date.today() 2026-10-01. Ruff/format/mypy passed. Runtime scheduler was correct.
+**Files changed:** tests/unit/test_scheduled_discovery.py; this append-only worklog and review state.
+**Behavior:** test freezes UTC 2026-08-21 22:30 and explicit Warsaw settings; expected next local date
+2026-08-22 proves boundary deterministically. No scheduler/provider/DB runtime changes.
+**Commands/tests:** exact CI failed-job logs inspected; targeted test under TZ=UTC and unit gates next.
+**Results:** source local 984 tests previously PASS; corrected final CI still pending.
+**Known problems:** only this test gate identified; no implementation/settlement/data leakage issue.
+**Spec/ADR deviations:** none. **Git:** fix commit pending; main unchanged; M8 unmerged/untagged.
+**Next:** run scoped checks, commit/push timezone-test correction, verify exact final remote CI; STOP.

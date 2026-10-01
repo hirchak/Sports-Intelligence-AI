@@ -9,11 +9,12 @@ suppressed by the successful 09:00 run).
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from sports_intelligence.core.config import Settings
 from sports_intelligence.core.league_config import LeagueConfig
 from sports_intelligence.workers.tasks.scheduling import SCHEDULE_SLOTS, _run_schedule
 
@@ -85,12 +86,20 @@ async def test_schedule_morning_creates_job_and_enqueues_full_tuple() -> None:
             patch.object(mod, "_enqueue", _fake_enqueue),
             patch.object(mod, "create_or_get_job", _fake_create_job),
             patch.object(mod, "update_job_status", AsyncMock()),
+            patch.object(
+                mod,
+                "get_settings",
+                return_value=Settings(_env_file=None, app_timezone="Europe/Warsaw"),
+            ),
+            patch.object(mod, "datetime", wraps=datetime) as clock,
         ):
+            # The UTC runner is still on Aug 21; configured Warsaw is already Aug 22.
+            clock.now.return_value = datetime(2026, 8, 21, 22, 30, tzinfo=UTC)
             result = await _run_schedule("morning")
 
     assert result["slot"] == "morning"
     assert result["created"] is True
-    assert result["fixture_date"] == date.today().isoformat()
+    assert result["fixture_date"] == "2026-08-22"
     assert result["config_version"] == 3
     assert len(captured) == 1
     args = captured[0]
