@@ -2892,3 +2892,21 @@ all three jobs SUCCESS. Initial source CI 37051194076 also SUCCESS.
 **Spec/ADR deviations:** none. **Git commit:** narrow UI fix follows; main/tag unchanged at M8 base.
 **Next action:** exact source CI, completed persistent handoff, exact final CI, clean-tree review STOP.
 Zero real LLM calls / deployment / Hetzner / Hermes interaction; M9 not merged, M10 not started.
+
+
+### 2026-10-02T21:29:14+02:00 — Codex (M9 verification complete / independent-review STOP)
+
+**Milestone/task:** M9 exact final runtime-source verification and documentation closeout.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, README, append-only AI_WORKLOG only.
+**Behavior:** no source/test/schema changes; current canonical checkpoint implemented/verified, independent
+review required; exact source/CI/local gates and all 32 handoff topics recorded; historical evidence retained.
+**Commands/tests:** gh run watch/view 37053961881; source/local 1073 tests and all gates above; refs/clean-tree checks.
+**Results:** source `dff83c17e2eddcde08ca0a5676dcc9d516a4cf6c`, CI `37053961881` all jobs SUCCESS; 873 unit + 200 integration,
+1073 full PASS (64.93s); Ruff/format245/mypy168, migrations/Compose/secret/diff PASS.
+**Known problems:** no implementation blockers; live providers/new Telegram/empirical forecasting unverified.
+Manual interrupted-call recovery and unknown cost limits remain explicit. Final documentation delivery CI
+is verified after this commit; current origin/build/m9 and final chat receipt are its canonical SHA/CI.
+**Spec/ADR deviations:** ADR 0012 only; no automatic production application or business acceptance claim.
+**Git commit:** runtime source dff83c17e2eddcde08ca0a5676dcc9d516a4cf6c, verified above; documentation-only final commit follows.
+**Next action:** after final docs CI and clean tree confirmation, STOP for independent review.
+M9 not merged/tagged; main/v0.9-m8 still accepted M8; M10 not started; no deployment/Hetzner/Hermes.

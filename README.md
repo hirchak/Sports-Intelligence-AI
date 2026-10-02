@@ -6,7 +6,7 @@ Current phase: **LOCAL DEVELOPMENT ONLY** (no server deployment, no Hermes depen
 
 ## Status
 
-- Milestones M0–M8 accepted; **M9 implemented, awaiting final CI and independent review** (`build/m9`).
+- Milestones M0–M8 accepted; **M9 implemented and verified, awaiting independent review** (`build/m9`).
 - See `docs/IMPLEMENTATION_STATUS.md` for the canonical state.
 
 ## What this is

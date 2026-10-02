@@ -1,30 +1,66 @@
-# M9 implementation handoff — local gates, delivery in progress
+# M9 handoff — VERIFIED / INDEPENDENT REVIEW REQUIRED
 
-**Branch:** build/m9. **Accepted M8 main/tag base:** `490227ac8e27ca4c8870891277fd8783d8a7f1af` / annotated `v0.9-m8`.
-M8/M8.1 PASS/ACCEPTED; PR #10 merged; exact merged-main CI `36981326405` all three jobs SUCCESS.
-At startup after fetch, build/m9 == origin/build/m9 == origin/main == v0.9-m8^{}. Post-M8 state-doc drift
-corrected before implementation. Historical worklog receipts preserved; current M9 authority is this section.
+**Branch:** build/m9. **Verified runtime-source HEAD:** `dff83c17e2eddcde08ca0a5676dcc9d516a4cf6c`.
+**Exact source CI:** [37053961881](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37053961881), all three jobs SUCCESS:
+lint/type/unit; Postgres/Redis integration; Docker Compose validation. Later delivery commits are
+only documentation; the completion message reports the canonical final `origin/build/m9` SHA and exact CI.
 
-Scope: [M9_SCOPE.md](M9_SCOPE.md). Architecture/method/CLI/API/limits: [EXPERIMENTS.md](EXPERIMENTS.md),
-[ADR 0012](adr/0012-m9-frozen-replay-and-human-proposals.md).
+**Accepted M8 base/main:** `490227ac8e27ca4c8870891277fd8783d8a7f1af`, PR #10 merged, annotated `v0.9-m8`.
+Merged-main CI `36981326405` all jobs SUCCESS. Startup refs all matched this exact SHA.
+Post-M8 state-doc drift corrected before implementation; old worklog/receipts retained as history.
 
-Implemented: ten isolated experiment/analyst/proposal tables, Alembic 0014, immutable DB-protected identities;
-exact frozen-context planning/replay; paired/full M8 comparisons; historical PRIMARY/CHALLENGER reuse;
-bounded ModelRouter analyst and deterministic evidence; human authorization/rejection/audit-only promotion;
-CLI, internal API, thin allowlisted Telegram; weekly scan disabled, zero notifications/live execution.
+Scope: [M9_SCOPE.md](M9_SCOPE.md). Method/CLI/API: [EXPERIMENTS.md](EXPERIMENTS.md).
+Design: [ADR 0012](adr/0012-m9-frozen-replay-and-human-proposals.md).
 
-Verified locally: **873 unit + 200 integration PASS**. **Full pytest: 1073 PASS**, 64.93s. Ruff/format (245 files),
-strict mypy (168 source files), fresh DB→head→down -1→head→check and populated accepted M8→M9 cycle
-PASS with no drift; Compose default/dev/Telegram PASS; 325 working-file/history secret sanity PASS;
-git diff --check PASS. Accepted migrations 0001–0013 and M7 prediction modules/production prompt remain byte-identical.
-M8 closing-price formula is extracted into a shared pure function, preserving measurement definitions. Synthetic unit/integration fixtures
-are infrastructure evidence only. Actual task wrappers and collectors→M6→M7→M8→M9 keyless E2E PASS.
+## Review map
 
-Remaining: scoped commit/push, exact remote HEAD CI SUCCESS, clean-tree review STOP.
-M9 NOT MERGED/TAGGED; M10 NOT STARTED. LOCAL DEVELOPMENT ONLY. Zero paid/live LLM calls;
-zero deployment / Hetzner / SSH / Hermes interaction. No profitability/model-superiority/proposal-merit claim.
-Operational limits: interrupted paid-call claims/lost broker delivery require inspection/explicit rerun;
-no fitted statistics/ensembles, closing proxy only from explicit archived snapshots, monetary cost unknown; no new live Telegram smoke.
+1. Canonical final delivery SHA: resolve `origin/build/m9`; final completion supplies exact SHA/CI.
+2. Accepted M8 base: SHA/main/tag/PR/CI above; no merge/tag/main change in M9.
+3. Current state drift correction: CURRENT_TASK/IMPLEMENTATION_STATUS/REVIEW_HANDOFF; append-only worklog.
+4. Architecture: frozen context → plan/manifest → bounded isolated arm outputs → shared M8 comparison → analyst → human proposal action.
+5. Schema: Alembic 0014; ten normalized tables listed in EXPERIMENTS.md; UUID FKs, unique hashes, immutable DB triggers.
+6. Authority: exact context ID/hash/as_of/phase, feature/version, quality/report and immutable evidence identities.
+7. Leakage: no current providers/metadata rebuild; future rows rejected; results/closing odds used only in evaluation; projection leaves original unchanged.
+8. Identity: immutable definition/arms; ordered manifest/result IDs; per-output CAS, run connection lock, physical call budgets; explicit rerun UUID distinct.
+9. Pairing: identical eligible fixture scope; successful settled-selection intersection; independent full-arm metrics retain treatment failures.
+10. Unavailable: NOT_REPLAYABLE reason counts; empty/missing historical period → INSUFFICIENT_HISTORICAL_EVIDENCE / INSUFFICIENT_DATA, zero fabricated calls/results.
+11. CLI: `uv run python -m sports_intelligence.replay --experiment config/experiment.example.json --from 2026-08-01 --to 2026-08-31 --mock --dry-run`; explicit --execute queues work.
+12. Variants: configured model/config routes, default/candidate prompt, WITH/WITHOUT_ODDS, explicit phases and historical PRIMARY/CHALLENGER arms; limitations disclosed.
+13. Baselines: market/statistical independent from LLM; missing probabilities reduce n; no ensemble/weights; explicit archived closing proxy uses shared M8 formula.
+14. Analyst: ModelRouter/provider abstraction, frozen bounded comparison packet (50KB cap), mock default, daily call cap, no DB dump/tools/config writes.
+15. Proposal: ID/title/problem/evidence summary+refs/sample/hypothesis/change/effect/test_plan/risks/risk/component/time/actual analyst metadata/status/human events.
+16. States: explicit experiment transitions; PROPOSED→APPROVED_FOR_EXPERIMENT→EXPERIMENT_RUNNING→PROMOTED→ROLLED_BACK, rejection where allowed; invalid transitions fail.
+17. Production isolation: separate output tables; no writes to production predictions/context/activation/routes/features; human PROMOTED/ROLLED_BACK is audit only, production_applied=false.
+18. API: GET/POST experiments; detail/plan/run; run analyze; improvements list/detail/approve-experiment/reject/record-decision. Expensive execution → 202 identifier-only jobs.
+19. Telegram: /experiments, /improvements, menu/pages/details/approve/reject; allowlist/backend only; bounded valid HTML; no promote action or huge JSON.
+20. Schedule: opt-in Monday 09:00 app timezone; disabled by default; ten recent comparisons max, dedup, no live opt-in or notification spam.
+21. Unit: **873 PASS** (34 added M9 unit scenarios).
+22. Integration: **200 PASS** (49 added M9 scenarios); isolated Compose *_test DB/Redis15.
+23. Full pytest: **1073 PASS**, **64.93s**, zero skips.
+24. Ruff check/format: PASS, 245 Python files; strict mypy: PASS, 168 source files.
+25. Alembic: fresh DB→head→down -1→head→check; populated accepted M8→M9 integrity/roundtrip/no drift PASS. Revisions 0001–0013 byte-identical.
+26. Compose: default + dev override + Telegram profile config -q PASS.
+27. Source CI: exact `37053961881` / `dff83c17e2eddcde08ca0a5676dcc9d516a4cf6c` all three jobs SUCCESS; final documentation HEAD CI separately verified before completion.
+28. Real external LLM calls in implementation: **0**. All forecasts/analyst output in acceptance are explicitly synthetic; offline HTTP contracts are not live proof.
+29. Limits: no forecasting/profit/superiority/significance/proposal-merit proof; unknown monetary cost remains null; explicit archived closing quotes only; interrupted calls/lost delivery need inspection/rerun; no new live Telegram acceptance.
+30. M9 NOT MERGED/TAGGED. Independent review required; no owner acceptance inferred from CI.
+31. M10 NOT STARTED.
+32. Zero deployment / Hetzner / Hermes interaction; LOCAL DEVELOPMENT ONLY; STOP.
+
+## Receipts and regressions
+
+- Core source 84a257ddf96241428d1ab4b57e641f4e7f6b604f / CI 37051194076 all-job SUCCESS.
+- Closing/long-abstention source 5869b4df02714eab2b23be61a235f944d6e01df9 / CI 37053028704 all-job SUCCESS.
+- Final runtime source/CI at header. Final source unit/integration results match the local 873/200 gates.
+- Real collectors→M6→M7→M8→M9 keyless E2E, API/Telegram test transport and actual task wrappers PASS.
+- Planted later odds/lineup/research/result/current team/league mutation cannot enter replay; legitimate closing quote is evaluation-only.
+- Partial failure/full-arm fairness, minimum fixture pairs, missing baselines/results/context, physical retries/budgets, duplicate workers/proposals, immutable DB evidence PASS.
+- Malformed/hallucinated analyst fields rejected; exact factual evidence bound by Python; approval queues no execution; recorded promotion writes no production config.
+- Valid long abstention originally overflowed short reason code, reproduced and corrected with original text retained in output.
+- Long escaped Telegram text originally split entities, reproduced and corrected by bounded whole-entity escaping.
+
+Next action: **independent M9 review only**. Persistent sources/tests/Git provide authority; previous M8
+handoff below is historical and its closeout-pending wording is superseded by this current checkpoint.
 
 ---
 
