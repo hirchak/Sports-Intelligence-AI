@@ -1,8 +1,12 @@
-# M8.1 independent review handoff
+# M8 finalization handoff — independently ACCEPTED
 
-Branch `build/m8`; reviewed M8 HEAD `d56aa3620f728eae500a1d95bce167c986d3dfda`.
-Accepted main/tag `4eff88bcaaac387ec047d50575d25b8135baa567` / `v0.8-m7`, unchanged.
-LOCAL DEVELOPMENT ONLY. M8 unmerged/untagged, M9 not started, zero deployment/server/Hermes interaction.
+**Independent verdict (owner-supplied): M8 / M8.1 = PASS / ACCEPTED.**
+**Accepted origin/build/m8 HEAD:** `f8863a8065df307ff47552750d900accad1ab666`.
+**M8.1 implementation:** `248e6b190faf4d5b232b7f6eb60a67510c57ae86`.
+**Final accepted exact-head CI:** [36977001070](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36977001070), all 3 jobs SUCCESS.
+**Accepted base/main:** `4eff88bcaaac387ec047d50575d25b8135baa567` / `v0.8-m7` until merge.
+No remaining M8 blockers. Owner-authorized PR/merge/tag/build/m9 closeout in progress.
+M8 is not merged/tagged yet. M9 is NOT STARTED. LOCAL DEVELOPMENT ONLY; zero deployment, Hetzner, SSH or Hermes interaction.
 
 ## M8.1 acceptance fix
 
@@ -24,9 +28,9 @@ head→check on isolated sports_intel_m81_test PASS; populated migration tests P
 migration edits. Compose default/dev/Telegram PASS; working-file/history secret sanity PASS (302 files).
 M8.1 verification COMPLETE. Exact implementation HEAD `248e6b190faf4d5b232b7f6eb60a67510c57ae86`;
 [CI 36976617246](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36976617246) **all jobs SUCCESS**:
-lint/type/unit, Postgres/Redis integration, Compose validation. Independent acceptance is not claimed.
-Final documentation-only tip has the same implementation; exact delivery HEAD/CI is returned in completion
-and discoverable from Git/GitHub Actions. No completed delivery is described as pending.
+lint/type/unit, Postgres/Redis integration, Compose validation. Owner verdict M8 / M8.1 PASS / ACCEPTED
+supersedes this historical review note.
+The accepted owner verdict and exact accepted CI are recorded at the handoff header.
 
 M8 scope/methodology: [M8_SCOPE.md](M8_SCOPE.md), [EVALUATION.md](EVALUATION.md),
 [ADR 0011](adr/0011-m8-result-authority-and-measurement.md). Historical M8 contract/gates below are unchanged.
@@ -116,8 +120,8 @@ retain safe ledger/job failure, no unsafe partial settlement. See EVALUATION.md 
 - Reviewed M8 delivery d56aa3620f728eae500a1d95bce167c986d3dfda: [36936656574](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36936656574),
   all jobs SUCCESS. That M8 delivery verification is complete; it does not independently accept M8.1.
 
-Next: STOP for independent review only. M8.1 local/remote verification is complete.
-Resolve the exact final docs-only checkout/CI via `git rev-parse HEAD` and `gh run list --branch build/m8 --limit 1`.
+Next: open and merge build/m8 → main using a merge commit; verify merged-main CI; tag `v0.9-m8` on that
+merge commit; create/push empty `build/m9` from the same SHA; STOP. Do not implement M9.
 
 ## Completed M8.1 receipt
 
@@ -125,3 +129,12 @@ Implementation: `248e6b190faf4d5b232b7f6eb60a67510c57ae86`. CI [36976617246](htt
 SUCCESS on that exact SHA; CI logs confirm 839 unit + 151 integration, mypy 155 source files and clean migrations.
 Final local full pytest: 990 PASS. Documentation closeout is the only subsequent change.
 STOP for review; M8/M8.1 not merged/tagged, M9 not started, LOCAL DEVELOPMENT ONLY.
+
+## Owner-authorized finalization checklist
+
+- Accepted branch/base/CI identifiers are at the top of this file.
+- Open `build/m8` → `main`; wait for all PR checks; merge with a merge commit (repository precedent: PR #9).
+- Verify final `main` equals the PR merge SHA and its Actions jobs succeed.
+- Create annotated `v0.9-m8` pointing to that exact merged `main` SHA, then push the tag.
+- Create and push `build/m9` from the same SHA; verify `origin/build/m9 == origin/main == v0.9-m8^{}`.
+- Stop: M8 MERGED / TAGGED / ACCEPTED, M9 NOT STARTED, LOCAL DEVELOPMENT ONLY.

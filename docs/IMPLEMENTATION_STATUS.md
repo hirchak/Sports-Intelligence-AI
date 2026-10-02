@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M8.1 — Summary materialization fix COMPLETE / awaiting independent review
+**Current milestone:** M8 / M8.1 — PASS / ACCEPTED (owner-supplied); GitHub closeout in progress
 **Last updated:** 2026-10-02 (Codex)
 **Last known good commit:** 4eff88bcaaac387ec047d50575d25b8135baa567 (v0.8-m7, PR #9 merged)
 
@@ -10,14 +10,14 @@
 
 # 1. Current objective
 
-M8.1 owner-reported acceptance blocker: newer broad EvaluationRun shadows a valid scoped run
-for combined-filter summary queries. Narrow API-read selection fix + A–D regressions authorized;
-reviewed HEAD d56aa3620f728eae500a1d95bce167c986d3dfda. No metric/settlement/provider/M7/schema changes.
-Historical M8 delivery CI 36936656574 on that exact reviewed HEAD was all-job SUCCESS.
+M8 / M8.1 independent verdict supplied by owner: PASS / ACCEPTED. Accepted
+origin/build/m8 HEAD `f8863a8065df307ff47552750d900accad1ab666`; M8.1 implementation
+`248e6b190faf4d5b232b7f6eb60a67510c57ae86`; exact-head CI `36977001070` all 3 jobs SUCCESS.
+The M8.1 summary-selection fix addresses the scoped-run shadowing blocker. No remaining M8 blockers.
 
 M8 authorized by [M8_SCOPE.md](M8_SCOPE.md). Fetched refs confirm build/m8 starts at
-accepted M7 4eff88b / v0.8-m7; origin/main is unchanged. Older M7 finalization prose below
-is historical and superseded by this checkpoint. M8 requires independent review.
+accepted M7 4eff88b / v0.8-m7; origin/main is unchanged. Older milestone entries below are historical; failed review/verdict records are preserved.
+Owner-supplied M8 / M8.1 PASS / ACCEPTED is the current verdict.
 Policy: [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
 
 Milestone review verdicts:
@@ -36,8 +36,8 @@ Milestone review verdicts:
   Final source CI: `36911970853` (SUCCESS across all jobs). Historical failed verdicts above remain intact.
 
 Accepted M7 is merged via PR #9 at `4eff88bcaaac387ec047d50575d25b8135baa567`, tagged `v0.8-m7`.
-Current `build/m8` is the only implementation branch. M8 is implemented, locally verified and pushed; independent review remains required.
-Final delivery requires all-success CI on exact final origin/build/m8 HEAD. Main remains accepted M7; no M8 merge/tag, M9 or deployment.
+Accepted M8 is on `build/m8`; PR/merge/tag/empty-build/m9 closeout is in progress. Main currently
+remains accepted M7 until the authorized PR merge. M9 implementation is NOT STARTED. No deployment.
 
 M8 flow: date-level result provider → immutable result versions → regulation_v1 settlements →
 metrics_v1 evaluation (separate roles/variants/baselines) → persisted API / thin Telegram.
@@ -729,24 +729,28 @@ All review items implemented and independently verified:
 
 ---
 
-# 3. Current M8.1 verification
+## M8 / M8.1 — Results, deterministic settlement and evaluation (PASS / ACCEPTED)
 
-Owner-reported M8 acceptance blocker: scoped summary shadowed by newer broad run.
-Narrow fix implemented and locally verified: materializable scope first, more covered request
-filters next, source_cutoff DESC / UUID among ties. Unsupported combinations → not_available.
-No changes to metric formulas, settlements, collectors, M7, models or migrations.
+- Owner-supplied independent verdict: **M8 / M8.1 = PASS / ACCEPTED**.
+- Accepted `origin/build/m8` HEAD: `f8863a8065df307ff47552750d900accad1ab666`.
+- M8.1 summary-selection fix: `248e6b190faf4d5b232b7f6eb60a67510c57ae86`.
+- Final accepted exact-head CI: [36977001070](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36977001070), all 3 jobs SUCCESS.
+- Local acceptance: 839 unit + 151 integration = 990 full tests PASS; Ruff/format/mypy, fresh/populated
+  Alembic cycles/drift, Compose default/dev/Telegram, and secret sanity PASS.
+- No remaining M8 blockers. M8 is not merged/tagged yet. M9 is NOT STARTED.
+- Current objective is owner-authorized PR → main merge → `v0.9-m8` → empty `build/m9` creation.
+- No deployment, server, Hetzner or Hermes interaction.
 
-Local gates: **839 unit + 151 integration = 990 full pytest PASS** (43.67s);
-Ruff/format clean (228 Python files); mypy clean (155 source files).
-New regressions A–D plus suitability/cutoff ordering: before fix 4 FAIL/1 PASS; after 5 PASS.
-Alembic sports_intel_m81_test: fresh→head→downgrade -1→head→check PASS, zero drift.
-Populated M7→M8 migration regression remains PASS in full integration; schema history unchanged.
-Compose default/dev/Telegram PASS. 302-file/history secret sanity PASS.
-Verified implementation HEAD 248e6b190faf4d5b232b7f6eb60a67510c57ae86; Actions 36976617246 all 3 jobs SUCCESS.
-Local/remote verification COMPLETE. Historical pending worklog notes are superseded, not rewritten.
+---
 
-Historical M8 delivery: d56aa3620f728eae500a1d95bce167c986d3dfda, CI 36936656574 — all jobs SUCCESS.
-Historical failed CI/test notes remain in append-only worklog; M8/M8.1 independent acceptance unclaimed.
+# 3. M8 acceptance and authorized finalization
+
+M8 / M8.1 = PASS / ACCEPTED by the owner. Accepted branch HEAD, M8.1 fix, exact-head CI, local gates,
+scope and limitations are recorded above and in `docs/REVIEW_HANDOFF.md`. There are no M8 blockers.
+Historical review failures, CI failures and prior pending notes remain unchanged as historical records.
+
+Owner-authorized PR/merge/tag/build/m9 finalization is in progress. M9 implementation is NOT STARTED.
+`main`/`v0.8-m7` are the accepted base until the PR merges. Stay LOCAL DEVELOPMENT ONLY.
 
 ---
 
@@ -884,20 +888,20 @@ LLM provider routing:
 
 # 11. Current Git state
 
-Branch build/m8; reviewed starting HEAD d56aa3620f728eae500a1d95bce167c986d3dfda.
-Main/tag remain 4eff88bcaaac387ec047d50575d25b8135baa567 / v0.8-m7.
-M8.1 implementation 248e6b190faf4d5b232b7f6eb60a67510c57ae86, verified CI 36976617246: all-job SUCCESS.
-Documentation-only closeout preserves this implementation. Exact final delivery tip/CI is canonical
-in Git/GitHub Actions (`git rev-parse HEAD`, `gh run list --branch build/m8 --limit 1`).
-Verification COMPLETE; no outstanding implementation or verification blocker.
-No M8 merge/tag; no M9 or deployment.
+Local/accepted `build/m8` HEAD: `f8863a8065df307ff47552750d900accad1ab666`.
+M8.1 implementation: `248e6b190faf4d5b232b7f6eb60a67510c57ae86`.
+Final accepted source CI: `36977001070`, SUCCESS across all three jobs.
+Owner verdict M8 / M8.1 PASS / ACCEPTED. No remaining blockers.
+Main/tag are still accepted M7 `4eff88bcaaac387ec047d50575d25b8135baa567` / `v0.8-m7` pending PR merge.
 
 ---
 
 # 12. Next action
 
-STOP for independent review. M8.1 implementation/local/remote acceptance verification is complete.
-No further milestone implementation, M9, merge/tag or deployment.
+Commit/push the docs-only acceptance record; verify exact-head Actions; open PR build/m8→main;
+wait for checks and merge with the established merge-commit strategy; verify merged main and its CI;
+create annotated `v0.9-m8` on the merge SHA; create/push empty `build/m9` from that same SHA.
+STOP without M9 implementation. LOCAL DEVELOPMENT ONLY.
 
 ---
 

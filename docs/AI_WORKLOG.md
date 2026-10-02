@@ -2742,3 +2742,41 @@ no Alembic drift. Local full 990 PASS; Ruff/format, migration cycles, Compose an
 implementation; its final checkout HEAD/CI is the canonical Git/Actions tip and completion receipt.
 **Next action:** STOP for independent review after checking the final documentation delivery CI.
 M8 not merged/tagged, main remains 4eff88b / v0.8-m7, M9 not started, no deployment/Hetzner/Hermes.
+
+### 2026-10-02 CEST — Codex (record owner-supplied M8 PASS / ACCEPTED)
+
+**Milestone/task:** Finalize independently accepted M8 release flow.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF and append-only AI_WORKLOG.
+**Behavior:** Record owner-supplied M8/M8.1 PASS/ACCEPTED, accepted branch HEAD
+`f8863a8065df307ff47552750d900accad1ab666`, M8.1 fix `248e6b190faf4d5b232b7f6eb60a67510c57ae86`,
+and final CI `36977001070` (all 3 jobs SUCCESS). Historical failed reviews and pending notes preserved.
+**Commands/tests:** Read mandatory repo instructions/current state/review history; clean build/m8 HEAD and
+accepted main/tag checked locally. GitHub connector confirms repository access, no existing open M8 PR,
+and all jobs of accepted CI succeeded. GitHub CLI/SSH lookup currently has a name-resolution failure;
+release operations will use the connected GitHub API where supported and retry Git transport for tag/ref pushes.
+**Results:** docs-only acceptance update staged locally; no source, tests, metrics, settlements or schema changes.
+PR/merge/tag/build/m9 external operations still to complete.
+**Known problems:** Git transport and GitHub CLI DNS/API calls failed once in this session; connected GitHub app reads work.
+**Spec/ADR deviations:** none. Main remains accepted M7; M8 not merged/tagged; M9 not started.
+**Git:** documentation finalization commit pending; branch build/m8.
+**Next action:** exact-head docs CI; open PR, checks and merge; verify main CI; tag v0.9-m8; push empty build/m9; STOP.
+Zero deployment, SSH, Hetzner, Hermes or server interaction.
+
+### 2026-10-02 07:44 UTC — Codex (record owner-supplied M8 PASS / ACCEPTED)
+
+**Milestone/task:** Finalize independently accepted M8 and prepare authorized GitHub release closeout.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, append-only AI_WORKLOG.
+**Behavior:** Record owner-supplied M8/M8.1 PASS/ACCEPTED, accepted build/m8 HEAD
+f8863a8065df307ff47552750d25b8135baa567, M8.1 implementation 248e6b190faf4d5b232b7f6eb60a67510c57ae86,
+and exact accepted CI 36977001070 (all three jobs SUCCESS). Historical reviews/failures remain intact.
+**Commands/tests:** Repository instructions/state/worklog/history read; current clean branch/main/tag refs
+verified locally. GitHub connector confirms repo access, no existing open M8 PR, accepted CI job results.
+Established repo precedent is merge commit PR #9. GitHub CLI/SSH remote lookup had a name-resolution/API
+error; connector reads are available, so retry remote operations through the authorized GitHub connector.
+**Results:** docs acceptance update in progress; no source/tests/schema changes. PR/merge/tag/build/m9 remain.
+**Known problems:** local git transport/API resolution currently unavailable; continue retrying while using
+connected GitHub API for supported operations. No server/deploy interaction.
+**Spec/ADR deviations:** none. Main remains accepted M7; M8 not merged/tagged; M9 not started.
+**Git:** docs-only acceptance commit pending on build/m8.
+**Next action:** push docs closeout, verify exact-head CI, open/check/merge PR, verify main CI, tag v0.9-m8,
+create/push empty build/m9 at same main SHA; STOP. Zero deployment, SSH, Hetzner or Hermes interaction.
