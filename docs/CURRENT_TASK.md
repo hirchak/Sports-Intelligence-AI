@@ -13,8 +13,11 @@ LOCAL DEVELOPMENT ONLY; no deployment / Hetzner / Hermes interaction.
 State-doc drift corrected first; historical worklog preserved.
 Implemented: ADR 0012, migration 0014 (ten tables), frozen replay/historical-arm reuse, M8 metrics,
 bounded analyst, human lifecycle, CLI/private API/thin Telegram. [EXPERIMENTS.md](EXPERIMENTS.md).
-Verified: 872 unit PASS; 196 integration PASS; actual task wrappers and keyless M2→M9 E2E PASS.
+Verified: 872 unit PASS; 200 integration PASS; actual task wrappers and keyless M2→M9 E2E PASS.
 Ruff/format/strict mypy, fresh/populated Alembic cycles/no drift, Compose default/dev/Telegram,
-325-file/history secret sanity, accepted M0–M8 migration/prediction/evaluation byte identity PASS.
-Full pytest 1068 PASS, 56.11s; then scoped commit/push and exact remote CI.
+325-file/history secret sanity, accepted migrations/prediction/production prompt byte identity PASS.
+Final full pytest: 1072 PASS, 57.65s; Ruff/format/mypy and all local gates complete.
+Initial source 84a257ddf96241428d1ab4b57e641f4e7f6b604f / CI 37051194076 all jobs SUCCESS.
+Closing proxy uses the shared M8 formula and explicit historical comparators; long valid abstention
+text is preserved in output with stable short reason code. Final source commit/push/CI next.
 Final gate: full local checks, push build/m9, exact-head CI SUCCESS, clean tree; STOP for independent review.

@@ -88,8 +88,9 @@ binary Brier/log loss, separately named multiclass 1X2 scores, ECE, sharpness, c
 display coverage, hit rate, fixed-one-unit research ROI, captured odds/EV, latency/tokens when known.
 Market/statistical baselines use the successful control population; unavailable probabilities reduce n
 and increase missing-baseline counts. No ensembles, fitted weights, new metric conventions or invented
-monetary cost. Closing-price proxy is explicitly null/n=0 in M9 comparisons; production M8 can measure it
-from explicitly supplied snapshots. Result/selection settlement manifest is retained with comparison.
+monetary cost. Closing-price proxy uses explicit archived snapshot IDs, same fixture/bookmaker/selection,
+strictly later than the original captured price and no later than frozen kickoff/evaluation cutoff. Its
+formula is shared with M8; unavailable comparator stays null/n=0. Closing data never enters replay input. Result/selection settlement manifest is retained with comparison.
 
 Default `min_paired_fixtures=100`. Below threshold: `INSUFFICIENT_SAMPLE`; above: `MEASURED_ONLY`, never
 usable-winner/significance/automatic promotion. Paired deltas mean treatment minus control and retain n.

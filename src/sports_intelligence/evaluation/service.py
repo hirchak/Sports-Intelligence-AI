@@ -33,6 +33,7 @@ from sports_intelligence.db.models import (
 from sports_intelligence.evaluation.config import EvaluationConfig, EvaluationFilters
 from sports_intelligence.evaluation.metrics import (
     calibration,
+    closing_price_proxy,
     multiclass_brier_sum,
     probability_metrics,
 )
@@ -484,7 +485,9 @@ async def calculate_evaluation(session: AsyncSession, evaluation: EvaluationRun)
                                 ):
                                     closing_odds = float(price.decimal_odds)
                                     odds_bucket(closing_odds, config)
-                                    closing_proxy = candidate.captured_odds / closing_odds - 1
+                                    closing_proxy = closing_price_proxy(
+                                        candidate.captured_odds, closing_odds
+                                    )
                                     break
                             group.candidates.append(
                                 (

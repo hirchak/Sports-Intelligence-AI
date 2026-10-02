@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sports_intelligence.context.models import MarketPriceItem
 from sports_intelligence.db.models import (
     Experiment,
     ExperimentArm,
@@ -17,8 +19,11 @@ from sports_intelligence.db.models import (
     ExperimentPrediction,
     ExperimentRun,
     FixtureResult,
+    MatchContextRecord,
+    OddsPrice,
+    OddsSnapshotSet,
 )
-from sports_intelligence.evaluation.metrics import calibration
+from sports_intelligence.evaluation.metrics import calibration, closing_price_proxy
 from sports_intelligence.evaluation.service import Aggregate, aggregate_values
 from sports_intelligence.evaluation.settlement import (
     Outcome,
@@ -28,6 +33,7 @@ from sports_intelligence.evaluation.settlement import (
 )
 from sports_intelligence.experiments.contracts import ExperimentDefinition
 from sports_intelligence.experiments.service import change_run_state
+from sports_intelligence.predictions.baselines import canonical_selection
 from sports_intelligence.predictions.contracts import MARKETS, Selection
 
 
@@ -48,6 +54,7 @@ def add_samples(
     definition: ExperimentDefinition,
     source: str = "llm",
     allowed: set[str] | None = None,
+    closing_proxies: dict[str, float] | None = None,
 ) -> set[str]:
     selected = set()
     baseline = next((b for b in prediction.baselines_jsonb if b["name"] == source), None)
@@ -92,7 +99,7 @@ def add_samples(
                     c["captured_odds"],
                     fixed_return(outcome, c["captured_odds"]),
                     c["expected_value"],
-                    None,
+                    (closing_proxies or {}).get(c["selection"]),
                 )
             )
     return selected
@@ -140,6 +147,34 @@ async def compare_run(session: AsyncSession, run_id: UUID) -> ExperimentComparis
             await session.scalars(select(FixtureResult).where(FixtureResult.id.in_(result_ids)))
         ).all()
     }
+    contexts = {
+        c.id: c
+        for c in (
+            await session.scalars(
+                select(MatchContextRecord).where(
+                    MatchContextRecord.id.in_(
+                        {
+                            i
+                            for case in cases
+                            for i in (case.control_context_id, case.treatment_context_id)
+                            if i
+                        }
+                    )
+                )
+            )
+        ).all()
+    }
+    closing_rows = (
+        await session.execute(
+            select(OddsSnapshotSet, OddsPrice)
+            .join(OddsPrice, OddsPrice.snapshot_set_id == OddsSnapshotSet.id)
+            .where(
+                OddsSnapshotSet.id.in_(definition.evaluation.closing_snapshot_ids),
+                OddsSnapshotSet.captured_at <= run.source_cutoff,
+            )
+            .order_by(OddsSnapshotSet.captured_at.desc(), OddsSnapshotSet.id, OddsPrice.id)
+        )
+    ).all()
     call_map: dict[UUID, list[ExperimentCall]] = {}
     for call in (
         await session.scalars(select(ExperimentCall).where(ExperimentCall.run_id == run_id))
@@ -174,6 +209,7 @@ async def compare_run(session: AsyncSession, run_id: UUID) -> ExperimentComparis
     for case in cases:
         result = results.get(case.result_id) if case.result_id else None
         selected = {}
+        proxies_by_arm: dict[str, dict[str, float]] = {}
         for name in ("control", "treatment"):
             p = outputs.get((case.id, name))
             if p is None:
@@ -185,9 +221,54 @@ async def compare_run(session: AsyncSession, run_id: UUID) -> ExperimentComparis
             counts["abstained_" + name] += p.status == "ABSTAINED"
             if p.reason:
                 reasons[name + ":" + p.reason] += 1
+            proxies: dict[str, float] = {}
+            context_id = case.control_context_id if name == "control" else case.treatment_context_id
+            context = contexts.get(context_id) if context_id else None
+            if context:
+                kickoff = datetime.fromisoformat(
+                    context.context_jsonb["fixture_identity"]["kickoff_at"]
+                )
+                captured_at = context.context_jsonb["market_snapshot"]["captured_at"]
+                captured_time = datetime.fromisoformat(captured_at) if captured_at else None
+                for snapshot, price in closing_rows:
+                    if (
+                        snapshot.fixture_id != case.fixture_id
+                        or snapshot.captured_at > kickoff
+                        or captured_time is None
+                        or snapshot.captured_at <= captured_time
+                    ):
+                        continue
+                    selection = canonical_selection(
+                        MarketPriceItem(
+                            market=price.market,
+                            selection=price.selection,
+                            decimal_odds=float(price.decimal_odds),
+                            implied_probability=float(price.implied_probability),
+                            bookmaker=price.bookmaker,
+                            line=float(price.line) if price.line is not None else None,
+                        )
+                    )
+                    if selection is None or selection.value in proxies:
+                        continue
+                    candidate = next(
+                        (
+                            c
+                            for c in p.candidates_jsonb
+                            if c["selection"] == selection.value
+                            and c.get("bookmaker") == price.bookmaker
+                        ),
+                        None,
+                    )
+                    if candidate and candidate["captured_odds"] is not None:
+                        proxies[selection.value] = closing_price_proxy(
+                            candidate["captured_odds"], float(price.decimal_odds)
+                        )
+            proxies_by_arm[name] = proxies
             if p.status == "SUCCEEDED":
                 counts["predicted"] += 1
-                selected[name] = add_samples(groups[name], p, result, definition)
+                selected[name] = add_samples(
+                    groups[name], p, result, definition, closing_proxies=proxies
+                )
                 counts["evaluated"] += bool(selected[name])
                 counts["settled"] += bool(
                     result
@@ -232,7 +313,14 @@ async def compare_run(session: AsyncSession, run_id: UUID) -> ExperimentComparis
                 group = groups["paired_" + name]
                 group.coverage_available = True
                 group.statuses["SUCCEEDED"].add(case.id)
-                add_samples(group, p, result, definition, allowed=intersection)
+                add_samples(
+                    group,
+                    p,
+                    result,
+                    definition,
+                    allowed=intersection,
+                    closing_proxies=proxies_by_arm[name],
+                )
     counts["reasons"] = dict(sorted(reasons.items()))
     measures = {name: measure(group, definition) for name, group in groups.items()}
     deltas = {}
@@ -251,7 +339,7 @@ async def compare_run(session: AsyncSession, run_id: UUID) -> ExperimentComparis
     limitations = [
         "Measurements only; no significance, causal superiority or production promotion.",
         "Markets from a fixture are correlated; minimum sample uses fixture pairs.",
-        "No monetary cost known; closing proxy unavailable unless separately measured.",
+        "No monetary cost known; closing proxy uses explicit archived snapshots only.",
         "Baseline metrics use the control population; missing baseline probabilities reduce n.",
     ]
     if any(a.source != "replay" for a in (definition.control, definition.treatment)):
@@ -276,6 +364,7 @@ async def compare_run(session: AsyncSession, run_id: UUID) -> ExperimentComparis
         "manifest_hash": run.manifest_hash,
         "evaluation": definition.evaluation.model_dump(mode="json"),
         "settlement_manifest": settlement_manifest,
+        "closing_snapshot_ids": sorted({str(snapshot.id) for snapshot, _ in closing_rows}),
         "monetary_cost": None,
     }
     comparison = ExperimentComparison(

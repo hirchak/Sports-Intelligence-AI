@@ -2834,3 +2834,43 @@ manual interrupted-claim recovery, qualitative numeric-prose restriction, null c
 **Git commit:** scoped M9 source commit follows; main/tag still accepted 490227ac... / v0.9-m8.
 **Next action:** push build/m9, exact-head all-job CI, completed handoff, clean-tree independent-review STOP.
 M9 not merged/tagged; M10 not started; zero deployment/Hetzner/SSH/Hermes interaction.
+
+
+### 2026-10-02 CEST — Codex (M9 exact source CI and closing-proxy completeness)
+
+**Milestone/task:** M9 first source receipt and final scope audit correction.
+**Files changed:** M8 metrics/service (shared pure closing-price function, unchanged formula), M9
+comparison/historical bookmaker metadata, three regression scenarios, methodology/current handoff.
+**Behavior:** closing price proxy uses explicit archived comparator only, same fixture/bookmaker/selection,
+after captured price and no later than kickoff/cutoff; later odds excluded from original model payload.
+**Commands/tests:** exact source CI view/watch 37051194076; five targeted closing/historical regressions;
+Ruff/format/mypy. Initial full 1068 PASS and migrations/Compose/secret gates recorded above.
+**Results:** first source `84a257ddf96241428d1ab4b57e641f4e7f6b604f`, CI all three jobs SUCCESS.
+Five new/related scenarios PASS. Final scope audit found previous M9 closing proxy was always null;
+now valid explicit historical comparator is measured using the same M8 formula, without new provider calls.
+**Known problems:** complete post-adjustment unit/integration/full checks and exact final CI still pending.
+**Spec/ADR deviations:** none; M8 formula/production evaluations unchanged, pure helper reused in M9.
+**Git commit:** first source 84a257d pushed; small final-scope commit follows after gates.
+**Next:** full relevant gates, push build/m9, exact source/final CI, completed handoff and review STOP.
+Zero live LLM calls; no M9 merge/tag, M10/deployment/Hetzner/Hermes interaction.
+
+
+### 2026-10-02 CEST — Codex (M9 final-scope gates / abstention edge fix)
+
+**Milestone/task:** Complete the closing proxy and full-length M7 abstention edge before final source delivery.
+**Files changed:** shared M8 price helper, M9 comparison/runner, four regressions, current/methodology docs.
+**Behavior:** legitimate archived proxy only; post-kickoff/older comparator excluded from metrics; closing
+odds never enter model input. Valid M7 abstain_reason up to 400 chars remains in output JSON; separate
+short reason code is model_abstention, so storage cannot silently turn abstention into failure.
+**Commands/tests:** five closing/historical focused regressions; long-abstention regression before fix
+FAILED (count 0 instead of 1), then full unit/integration/full; Ruff/format/mypy; secret sanity/diff checks.
+**Results:** **872 unit + 200 integration = 1072 full pytest PASS** (57.65s), zero skips;
+245 formatted Python files, strict mypy 168 source files, secret sanity 325 files/history PASS.
+Fresh/populated migrations/no drift and Compose already PASS; no schema/Compose changes since those gates.
+Scoped Impeccable context confirms Telegram Python is not a web surface; existing bot/spec/test transport
+provide UX evidence, no design artifacts or live visual claims added.
+**Known problems:** final source and final documentation HEAD CI still to verify; no local blockers.
+**Spec/ADR deviations:** none; shared M8 closing formula unchanged, no second metric definition.
+**Git:** first source 84a257d / CI 37051194076 all-job SUCCESS; small final correction commit follows.
+**Next action:** final source push/CI, documentation closeout, exact final remote CI, clean-tree review STOP.
+M9 not merged/tagged; M10 not started; zero live LLM/deployment/Hetzner/Hermes interaction.

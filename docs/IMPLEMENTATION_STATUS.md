@@ -753,8 +753,8 @@ All review items implemented and independently verified:
 - Model/prompt/projection and historical PRIMARY/CHALLENGER comparisons; M8 metric reuse; full/paired n.
 - Strict bounded ModelRouter analyst; evidence supplied by Python; approval only authorizes experiments.
 - Private API, replay CLI, thin allowlisted Telegram; weekly schedule disabled; live execution gated.
-- 872 unit + 196 integration PASS; wrappers and actual M2→M9 E2E PASS; local static/migration/Compose/secret gates PASS.
-- Full pytest 1068 PASS (56.11s); all local gates complete. Commit/push/exact CI pending; not independently accepted.
+- 872 unit + 200 integration PASS; wrappers and actual M2→M9 E2E PASS; local static/migration/Compose/secret gates PASS.
+- Full pytest 1072 PASS (57.65s); all local gates complete. Final source commit/push/exact CI pending; not independently accepted.
 - Details: [EXPERIMENTS.md](EXPERIMENTS.md). Zero live LLM calls, deployment/Hetzner/Hermes interaction.
 
 # 3. M8 acceptance and authorized finalization

@@ -1015,3 +1015,95 @@ def test_actual_celery_wrappers_use_ids_queues_and_persist_attempts(service_sett
             await engine.dispose()
 
     asyncio.run(inspect_and_cleanup())
+
+
+@pytest.mark.parametrize(
+    "timing,known", [("legitimate", True), ("after_kickoff", False), ("before_capture", False)]
+)
+async def test_closing_proxy_from_explicit_archived_snapshots_stays_out_of_prediction(
+    factory, record, service_settings, timing, known
+):
+    from decimal import Decimal
+
+    from sports_intelligence.db.models import OddsPrice
+    from sports_intelligence.evaluation.config import EvaluationConfig
+
+    await with_result(factory, record)
+    captured = record.as_of + (
+        timedelta(hours=1)
+        if timing == "legitimate"
+        else timedelta(hours=7)
+        if timing == "after_kickoff"
+        else -timedelta(hours=1)
+    )
+    async with factory() as s, s.begin():
+        snapshot = OddsSnapshotSet(
+            fixture_id=record.fixture_id,
+            provider="mock",
+            captured_at=captured,
+            market_whitelist_jsonb=["ou_15"],
+        )
+        s.add(snapshot)
+        await s.flush()
+        s.add(
+            OddsPrice(
+                snapshot_set_id=snapshot.id,
+                bookmaker="synthetic",
+                market="ou_15",
+                selection="over",
+                line=Decimal("1.5"),
+                decimal_odds=Decimal("1.3"),
+                implied_probability=Decimal("0.769230769"),
+            )
+        )
+    ctx = MatchContextV1.model_validate(record.context_jsonb)
+    providers = []
+
+    def build(spec):
+        p = ScriptedProvider([valid_output(ctx, record.context_hash)])
+        providers.append(p)
+        return p
+
+    _, run, _ = await queue(
+        factory,
+        service_settings,
+        definition(record, evaluation=EvaluationConfig(closing_snapshot_ids=(snapshot.id,))),
+    )
+    summary = (await complete(factory, service_settings, run, build)).summary_jsonb
+    metric = summary["groups"]["control"]["metrics"]["closing_line_price_proxy"]
+    if known:
+        assert metric["sample_size"] == 1 and metric["value"] == pytest.approx(1.5 / 1.3 - 1)
+    else:
+        assert metric == {"value": None, "sample_size": 0}
+    assert str(snapshot.id) in summary["closing_snapshot_ids"]
+    for p in providers:
+        assert (
+            p.calls[0]["context"]["market_snapshot"]
+            == ctx.model_dump(mode="json")["market_snapshot"]
+        )
+        assert str(snapshot.id) not in str(p.calls[0])
+
+
+async def test_full_length_valid_abstention_reason_is_preserved(factory, record, service_settings):
+    await with_result(factory, record)
+    context = MatchContextV1.model_validate(record.context_jsonb)
+    text = "Synthetic missing evidence. " * 12
+    output = valid_output(context, record.context_hash)
+    output.update(abstain=True, abstain_reason=text, probabilities=None)
+    providers = []
+
+    def build(spec):
+        p = ScriptedProvider([output])
+        providers.append(p)
+        return p
+
+    _, run, _ = await queue(factory, service_settings, definition(record))
+    summary = (await complete(factory, service_settings, run, build)).summary_jsonb
+    assert summary["counts"]["abstained_control"] == summary["counts"]["abstained_treatment"] == 1
+    async with factory() as s:
+        predictions = (await s.scalars(select(ExperimentPrediction))).all()
+        assert all(
+            p.status == "ABSTAINED" and p.output_jsonb["abstain_reason"] == text
+            for p in predictions
+        )
+        assert all(p.reason == "model_abstention" for p in predictions)

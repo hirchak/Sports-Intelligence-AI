@@ -93,3 +93,11 @@ def probability_metrics(
         if n
         else None,
     }
+
+
+def closing_price_proxy(captured_odds: float, closing_odds: float) -> float:
+    """Research price comparison only; caller proves snapshot availability and identity."""
+    for value in (captured_odds, closing_odds):
+        if isinstance(value, bool) or not math.isfinite(value) or value <= 1:
+            raise ValueError("invalid closing price proxy odds")
+    return captured_odds / closing_odds - 1

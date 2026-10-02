@@ -201,7 +201,11 @@ async def execute_prediction(
             stored = await session.get(ExperimentPrediction, prediction.id)
             assert stored is not None
             stored.status = historical["status"]
-            stored.reason = historical["error_code"] or historical["abstain_reason"]
+            stored.reason = (
+                "model_abstention"
+                if historical["status"] == "ABSTAINED" and historical["output"]
+                else historical["error_code"] or historical["abstain_reason"]
+            )
             stored.completed_at = datetime.now(UTC)
             stored.output_jsonb = historical["output"]
             stored.probabilities_jsonb = {
@@ -213,6 +217,7 @@ async def execute_prediction(
                     "displayed": c["displayed"],
                     "captured_odds": c["captured_odds"],
                     "expected_value": c["expected_value"],
+                    "bookmaker": c["bookmaker"],
                 }
                 for c in historical["candidates"]
             ]
@@ -259,7 +264,7 @@ async def execute_prediction(
         assert stored is not None
         stored.status, stored.reason, stored.completed_at = (
             outcome.status,
-            outcome.reason,
+            "model_abstention" if outcome.output and outcome.output.abstain else outcome.reason,
             datetime.now(UTC),
         )
         stored.audit_jsonb = list(outcome.audit)

@@ -13,18 +13,18 @@ exact frozen-context planning/replay; paired/full M8 comparisons; historical PRI
 bounded ModelRouter analyst and deterministic evidence; human authorization/rejection/audit-only promotion;
 CLI, internal API, thin allowlisted Telegram; weekly scan disabled, zero notifications/live execution.
 
-Verified locally: **872 unit + 196 integration PASS**. **Full pytest: 1068 PASS**, 56.11s. Ruff/format (245 files),
+Verified locally: **872 unit + 200 integration PASS**. **Full pytest: 1072 PASS**, 57.65s. Ruff/format (245 files),
 strict mypy (168 source files), fresh DB→head→down -1→head→check and populated accepted M8→M9 cycle
 PASS with no drift; Compose default/dev/Telegram PASS; 325 working-file/history secret sanity PASS;
-git diff --check PASS. Accepted migrations 0001–0013, M7 prediction modules/production prompt and M8
-settlement/evaluation source remain byte-identical to accepted base. Synthetic unit/integration fixtures
+git diff --check PASS. Accepted migrations 0001–0013 and M7 prediction modules/production prompt remain byte-identical.
+M8 closing-price formula is extracted into a shared pure function, preserving measurement definitions. Synthetic unit/integration fixtures
 are infrastructure evidence only. Actual task wrappers and collectors→M6→M7→M8→M9 keyless E2E PASS.
 
 Remaining: scoped commit/push, exact remote HEAD CI SUCCESS, clean-tree review STOP.
 M9 NOT MERGED/TAGGED; M10 NOT STARTED. LOCAL DEVELOPMENT ONLY. Zero paid/live LLM calls;
 zero deployment / Hetzner / SSH / Hermes interaction. No profitability/model-superiority/proposal-merit claim.
 Operational limits: interrupted paid-call claims/lost broker delivery require inspection/explicit rerun;
-no fitted statistics/ensembles, closing comparison null, monetary cost unknown; no new live Telegram smoke.
+no fitted statistics/ensembles, closing proxy only from explicit archived snapshots, monetary cost unknown; no new live Telegram smoke.
 
 ---
 
