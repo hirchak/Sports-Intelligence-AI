@@ -96,3 +96,12 @@ def test_correlation_safe_docs_disabled_and_no_cors(monkeypatch):
         client.get("/health", headers={"X-Correlation-ID": "a" * 100}).headers["x-correlation-id"]
         != "a" * 100
     )
+
+
+def test_startup_validation_never_renders_input_credentials():
+    secret = "synthetic-startup-credential-test-only"
+    with pytest.raises(ValidationError) as error:
+        Settings(_env_file=None, production_like=True, log_level="DEBUG", sports_api_key=secret)
+    rendered = str(error.value)
+    assert secret not in rendered and "input_value" not in rendered
+    assert "forbids DEBUG" in rendered

@@ -3037,3 +3037,16 @@ deployment/Hetzner/Hermes or real LLM calls.
 **Spec/ADR deviations:** no forecasting/schema redesign; historical current-state snapshots archived with superseded labels, worklog preserved append-only.
 **Git commit:** checkpoint2959f68; scoped verification/source documentation commit follows.
 **Next action:** source push/exact CI, latest clean/populated no-op receipts, final docs-only handoff CI; STOP for independent M10 review. No merge/tag M10, M11/deployment/SSH/Hetzner/Hermes.
+
+
+### 2026-10-03T01:12:08+02:00 — Codex (M10 startup error privacy)
+
+**Milestone/task:** M10 final security edge: Pydantic errors before logging setup.
+**Files changed:** core/config.py, security regression, SECURITY finding S7, append-only worklog.
+**Behavior:** hide validated input values in Settings errors while retaining actionable failure reasons; no accepted-value/runtime/pipeline/schema/identity change.
+**Commands/tests:** focused security8 PASS; full keyless pytest1136 PASS82.29s (901 unit+235 integration); Ruff/format258/mypy171 PASS. Source eaaef78 CI37074324092 all three jobs SUCCESS; exact committed eaa clean bootstrap/E2E/backup/restart/outages PASS; populated M9 head/check preserves all50 table fingerprints and immutable identities.
+**Results:** startup errors cannot render credential-bearing input_value before log redaction starts. Final code CI for this narrow source delta still required.
+**Known problems:** live sports/odds/LLM and independent review remain NOT_VERIFIED; deployment NOT READY; no further live calls requested or performed.
+**Spec/ADR deviations:** no schema/forecast architecture/allowed config-value change.
+**Git commit:** privacy fix follows; previous verified operational source eaaef78bf0b83b5d4f48655cfc9a00436d2fb5e6.
+**Next action:** exact source CI, final receipts/docs delivery CI, temporary resource cleanup, independent M10 review STOP. No M10 merge/tag, M11/deployment/SSH/Hetzner/Hermes.

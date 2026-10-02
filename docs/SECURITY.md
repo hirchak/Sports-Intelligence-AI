@@ -12,6 +12,7 @@ M10 acceptance**. Exact gates and residual limits are in M10_ACCEPTANCE_REPORT.
 | S3 Medium | Non-mock sports configuration could explicitly return mocks without a gate | Factory refuses mock outside MOCK; two-mode regressions; existing LLM/search/odds gates retained |
 | S4 Low | Bot started with empty allowlist (access middleware did deny everyone) | Startup now refuses before any transport request; positive ID validation; middleware still denies unknown/missing users/callbacks |
 | S5 Low operational | Unbounded/default worker parallelism and plain query access logs | concurrency2/prefetch1, bounded broker connect/publish policy; safe request correlation logs, no query/body/header logging; production API no access log/proxy headers |
+| S7 Medium | Startup validation can precede the logger and render environment input values | Settings hide_input_in_errors=True; credential-bearing invalid-startup regression asserts no input_value/secret output |
 | S6 Low operational | Alembic fileConfig disabled existing application loggers inside test/CLI process | disable_existing_loggers=False, full-suite lifecycle-log regression |
 
 API-Football API-error exceptions now use a static message rather than echoing arbitrary provider error bodies.

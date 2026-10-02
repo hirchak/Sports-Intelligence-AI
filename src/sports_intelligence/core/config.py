@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
         env_ignore_empty=True,
+        hide_input_in_errors=True,
     )
 
     app_env: AppEnv = "mock"
