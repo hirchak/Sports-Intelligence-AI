@@ -2985,3 +2985,16 @@ is origin/build/m9 and the completion receipt, no source changes beyond verified
 **Git commit:** verified source 642dd3690919cbb3dfed8b37a2ac089b74e3a308; documentation-only final receipt follows.
 **Next action:** final exact docs CI + clean tree, then independent review STOP; no merge/tag M9, M10,
 deployment/Hetzner/Hermes or real LLM calls.
+
+
+### 2026-10-03 CEST — Codex (owner-supplied independent M9 acceptance)
+
+**Milestone/task:** M9 release closeout; independent M9/review-fix PASS / ACCEPTED.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, append-only AI_WORKLOG.
+**Behavior:** documentation-only acceptance receipt; preserve historical failures and review evidence.
+**Commands/tests:** mandatory specifications/state/ADRs read; clean status/history; HTTPS fetch; exact accepted CI view.
+**Results:** HEAD/origin/build/m9 354c8f5ff27fe5427313a459937c17054073f36a; accepted CI 37061920047 all three jobs SUCCESS; main remains accepted M8 490227ac8e27ca4c8870891277fd8783d8a7f1af; tags follow v0.N-milestone sequence.
+**Known problems:** none in accepted M9; closeout CI/merge/tag/base still pending.
+**Spec/ADR deviations:** none; no source/schema changes.
+**Git commit:** docs-only receipt follows.
+**Next action:** exact docs CI, PR merge commit, main CI, annotated v0.10-m9, exact build/m10 base; then authorized local M10 only. No deployment/SSH/Hetzner/Hermes.
