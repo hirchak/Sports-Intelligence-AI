@@ -2725,3 +2725,20 @@ Regressions A–D and latest equal-scope cutoff/partial-scope coverage PASS; old
 **Spec/ADR deviations:** none; original materialization contract and metrics/settlement versions unchanged.
 **Git:** narrow implementation commit next; main still accepted 4eff88b / v0.8-m7.
 **Next:** push build/m8, exact source/final CI SUCCESS, completed persistent receipt, STOP for review.
+
+### 2026-10-02 CEST — Codex (M8.1 verification complete / review stop)
+
+**Milestone/task:** M8.1 completed exact-source acceptance checks and persistent closeout.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, append-only AI_WORKLOG only.
+**Behavior:** no source/test/schema changes; replace obsolete active pending wording with completed
+verification state and exact source receipt. Historical pending notes above remain immutable evidence.
+**Commands/tests:** gh run watch/view/log 36976617246; final refs/status; full local gates recorded above.
+**Results:** implementation HEAD **248e6b190faf4d5b232b7f6eb60a67510c57ae86**, CI **36976617246**
+all jobs SUCCESS — lint/type/unit, integration, Compose. CI logs: 839 unit, 151 integration; mypy155;
+no Alembic drift. Local full 990 PASS; Ruff/format, migration cycles, Compose and secret sanity PASS.
+**Known problems:** no remaining M8.1 blocker; independent review required. No live provider calls.
+**Spec/ADR deviations:** none; no metrics/settlement/provider/M7/schema changes.
+**Git commit:** 248e6b1 implementation pushed. This documentation-only receipt preserves the verified
+implementation; its final checkout HEAD/CI is the canonical Git/Actions tip and completion receipt.
+**Next action:** STOP for independent review after checking the final documentation delivery CI.
+M8 not merged/tagged, main remains 4eff88b / v0.8-m7, M9 not started, no deployment/Hetzner/Hermes.

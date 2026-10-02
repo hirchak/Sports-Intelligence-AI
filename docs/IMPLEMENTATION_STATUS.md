@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M8.1 — Summary materialization acceptance fix (IN PROGRESS)
+**Current milestone:** M8.1 — Summary materialization fix COMPLETE / awaiting independent review
 **Last updated:** 2026-10-02 (Codex)
 **Last known good commit:** 4eff88bcaaac387ec047d50575d25b8135baa567 (v0.8-m7, PR #9 merged)
 
@@ -741,7 +741,9 @@ Ruff/format clean (228 Python files); mypy clean (155 source files).
 New regressions A–D plus suitability/cutoff ordering: before fix 4 FAIL/1 PASS; after 5 PASS.
 Alembic sports_intel_m81_test: fresh→head→downgrade -1→head→check PASS, zero drift.
 Populated M7→M8 migration regression remains PASS in full integration; schema history unchanged.
-Compose default/dev/Telegram PASS. 302-file/history secret sanity PASS. Exact M8.1 source CI next.
+Compose default/dev/Telegram PASS. 302-file/history secret sanity PASS.
+Verified implementation HEAD 248e6b190faf4d5b232b7f6eb60a67510c57ae86; Actions 36976617246 all 3 jobs SUCCESS.
+Local/remote verification COMPLETE. Historical pending worklog notes are superseded, not rewritten.
 
 Historical M8 delivery: d56aa3620f728eae500a1d95bce167c986d3dfda, CI 36936656574 — all jobs SUCCESS.
 Historical failed CI/test notes remain in append-only worklog; M8/M8.1 independent acceptance unclaimed.
@@ -884,15 +886,18 @@ LLM provider routing:
 
 Branch build/m8; reviewed starting HEAD d56aa3620f728eae500a1d95bce167c986d3dfda.
 Main/tag remain 4eff88bcaaac387ec047d50575d25b8135baa567 / v0.8-m7.
-M8.1 scoped implementation commit and exact source CI verification are next.
+M8.1 implementation 248e6b190faf4d5b232b7f6eb60a67510c57ae86, verified CI 36976617246: all-job SUCCESS.
+Documentation-only closeout preserves this implementation. Exact final delivery tip/CI is canonical
+in Git/GitHub Actions (`git rev-parse HEAD`, `gh run list --branch build/m8 --limit 1`).
+Verification COMPLETE; no outstanding implementation or verification blocker.
 No M8 merge/tag; no M9 or deployment.
 
 ---
 
 # 12. Next action
 
-Push narrow M8.1, verify exact source/final delivery Actions, record completed receipts,
-then STOP for independent review. No further milestone implementation.
+STOP for independent review. M8.1 implementation/local/remote acceptance verification is complete.
+No further milestone implementation, M9, merge/tag or deployment.
 
 ---
 

@@ -22,7 +22,11 @@ M8.1 local gates: **839 unit + 151 integration = 990 full pytest PASS**, 43.67s;
 Ruff/format clean (228 Python files), strict mypy clean (155 source files). Alembic fresh→head→down -1→
 head→check on isolated sports_intel_m81_test PASS; populated migration tests PASS; no schema drift or
 migration edits. Compose default/dev/Telegram PASS; working-file/history secret sanity PASS (302 files).
-Exact pushed M8.1 source CI verification follows; independent acceptance is not claimed.
+M8.1 verification COMPLETE. Exact implementation HEAD `248e6b190faf4d5b232b7f6eb60a67510c57ae86`;
+[CI 36976617246](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36976617246) **all jobs SUCCESS**:
+lint/type/unit, Postgres/Redis integration, Compose validation. Independent acceptance is not claimed.
+Final documentation-only tip has the same implementation; exact delivery HEAD/CI is returned in completion
+and discoverable from Git/GitHub Actions. No completed delivery is described as pending.
 
 M8 scope/methodology: [M8_SCOPE.md](M8_SCOPE.md), [EVALUATION.md](EVALUATION.md),
 [ADR 0011](adr/0011-m8-result-authority-and-measurement.md). Historical M8 contract/gates below are unchanged.
@@ -112,4 +116,12 @@ retain safe ledger/job failure, no unsafe partial settlement. See EVALUATION.md 
 - Reviewed M8 delivery d56aa3620f728eae500a1d95bce167c986d3dfda: [36936656574](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36936656574),
   all jobs SUCCESS. That M8 delivery verification is complete; it does not independently accept M8.1.
 
-Next: exact final HEAD Actions SUCCESS and clean tree, then STOP for independent review only.
+Next: STOP for independent review only. M8.1 local/remote verification is complete.
+Resolve the exact final docs-only checkout/CI via `git rev-parse HEAD` and `gh run list --branch build/m8 --limit 1`.
+
+## Completed M8.1 receipt
+
+Implementation: `248e6b190faf4d5b232b7f6eb60a67510c57ae86`. CI [36976617246](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36976617246)
+SUCCESS on that exact SHA; CI logs confirm 839 unit + 151 integration, mypy 155 source files and clean migrations.
+Final local full pytest: 990 PASS. Documentation closeout is the only subsequent change.
+STOP for review; M8/M8.1 not merged/tagged, M9 not started, LOCAL DEVELOPMENT ONLY.
