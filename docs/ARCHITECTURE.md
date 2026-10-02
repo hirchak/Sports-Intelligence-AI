@@ -151,3 +151,11 @@ See `docs/adr/0003-local-docker-topology.md`.
 - `docs/adr/0006-m1-migration-scope-and-celery-queue-layout.md`
 - `docs/adr/0007-api-football-first-provider.md`
 - `docs/adr/0008-m2-schema-scope-and-upserts.md`
+
+## M9 experiment laboratory
+
+Independent replay persistence references immutable M6 evidence; reuses M7 PredictionEngine/projection/
+validation/ranking and M8 deterministic settlement/aggregate functions. Identifier-only bounded batches
+on llm queue, deterministic comparison on evaluation queue. Improvement Analyst freezes a bounded
+comparison packet through ModelRouter; produces proposals only. Human approval authorizes an experiment;
+production promotion is audit-only, no config application. [EXPERIMENTS.md](EXPERIMENTS.md), ADR 0012.

@@ -1,3 +1,153 @@
+# M9 acceptance receipt — PASS / ACCEPTED
+
+Date: 2026-10-03 (Europe/Warsaw). Independent verdict supplied by the owner:
+**M9 / M9 review-fix = PASS / ACCEPTED**.
+Accepted review HEAD: `354c8f5ff27fe5427313a459937c17054073f36a`.
+Exact accepted CI: [37061920047](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37061920047),
+all three jobs SUCCESS (verified live). Accepted M8 main: `490227ac8e27ca4c8870891277fd8783d8a7f1af` / `v0.9-m8`.
+
+Authorized closeout: docs receipt → exact-head CI → PR build/m9 to main → merge commit →
+merged-main CI → annotated v0.10-m9 → build/m10 from that exact SHA.
+M10 source changes may start only after origin/build/m10 == origin/main == v0.10-m9^{}.
+M10 then stops for independent review, unmerged and untagged. LOCAL DEVELOPMENT ONLY;
+no deployment, SSH, Hetzner or Hermes interaction. Historical review failures/receipts below
+are preserved and their pending-review wording is superseded by this acceptance receipt.
+
+---
+
+# M9 independent-review fix — VERIFIED / NOT ACCEPTED / REVIEW STOP
+
+**Branch:** build/m9. **Reviewed delivery:** `383c32f9ba5255f9c72d74c5e7c2ffbcdeba66fb`.
+**Verified fix source:** `642dd3690919cbb3dfed8b37a2ac089b74e3a308`.
+**Exact source CI:** [37061295354](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37061295354), all three jobs SUCCESS:
+lint/type/unit; Postgres/Redis integration; Docker Compose validation. Later delivery is docs-only;
+final completion provides exact canonical origin/build/m9 HEAD and its CI. M9 remains NOT ACCEPTED.
+**Accepted main/v0.9-m8:** `490227ac8e27ca4c8870891277fd8783d8a7f1af`, unchanged, annotated tag.
+
+Scope: [M9_REVIEW_FIX_SCOPE.md](M9_REVIEW_FIX_SCOPE.md). Semantics: [EXPERIMENTS.md](EXPERIMENTS.md), ADR 0012.
+
+## Exact fixes
+
+- Broad replay population is matching frozen MatchContexts' unique fixture IDs. Current Fixture kickoff,
+  league/team/status fields no longer define denominators/manifests. Counts/analyst packet disclose
+  population_basis. Explicit fixture/context IDs remain strict; requested fixture without context remains
+  NOT_REPLAYABLE, no provider backfill. Primary-key existence only resolves FK references.
+- Default approval is prompt-only: reuse the control request/config, substitute registered candidate prompt.
+  Actual prompt hashes must differ; models/config/phase/variant/policy must match. Model proposal requires
+  an explicit reviewed definition with different frozen primary model/config, same prompt/phase/variant/policy.
+  Route aliases, unchanged prompt content, mixed dimensions and historical declared-but-unused routes refuse.
+- data_quality/features/ranking/sources proposals cannot be instantiated by M9 definitions; they fail closed,
+  even when supplied an unrelated prompt/model definition. Error codes are stable HTTP409 business refusals.
+  Same frozen arms are validated before persistence, avoiding config drift/double-freeze and partial writes.
+  Failed mapping/creation leaves PROPOSED, no experiment_id/event/approved status. Legacy wrong links cannot
+  reapprove/start/promote; human rejection works without rewriting immutable evidence.
+- Backend approval advice is typed; Telegram hides unsupported automatic actions, explains reviewed/manual
+  requirements, and old/stale callbacks cannot POST an unsupported default approval. No production writes.
+- Complete H2H/1X2/O/U1.5/O/U2.5 labels are permitted. Remaining numeric/percent measurements and extra
+  sample/metric/status/reference fields still fail. Factual evidence stays Python-owned.
+
+## Regression evidence and gates
+
+New [integration regressions](../tests/integration/test_m9_review_fixes.py): 33 PASS — broad population before/
+after mutable Fixture changes (with/without league scope), explicit missing/context IDs, all six components,
+compatible explicit prompt/model tests, wrong/no-op/mixed/alias/history cases, failed creation atomicity,
+legacy invalid link progression, API/Telegram behavior, no production mutation.
+New [unit regressions](../tests/unit/test_m9_review_contract.py): 20 PASS — football labels, hidden numerical
+claims/extra factual fields rejected, malformed backend advice fails closed. Existing M9 contract tests retained.
+
+Reviewed planner after fixing a synthetic natural-key setup collision reproduces 2 FAIL on changed counts;
+new planner PASS. Old approval regressions fail before correction; current default/explicit/legacy cases PASS.
+This is infrastructure correctness, not evidence of forecasting/proposal quality or independent acceptance.
+
+**893 unit + 233 integration = 1126 full pytest PASS**, **68.77s**, zero skips.
+Ruff/check + format (247 Python files), strict mypy (168 source files) PASS.
+Fresh sports_intel_m9_review_fresh_test→head→down -1→head→check and populated accepted M8→M9 roundtrip
+PASS, no drift. Database models/migrations 0001–0014 unchanged. Compose default/dev/Telegram PASS.
+328 working-file/history heuristic secret scan + git diff --check PASS. Providers, prediction/evaluation
+math, prompts and runtime configuration unchanged from reviewed delivery. Real external LLM calls: **0**.
+
+## Remaining limits / next action
+
+Automatic population is captured historical contexts, not an all-fixture census. Unsupported proposal
+component treatments remain outside M9; manual model approval only instantiates implemented compatible
+dimensions. Human review owns qualitative intent/registered content, no semantic merit claimed.
+Older results stay immutable; explicit rerun uses corrected planning. No automatic rewrite of invalid old
+links, no production application/promotion, no new live provider/Telegram or profitability acceptance.
+
+**STOP for independent review. M9 NOT ACCEPTED/MERGED/TAGGED; M10 NOT STARTED.**
+LOCAL DEVELOPMENT ONLY; zero deployment/Hetzner/Hermes interaction. Historical previous delivery below
+is retained as evidence and superseded by this review-fix checkpoint.
+
+---
+
+# M9 handoff — VERIFIED / INDEPENDENT REVIEW REQUIRED
+
+**Branch:** build/m9. **Verified runtime-source HEAD:** `dff83c17e2eddcde08ca0a5676dcc9d516a4cf6c`.
+**Exact source CI:** [37053961881](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37053961881), all three jobs SUCCESS:
+lint/type/unit; Postgres/Redis integration; Docker Compose validation. Later delivery commits are
+only documentation; the completion message reports the canonical final `origin/build/m9` SHA and exact CI.
+
+**Accepted M8 base/main:** `490227ac8e27ca4c8870891277fd8783d8a7f1af`, PR #10 merged, annotated `v0.9-m8`.
+Merged-main CI `36981326405` all jobs SUCCESS. Startup refs all matched this exact SHA.
+Post-M8 state-doc drift corrected before implementation; old worklog/receipts retained as history.
+
+Scope: [M9_SCOPE.md](M9_SCOPE.md). Method/CLI/API: [EXPERIMENTS.md](EXPERIMENTS.md).
+Design: [ADR 0012](adr/0012-m9-frozen-replay-and-human-proposals.md).
+
+## Review map
+
+1. Canonical final delivery SHA: resolve `origin/build/m9`; final completion supplies exact SHA/CI.
+2. Accepted M8 base: SHA/main/tag/PR/CI above; no merge/tag/main change in M9.
+3. Current state drift correction: CURRENT_TASK/IMPLEMENTATION_STATUS/REVIEW_HANDOFF; append-only worklog.
+4. Architecture: frozen context → plan/manifest → bounded isolated arm outputs → shared M8 comparison → analyst → human proposal action.
+5. Schema: Alembic 0014; ten normalized tables listed in EXPERIMENTS.md; UUID FKs, unique hashes, immutable DB triggers.
+6. Authority: exact context ID/hash/as_of/phase, feature/version, quality/report and immutable evidence identities.
+7. Leakage: no current providers/metadata rebuild; future rows rejected; results/closing odds used only in evaluation; projection leaves original unchanged.
+8. Identity: immutable definition/arms; ordered manifest/result IDs; per-output CAS, run connection lock, physical call budgets; explicit rerun UUID distinct.
+9. Pairing: identical eligible fixture scope; successful settled-selection intersection; independent full-arm metrics retain treatment failures.
+10. Unavailable: NOT_REPLAYABLE reason counts; empty/missing historical period → INSUFFICIENT_HISTORICAL_EVIDENCE / INSUFFICIENT_DATA, zero fabricated calls/results.
+11. CLI: `uv run python -m sports_intelligence.replay --experiment config/experiment.example.json --from 2026-08-01 --to 2026-08-31 --mock --dry-run`; explicit --execute queues work.
+12. Variants: configured model/config routes, default/candidate prompt, WITH/WITHOUT_ODDS, explicit phases and historical PRIMARY/CHALLENGER arms; limitations disclosed.
+13. Baselines: market/statistical independent from LLM; missing probabilities reduce n; no ensemble/weights; explicit archived closing proxy uses shared M8 formula.
+14. Analyst: ModelRouter/provider abstraction, frozen bounded comparison packet (50KB cap), mock default, daily call cap, no DB dump/tools/config writes.
+15. Proposal: ID/title/problem/evidence summary+refs/sample/hypothesis/change/effect/test_plan/risks/risk/component/time/actual analyst metadata/status/human events.
+16. States: explicit experiment transitions; PROPOSED→APPROVED_FOR_EXPERIMENT→EXPERIMENT_RUNNING→PROMOTED→ROLLED_BACK, rejection where allowed; invalid transitions fail.
+17. Production isolation: separate output tables; no writes to production predictions/context/activation/routes/features; human PROMOTED/ROLLED_BACK is audit only, production_applied=false.
+18. API: GET/POST experiments; detail/plan/run; run analyze; improvements list/detail/approve-experiment/reject/record-decision. Expensive execution → 202 identifier-only jobs.
+19. Telegram: /experiments, /improvements, menu/pages/details/approve/reject; allowlist/backend only; bounded valid HTML; no promote action or huge JSON.
+20. Schedule: opt-in Monday 09:00 app timezone; disabled by default; ten recent comparisons max, dedup, no live opt-in or notification spam.
+21. Unit: **873 PASS** (34 added M9 unit scenarios).
+22. Integration: **200 PASS** (49 added M9 scenarios); isolated Compose *_test DB/Redis15.
+23. Full pytest: **1073 PASS**, **64.93s**, zero skips.
+24. Ruff check/format: PASS, 245 Python files; strict mypy: PASS, 168 source files.
+25. Alembic: fresh DB→head→down -1→head→check; populated accepted M8→M9 integrity/roundtrip/no drift PASS. Revisions 0001–0013 byte-identical.
+26. Compose: default + dev override + Telegram profile config -q PASS.
+27. Source CI: exact `37053961881` / `dff83c17e2eddcde08ca0a5676dcc9d516a4cf6c` all three jobs SUCCESS; final documentation HEAD CI separately verified before completion.
+28. Real external LLM calls in implementation: **0**. All forecasts/analyst output in acceptance are explicitly synthetic; offline HTTP contracts are not live proof.
+29. Limits: no forecasting/profit/superiority/significance/proposal-merit proof; unknown monetary cost remains null; explicit archived closing quotes only; interrupted calls/lost delivery need inspection/rerun; no new live Telegram acceptance.
+30. M9 NOT MERGED/TAGGED. Independent review required; no owner acceptance inferred from CI.
+31. M10 NOT STARTED.
+32. Zero deployment / Hetzner / Hermes interaction; LOCAL DEVELOPMENT ONLY; STOP.
+
+## Receipts and regressions
+
+- Core source 84a257ddf96241428d1ab4b57e641f4e7f6b604f / CI 37051194076 all-job SUCCESS.
+- Closing/long-abstention source 5869b4df02714eab2b23be61a235f944d6e01df9 / CI 37053028704 all-job SUCCESS.
+- Final runtime source/CI at header. Final source unit/integration results match the local 873/200 gates.
+- Real collectors→M6→M7→M8→M9 keyless E2E, API/Telegram test transport and actual task wrappers PASS.
+- Planted later odds/lineup/research/result/current team/league mutation cannot enter replay; legitimate closing quote is evaluation-only.
+- Partial failure/full-arm fairness, minimum fixture pairs, missing baselines/results/context, physical retries/budgets, duplicate workers/proposals, immutable DB evidence PASS.
+- Malformed/hallucinated analyst fields rejected; exact factual evidence bound by Python; approval queues no execution; recorded promotion writes no production config.
+- Valid long abstention originally overflowed short reason code, reproduced and corrected with original text retained in output.
+- Long escaped Telegram text originally split entities, reproduced and corrected by bounded whole-entity escaping.
+
+Next action: **independent M9 review only**. Persistent sources/tests/Git provide authority; previous M8
+handoff below is historical and its closeout-pending wording is superseded by this current checkpoint.
+
+---
+
+# Historical M8 handoff (superseded closeout wording retained as prior evidence)
+
 # M8 finalization handoff — independently ACCEPTED
 
 **Independent verdict (owner-supplied): M8 / M8.1 = PASS / ACCEPTED.**

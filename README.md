@@ -6,7 +6,7 @@ Current phase: **LOCAL DEVELOPMENT ONLY** (no server deployment, no Hermes depen
 
 ## Status
 
-- Milestone: **M0, M1 accepted**; **M2 implemented, pending review** (`build/m2` branch)
+- Milestones M0–M8 accepted; **M9 implemented and verified, awaiting independent review** (`build/m9`).
 - See `docs/IMPLEMENTATION_STATUS.md` for the canonical state.
 
 ## What this is
@@ -139,3 +139,10 @@ Read `AGENTS.md` before any session. State files:
 Implemented local post-match flow and methodology: [EVALUATION.md](docs/EVALUATION.md).
 Result scans are opt-in (`RESULT_SCAN_ENABLED=false` default); no deployment or M9.
 API `/v1/results`, `/v1/jobs/evaluate`, `/v1/evaluations/summary`; Telegram `/stats`, `/results`, `/evaluate`.
+
+## M9 controlled experiments and proposals
+
+Frozen historical replay, paired model/prompt/variant comparison using M8 measurements, bounded
+proposal-only analyst and human experiment authorization. [EXPERIMENTS.md](docs/EXPERIMENTS.md)
+contains CLI examples, internal API, schema, replay authority and limitations. Defaults are MOCK-only;
+no automatic production mutation or deployment. Current gate/review state: [REVIEW_HANDOFF.md](docs/REVIEW_HANDOFF.md).

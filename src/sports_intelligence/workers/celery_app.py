@@ -54,6 +54,13 @@ def create_celery_app(settings: Settings) -> Celery:
             "options": {"queue": "control"},
         }
 
+    if settings.improvement_schedule_enabled:
+        beat_schedule["improvements.weekly"] = {
+            "task": "experiment.improvement_scan",
+            "schedule": crontab(day_of_week="mon", hour=9, minute=0),
+            "options": {"queue": "control"},
+        }
+
     application = Celery(
         "sports_intelligence",
         broker=settings.celery_broker_url,
@@ -67,6 +74,7 @@ def create_celery_app(settings: Settings) -> Celery:
             "sports_intelligence.workers.tasks.context",
             "sports_intelligence.workers.tasks.llm",
             "sports_intelligence.workers.tasks.evaluation",
+            "sports_intelligence.workers.tasks.experiments",
         ],
     )
     application.conf.update(
@@ -78,6 +86,10 @@ def create_celery_app(settings: Settings) -> Celery:
         task_default_queue="control",
         task_queues=tuple(Queue(name) for name in QUEUE_NAMES),
         task_routes={
+            "experiment.replay_batch": {"queue": "llm"},
+            "experiment.compare": {"queue": "evaluation"},
+            "experiment.improvement_analysis": {"queue": "llm"},
+            "experiment.improvement_scan": {"queue": "control"},
             "evaluation.collect_results": {"queue": "sports_io"},
             "evaluation.evaluate": {"queue": "evaluation"},
             "evaluation.result_scan": {"queue": "control"},

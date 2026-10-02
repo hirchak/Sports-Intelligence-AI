@@ -1,0 +1,26 @@
+{
+  "name": "Local synthetic odds-projection comparison",
+  "hypothesis": "Measure the existing odds and research masking projection on frozen contexts.",
+  "created_by": "local-owner",
+  "control": {
+    "route": "prediction_primary",
+    "prompt": "default",
+    "variant": "LLM_WITH_ODDS",
+    "phase": "MORNING"
+  },
+  "treatment": {
+    "route": "prediction_primary",
+    "prompt": "default",
+    "variant": "LLM_WITHOUT_ODDS",
+    "phase": "MORNING"
+  },
+  "population": {
+    "start": "2026-08-01T00:00:00Z",
+    "end": "2026-09-01T00:00:00Z"
+  },
+  "max_fixtures": 10,
+  "max_llm_calls": 40,
+  "max_calls_per_arm": 20,
+  "batch_size": 5,
+  "min_paired_fixtures": 100
+}

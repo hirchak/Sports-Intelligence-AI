@@ -21,6 +21,25 @@ class MockLLMProvider:
         output_schema: type[BaseModel],
         request_id: str,
     ) -> LLMResult:
+        if task_type == "improvement_analysis":
+            return LLMResult(
+                parsed_output={
+                    "title": "Inspect missing evidence before changing the predictor",
+                    "problem": "Synthetic comparison is measurement infrastructure only.",
+                    "hypothesis": "Better evidence completeness may reduce uncertainty.",
+                    "proposed_change": "Test a versioned candidate prompt emphasizing missingness.",
+                    "expected_effect": "Potentially better abstention; requires measurement.",
+                    "test_plan": "Run paired replay; inspect held-out cases.",
+                    "risks": "Small samples and correlated markets may mislead interpretation.",
+                    "risk_level": "low",
+                    "affected_component": "prompt",
+                },
+                provider="mock",
+                model=config.model,
+                request_id=request_id,
+                latency_ms=0,
+                finish_reason="stop",
+            )
         context = payload["context"]
         return LLMResult(
             parsed_output={

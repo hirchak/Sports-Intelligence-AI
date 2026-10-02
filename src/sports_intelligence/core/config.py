@@ -122,6 +122,12 @@ class Settings(BaseSettings):
     predictor_model: str = ""
     research_model: str = ""
     improvement_model: str = ""
+    experiment_candidate_prompt_path: str = "prompts/experiments/1.1.0.txt"
+    experiment_live_enabled: bool = False
+    improvement_prompt_path: str = "prompts/improvement/1.0.0.txt"
+    improvement_schedule_enabled: bool = False
+    improvement_live_enabled: bool = False
+    improvement_max_calls_per_day: int = Field(default=10, ge=0, le=100)
 
     default_min_odds: float = 1.30
     default_min_model_probability: float = 0.55

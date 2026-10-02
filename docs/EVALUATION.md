@@ -143,3 +143,8 @@ Existing crash/lost-broker recovery is operational/manual; M8 does not add an ou
 A failed immutable evaluation needs a new cutoff/request rather than mutating its historical failure.
 Confirmed results need explicit correction passes. A provider-normalization semantic change requires a new
 normalizer version/review. Unrecognized awarded/walkover status is UNKNOWN/UNSETTLED.
+
+## M9 consumer
+
+M9 reuses these measurement and settlement definitions with isolated experiment outputs; it does not
+alter M8 production evaluations. Paired/full populations and baseline limitations: [EXPERIMENTS.md](EXPERIMENTS.md).

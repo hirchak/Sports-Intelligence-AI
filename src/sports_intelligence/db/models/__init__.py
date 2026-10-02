@@ -24,6 +24,18 @@ from sports_intelligence.db.models.evaluation import (
     FixtureResult,
     PredictionSettlement,
 )
+from sports_intelligence.db.models.experiments import (
+    Experiment,
+    ExperimentArm,
+    ExperimentCall,
+    ExperimentCase,
+    ExperimentComparison,
+    ExperimentPrediction,
+    ExperimentRun,
+    ImprovementAnalysis,
+    ImprovementProposal,
+    ImprovementProposalEvent,
+)
 from sports_intelligence.db.models.jobs import Job, JobAttempt
 from sports_intelligence.db.models.predictions import (
     LLMCallAttempt,
@@ -51,6 +63,16 @@ from sports_intelligence.db.models.snapshots import (
 )
 
 __all__ = [
+    "ImprovementAnalysis",
+    "Experiment",
+    "ExperimentArm",
+    "ExperimentRun",
+    "ExperimentCase",
+    "ExperimentPrediction",
+    "ExperimentCall",
+    "ExperimentComparison",
+    "ImprovementProposal",
+    "ImprovementProposalEvent",
     "FixtureResult",
     "PredictionSettlement",
     "CandidateSettlement",

@@ -13,6 +13,12 @@ routes:
       model: mock-challenger-v1
       structured_mode: json_schema
       temperature: 0.0
+  improvement_analysis:
+    primary:
+      provider: mock
+      model: mock-analyst-v1
+      structured_mode: json_schema
+      temperature: 0.0
 policy:
   version: prediction_v1
   min_data_quality: 0.65
