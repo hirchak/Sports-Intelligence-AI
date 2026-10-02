@@ -838,7 +838,7 @@ async def test_cli_keyless_plan_never_enqueues(
 
 
 async def test_real_m2_m8_pipeline_extends_to_m9_keyless_e2e(
-    factory, service_settings, tmp_path, monkeypatch
+    factory, service_settings, tmp_path, monkeypatch, *, include_research=False
 ):
     from test_m8_e2e import test_m8_full_keyless_result_worker_to_evaluation_api_telegram
 
@@ -856,7 +856,12 @@ async def test_real_m2_m8_pipeline_extends_to_m9_keyless_e2e(
         await session.execute(delete(FixtureResult))
     # Run the accepted genuine collectors/features/prediction/evaluation pipeline, using only mocks.
     await test_m8_full_keyless_result_worker_to_evaluation_api_telegram(
-        factory, service_settings, tmp_path, enqueued, monkeypatch
+        factory,
+        service_settings,
+        tmp_path,
+        enqueued,
+        monkeypatch,
+        include_research=include_research,
     )
     async with factory() as s:
         rec = await s.scalar(

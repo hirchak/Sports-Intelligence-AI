@@ -5,6 +5,7 @@ from celery.schedules import crontab
 from kombu import Queue
 
 from sports_intelligence.core.config import Settings, get_settings
+from sports_intelligence.workers import observability  # noqa: F401
 
 QUEUE_NAMES = ("control", "sports_io", "research_io", "llm", "evaluation", "notifications")
 
@@ -103,6 +104,10 @@ def create_celery_app(settings: Settings) -> Celery:
             "sports_intelligence.workers.tasks.notifications.*": {"queue": "notifications"},
         },
         task_track_started=True,
+        worker_concurrency=settings.worker_concurrency,
+        worker_prefetch_multiplier=1,
+        broker_connection_max_retries=5,
+        broker_transport_options={"socket_connect_timeout": 3, "socket_timeout": 5},
         broker_connection_retry_on_startup=True,
         beat_schedule=beat_schedule,
     )

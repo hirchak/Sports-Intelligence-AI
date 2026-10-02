@@ -2998,3 +2998,29 @@ deployment/Hetzner/Hermes or real LLM calls.
 **Spec/ADR deviations:** none; no source/schema changes.
 **Git commit:** docs-only receipt follows.
 **Next action:** exact docs CI, PR merge commit, main CI, annotated v0.10-m9, exact build/m10 base; then authorized local M10 only. No deployment/SSH/Hetzner/Hermes.
+
+
+### 2026-10-03 CEST — Codex (M9 finalized, M10 startup)
+
+**Milestone/task:** Accepted M9 closeout and explicitly authorized M10 Production Readiness.
+**Files changed:** binding M10_SCOPE, CURRENT_TASK, IMPLEMENTATION_STATUS, append-only AI_WORKLOG.
+**Behavior:** no M10 source yet; record exact release/base chain and review boundary.
+**Commands/tests:** docs CI 37070235725; PR #11 checks/CI 37070527662; gh pr merge --merge with exact-head guard; HTTPS fetch and main fast-forward; merged-main CI 37070774858; annotated tag/push; build/m10 creation/push; exact ref equality. Accepted-source local integration 233 PASS.
+**Results:** all CI jobs SUCCESS; main/base/peeled tag 03789b7b7b4af2179271a7797faa754d48ad0d0d; tag object 952356ed97ef8f47e7cdbd8a58a58cdbfc229c76.
+**Known problems:** M10 pending; old local service images are M3-era and will not serve as current acceptance evidence.
+**Spec/ADR deviations:** none; existing manual crash recovery preserved.
+**Git commit:** M9 acceptance receipt b0112a0dfb5328d8679526c17606805bd4bb9105; merge above.
+**Next action:** scoped M10 implementation and local isolated acceptance; STOP for independent review, no merge/tag M10 or M11/deployment/Hetzner/Hermes.
+
+
+### 2026-10-03 CEST — Codex (M10 operational implementation checkpoint)
+
+**Milestone/task:** M10 local operational hardening and deterministic acceptance.
+**Files changed:** config/redaction/logging/API/Celery telemetry, strict sports/bot startup, Compose/env/Docker/Make/CI, local bootstrap/backup/security/topology scripts, M10 tests and binding state.
+**Behavior:** runtime config reaches containers; private production-like override removes all host ports; log rotation/concurrency/prefetch/broker connection bounds; sensitive tracebacks redacted; HTTP correlation/task duration; no mock sports in non-mock; bot empty allowlist fails startup; no schema/math/prompt redesign. Full synthetic pipeline adds actual mock research and tests frozen truth through Redis loss.
+**Commands/tests:** Ruff/format/mypy171, focused security/startup/provider 16 PASS; unit900 PASS; full research→M9 E2E PASS; secret sanity 339 paths/1742 history objects/3 local credential fingerprints PASS; default/dev/Telegram/production Compose and private topology PASS.
+**Results:** focused implementation gates green; clean bootstrap/native restore/runtime recovery/resource/live gates and final full CI still pending.
+**Known problems:** interrupted paid calls require manual inspection/rerun; no live runtime LLM/odds key present.
+**Spec/ADR deviations:** reversible operational choices only; architecture and migration history unchanged.
+**Git commit:** operational checkpoint follows.
+**Next action:** reproduce from a clean local checkout; native restore, restarts, bounded measurements/smokes and full final gates; independent review STOP. No deployment/SSH/Hetzner/Hermes or M11.

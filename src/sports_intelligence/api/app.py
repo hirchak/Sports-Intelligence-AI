@@ -7,6 +7,7 @@ import redis.asyncio as aioredis
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from sports_intelligence.api.observability import RequestObservability
 from sports_intelligence.api.resources import close_resources
 from sports_intelligence.api.routes import (
     context,
@@ -21,6 +22,7 @@ from sports_intelligence.api.routes import (
 )
 from sports_intelligence.core.config import Settings, get_settings
 from sports_intelligence.core.logging import get_logger, setup_logging
+from sports_intelligence.core.redaction import register_secrets
 from sports_intelligence.db.session import create_engine, create_session_factory
 
 logger = get_logger(__name__)
@@ -58,8 +60,18 @@ async def lifespan(application: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(settings: Settings) -> FastAPI:
+    register_secrets(settings.model_dump())
     setup_logging(settings.log_level)
-    application = FastAPI(title="Sports Intelligence AI", version="0.3.0", lifespan=lifespan)
+    application = FastAPI(
+        title="Sports Intelligence AI",
+        version="1.0.0",
+        lifespan=lifespan,
+        debug=False,
+        docs_url=None if settings.production_like else "/docs",
+        redoc_url=None if settings.production_like else "/redoc",
+        openapi_url=None if settings.production_like else "/openapi.json",
+    )
+    application.add_middleware(RequestObservability)
     application.state.settings = settings
     application.include_router(health.router)
     application.include_router(fixtures.router)

@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -30,6 +32,9 @@ jobs:
 
       - name: mypy
         run: uv run mypy src
+
+      - name: Secret/history sanity
+        run: uv run python scripts/security_check.py
 
       - name: pytest (unit)
         run: uv run pytest -q -m "not integration"
@@ -91,6 +96,9 @@ jobs:
 
       - name: Validate compose.dev.yaml override
         run: docker compose -f compose.yaml -f compose.dev.yaml config -q
+
+      - name: Validate private production-like topology
+        run: python scripts/compose_safety.py
 
       - name: Validate Telegram profile
         run: docker compose --profile telegram config -q

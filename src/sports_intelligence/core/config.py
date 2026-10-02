@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     app_env: AppEnv = "mock"
     app_timezone: str = "Europe/Warsaw"
     log_level: str = "INFO"
+    production_like: bool = False
+    worker_concurrency: int = Field(default=2, ge=1, le=16)
 
     database_url: str = (
         "postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel"
@@ -29,7 +31,7 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6380/0"
     celery_result_backend: str = "redis://localhost:6380/1"
 
-    telegram_bot_token: str = ""
+    telegram_bot_token: str = Field(default="", repr=False)
     telegram_allowed_user_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
     bot_backend_base_url: str = "http://localhost:8000"
 
@@ -88,16 +90,16 @@ class Settings(BaseSettings):
     evaluation_default_days: int = Field(default=30, ge=1, le=3650)
 
     sports_provider: str = "mock"
-    sports_api_key: str = ""
+    sports_api_key: str = Field(default="", repr=False)
     api_football_base_url: str = "https://v3.football.api-sports.io"
     leagues_config_path: str = "config/leagues.yaml"
     odds_provider: str = ""
-    odds_api_key: str = ""
+    odds_api_key: str = Field(default="", repr=False)
     # Explicit intentional mock override for non-mock environments.
     # MOCK odds are NEVER used silently when credentials are missing.
     odds_allow_mock_override: bool = False
     search_provider: str = ""
-    search_api_key: str = ""
+    search_api_key: str = Field(default="", repr=False)
     research_enabled: bool = True
     research_allow_mock_override: bool = False
     research_max_queries_per_fixture: int = 6
@@ -184,6 +186,14 @@ class Settings(BaseSettings):
                 return []
             return [part.strip() for part in stripped.split(",") if part.strip()]
         return value
+
+    @model_validator(mode="after")
+    def validate_operational_safety(self) -> Settings:
+        if self.production_like and self.log_level.upper() == "DEBUG":
+            raise ValueError("PRODUCTION_LIKE forbids DEBUG logging")
+        if any(user_id <= 0 for user_id in self.telegram_allowed_user_ids):
+            raise ValueError("TELEGRAM_ALLOWED_USER_IDS requires positive user IDs")
+        return self
 
     @model_validator(mode="after")
     def validate_mode_requirements(self) -> Settings:
