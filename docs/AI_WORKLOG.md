@@ -2874,3 +2874,21 @@ provide UX evidence, no design artifacts or live visual claims added.
 **Git:** first source 84a257d / CI 37051194076 all-job SUCCESS; small final correction commit follows.
 **Next action:** final source push/CI, documentation closeout, exact final remote CI, clean-tree review STOP.
 M9 not merged/tagged; M10 not started; zero live LLM/deployment/Hetzner/Hermes interaction.
+
+
+### 2026-10-02 CEST — Codex (M9 Telegram boundary / final code gates)
+
+**Milestone/task:** Scoped Telegram HTML hardening identified by the Impeccable edge-input pass.
+**Files changed:** bot/experiments.py, one unit regression, current/status/review/worklog counts.
+**Behavior:** bounded escaping preserves whole HTML entities in long qualitative proposal text;
+existing UI language/navigation/action semantics unchanged. No browser/native visual claim.
+**Commands/tests:** extreme special-character message regression before fix FAILED (dangling entity);
+after fix standalone unit, API/Telegram integration, full pytest; Ruff/format/mypy; diff sanity.
+**Results:** **873 unit + 200 integration = 1073 full PASS** (64.93s), zero skips;
+API/Telegram focused E2E PASS; Ruff/format245/mypy168 PASS. Database/schema/Compose unchanged.
+Closing/abstention source `5869b4df02714eab2b23be61a235f944d6e01df9`, exact CI `37053028704`
+all three jobs SUCCESS. Initial source CI 37051194076 also SUCCESS.
+**Known problems:** exact final UI-source/final documentation CI still required; no local blockers.
+**Spec/ADR deviations:** none. **Git commit:** narrow UI fix follows; main/tag unchanged at M8 base.
+**Next action:** exact source CI, completed persistent handoff, exact final CI, clean-tree review STOP.
+Zero real LLM calls / deployment / Hetzner / Hermes interaction; M9 not merged, M10 not started.

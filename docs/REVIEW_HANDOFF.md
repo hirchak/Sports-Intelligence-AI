@@ -13,7 +13,7 @@ exact frozen-context planning/replay; paired/full M8 comparisons; historical PRI
 bounded ModelRouter analyst and deterministic evidence; human authorization/rejection/audit-only promotion;
 CLI, internal API, thin allowlisted Telegram; weekly scan disabled, zero notifications/live execution.
 
-Verified locally: **872 unit + 200 integration PASS**. **Full pytest: 1072 PASS**, 57.65s. Ruff/format (245 files),
+Verified locally: **873 unit + 200 integration PASS**. **Full pytest: 1073 PASS**, 64.93s. Ruff/format (245 files),
 strict mypy (168 source files), fresh DB→head→down -1→head→check and populated accepted M8→M9 cycle
 PASS with no drift; Compose default/dev/Telegram PASS; 325 working-file/history secret sanity PASS;
 git diff --check PASS. Accepted migrations 0001–0013 and M7 prediction modules/production prompt remain byte-identical.

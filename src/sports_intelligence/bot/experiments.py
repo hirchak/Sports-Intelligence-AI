@@ -16,6 +16,19 @@ from sports_intelligence.bot.strings import SAFE_BACKEND_ERROR
 router = Router(name="m9_experiments")
 
 
+def bounded_escape(value: str, limit: int = 700) -> str:
+    """Keep the Telegram markup bounded without cutting an HTML entity."""
+    parts: list[str] = []
+    size = 0
+    for char in value:
+        escaped = html.escape(char)
+        if size + len(escaped) > limit:
+            break
+        parts.append(escaped)
+        size += len(escaped)
+    return "".join(parts)
+
+
 def list_keyboard(rows: list[dict[str, Any]], kind: str, offset: int) -> InlineKeyboardMarkup:
     keys = [
         [
@@ -111,9 +124,9 @@ async def experiment_callback(callback: CallbackQuery, context: AppContext) -> N
                     text = (
                         f"{html.escape(row['title'])}\n"
                         f"{html.escape(row['status'])}; n={row['sample_size']}\n"
-                        f"{html.escape(row['problem'])[:700]}\n"
-                        f"Гипотеза: {html.escape(row['hypothesis'])[:700]}\n"
-                        f"План: {html.escape(row['test_plan'])[:700]}\n"
+                        f"{bounded_escape(row['problem'])}\n"
+                        f"Гипотеза: {bounded_escape(row['hypothesis'])}\n"
+                        f"План: {bounded_escape(row['test_plan'])}\n"
                         "Одобрение: тест candidate prompt на прежней выборке. "
                         "Production не изменяется."
                     )
@@ -140,7 +153,7 @@ async def experiment_callback(callback: CallbackQuery, context: AppContext) -> N
                     lines = [
                         html.escape(row["name"]),
                         html.escape(row["status"]),
-                        html.escape(definition["hypothesis"])[:700],
+                        bounded_escape(definition["hypothesis"]),
                     ]
                     for arm in ("control", "treatment"):
                         spec = definition[arm]

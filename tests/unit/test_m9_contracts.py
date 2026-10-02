@@ -167,3 +167,41 @@ def test_schedule_disabled_by_default_and_correct_queues():
     )
     assert enabled.conf.task_routes["experiment.compare"]["queue"] == "evaluation"
     assert enabled.conf.task_routes["experiment.replay_batch"]["queue"] == "llm"
+
+
+async def test_telegram_long_special_character_proposal_keeps_valid_bounded_html():
+    import re
+    import uuid
+
+    import httpx
+
+    from sports_intelligence.bot.backend_client import BackendClient
+    from sports_intelligence.bot.context import AppContext
+    from sports_intelligence.bot.experiments import experiment_callback
+    from telegram_fakes import FakeTransport, make_callback
+
+    identity = str(uuid.uuid4())
+    payload = {
+        "id": identity,
+        "title": "Synthetic",
+        "status": "PROPOSED",
+        "sample_size": 0,
+        "problem": "&" * 2000,
+        "hypothesis": "<" * 2000,
+        "test_plan": "'" * 2000,
+    }
+    transport = FakeTransport()
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, json=payload))
+    ) as http:
+        ctx = AppContext(
+            transport=transport,
+            backend=BackendClient("https://synthetic.invalid", client=http),
+            settings=Settings(_env_file=None),
+            allowed_user_ids=frozenset({1}),
+        )
+        await experiment_callback(make_callback(f"m9:proposal:{identity}"), ctx)
+    text = transport.edited[0]["text"]
+    assert len(text) <= 4096
+    assert not re.search(r"&(?!amp;|lt;|gt;|quot;|#x27;)", text)
+    assert "n=0" in text
