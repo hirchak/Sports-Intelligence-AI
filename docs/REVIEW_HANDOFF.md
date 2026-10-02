@@ -1,18 +1,65 @@
-# M9 independent-review fix — LOCAL VERIFIED / CI PENDING / NOT ACCEPTED
+# M9 independent-review fix — VERIFIED / NOT ACCEPTED / REVIEW STOP
 
-Reviewed delivery: `383c32f9ba5255f9c72d74c5e7c2ffbcdeba66fb`.
-Scope: [M9_REVIEW_FIX_SCOPE.md](M9_REVIEW_FIX_SCOPE.md). Two blockers: mutable Fixture inventory
-changes historical denominators; generic prompt approval creates false lineage for unrelated proposals.
-Small hardening: allow explicit football identifiers, keep measurements Python-authoritative.
+**Branch:** build/m9. **Reviewed delivery:** `383c32f9ba5255f9c72d74c5e7c2ffbcdeba66fb`.
+**Verified fix source:** `642dd3690919cbb3dfed8b37a2ac089b74e3a308`.
+**Exact source CI:** [37061295354](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37061295354), all three jobs SUCCESS:
+lint/type/unit; Postgres/Redis integration; Docker Compose validation. Later delivery is docs-only;
+final completion provides exact canonical origin/build/m9 HEAD and its CI. M9 remains NOT ACCEPTED.
+**Accepted main/v0.9-m8:** `490227ac8e27ca4c8870891277fd8783d8a7f1af`, unchanged, annotated tag.
 
-Fixes and local gates complete: **893 unit + 233 integration = 1126 full PASS**, 68.77s, zero skips.
-New review regressions: 20 unit + 33 integration; population mutation, strict IDs/no backfill, all component
-mappings, compatible reviewed definitions, aliases/no-op/mixed/historical mappings, failed creation atomicity,
-legacy-link advancement, safe Telegram advice, domain labels with measured claims still blocked.
-Ruff/format247/mypy168; fresh and populated M8→M9 migration/no drift, Compose default/dev/Telegram,
-328-file/history secret sanity and git diff --check PASS. No schema/migration/config/provider/metric redesign.
-Source/final delivery push and exact-head CI pending. No M10, merge/tag or deployment/Hetzner/Hermes.
-Historical M9 handoff below records previous delivery only; current review status supersedes it.
+Scope: [M9_REVIEW_FIX_SCOPE.md](M9_REVIEW_FIX_SCOPE.md). Semantics: [EXPERIMENTS.md](EXPERIMENTS.md), ADR 0012.
+
+## Exact fixes
+
+- Broad replay population is matching frozen MatchContexts' unique fixture IDs. Current Fixture kickoff,
+  league/team/status fields no longer define denominators/manifests. Counts/analyst packet disclose
+  population_basis. Explicit fixture/context IDs remain strict; requested fixture without context remains
+  NOT_REPLAYABLE, no provider backfill. Primary-key existence only resolves FK references.
+- Default approval is prompt-only: reuse the control request/config, substitute registered candidate prompt.
+  Actual prompt hashes must differ; models/config/phase/variant/policy must match. Model proposal requires
+  an explicit reviewed definition with different frozen primary model/config, same prompt/phase/variant/policy.
+  Route aliases, unchanged prompt content, mixed dimensions and historical declared-but-unused routes refuse.
+- data_quality/features/ranking/sources proposals cannot be instantiated by M9 definitions; they fail closed,
+  even when supplied an unrelated prompt/model definition. Error codes are stable HTTP409 business refusals.
+  Same frozen arms are validated before persistence, avoiding config drift/double-freeze and partial writes.
+  Failed mapping/creation leaves PROPOSED, no experiment_id/event/approved status. Legacy wrong links cannot
+  reapprove/start/promote; human rejection works without rewriting immutable evidence.
+- Backend approval advice is typed; Telegram hides unsupported automatic actions, explains reviewed/manual
+  requirements, and old/stale callbacks cannot POST an unsupported default approval. No production writes.
+- Complete H2H/1X2/O/U1.5/O/U2.5 labels are permitted. Remaining numeric/percent measurements and extra
+  sample/metric/status/reference fields still fail. Factual evidence stays Python-owned.
+
+## Regression evidence and gates
+
+New [integration regressions](../tests/integration/test_m9_review_fixes.py): 33 PASS — broad population before/
+after mutable Fixture changes (with/without league scope), explicit missing/context IDs, all six components,
+compatible explicit prompt/model tests, wrong/no-op/mixed/alias/history cases, failed creation atomicity,
+legacy invalid link progression, API/Telegram behavior, no production mutation.
+New [unit regressions](../tests/unit/test_m9_review_contract.py): 20 PASS — football labels, hidden numerical
+claims/extra factual fields rejected, malformed backend advice fails closed. Existing M9 contract tests retained.
+
+Reviewed planner after fixing a synthetic natural-key setup collision reproduces 2 FAIL on changed counts;
+new planner PASS. Old approval regressions fail before correction; current default/explicit/legacy cases PASS.
+This is infrastructure correctness, not evidence of forecasting/proposal quality or independent acceptance.
+
+**893 unit + 233 integration = 1126 full pytest PASS**, **68.77s**, zero skips.
+Ruff/check + format (247 Python files), strict mypy (168 source files) PASS.
+Fresh sports_intel_m9_review_fresh_test→head→down -1→head→check and populated accepted M8→M9 roundtrip
+PASS, no drift. Database models/migrations 0001–0014 unchanged. Compose default/dev/Telegram PASS.
+328 working-file/history heuristic secret scan + git diff --check PASS. Providers, prediction/evaluation
+math, prompts and runtime configuration unchanged from reviewed delivery. Real external LLM calls: **0**.
+
+## Remaining limits / next action
+
+Automatic population is captured historical contexts, not an all-fixture census. Unsupported proposal
+component treatments remain outside M9; manual model approval only instantiates implemented compatible
+dimensions. Human review owns qualitative intent/registered content, no semantic merit claimed.
+Older results stay immutable; explicit rerun uses corrected planning. No automatic rewrite of invalid old
+links, no production application/promotion, no new live provider/Telegram or profitability acceptance.
+
+**STOP for independent review. M9 NOT ACCEPTED/MERGED/TAGGED; M10 NOT STARTED.**
+LOCAL DEVELOPMENT ONLY; zero deployment/Hetzner/Hermes interaction. Historical previous delivery below
+is retained as evidence and superseded by this review-fix checkpoint.
 
 ---
 

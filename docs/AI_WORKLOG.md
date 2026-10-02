@@ -2966,3 +2966,22 @@ remain unsupported; broad sample is captured contexts only; no empirical/live ac
 **Git commit:** coherent source fix follows; reviewed base 383c32f9..., accepted main/v0.9-m8 490227ac....
 **Next action:** source push + exact CI, completed persistent receipts + final CI, clean-tree independent review STOP.
 M9 NOT ACCEPTED; no merge/tag M9/M10/deployment/Hetzner/Hermes; zero real LLM calls.
+
+
+### 2026-10-02T22:38:46+02:00 — Codex (M9 review-fix exact source CI / handoff)
+
+**Milestone/task:** Verified independent-review fix and completed persistent review checkpoint.
+**Files changed:** CURRENT_TASK/IMPLEMENTATION_STATUS/REVIEW_HANDOFF and append-only worklog only.
+**Behavior:** no code/test/schema changes; record exact fix semantics, regressions, source CI, limitations
+and independent-review STOP. Preserve original reviewed artifacts/receipts. M9 NOT ACCEPTED.
+**Commands/tests:** gh run watch/view 37061295354; final local gates recorded above; clean/ref/diff verification.
+**Results:** fix source `642dd3690919cbb3dfed8b37a2ac089b74e3a308`, CI `37061295354` all three jobs SUCCESS;
+893 unit + 233 integration = 1126 full PASS, 68.77s; Ruff247/mypy168, fresh/populated migrations/no drift,
+Compose/default/dev/Telegram, 328-file/history secrets and diff PASS. Models/migrations/runtime config unchanged.
+**Known problems:** no scoped implementation blocker; unsupported components/broad census/live/empirical
+limits remain explicit. Final documentation-only CI is checked after this commit; canonical final SHA/CI
+is origin/build/m9 and the completion receipt, no source changes beyond verified fix.
+**Spec/ADR deviations:** corrected ADR 0012 semantics only, no new architecture/schema/experiment dimensions.
+**Git commit:** verified source 642dd3690919cbb3dfed8b37a2ac089b74e3a308; documentation-only final receipt follows.
+**Next action:** final exact docs CI + clean tree, then independent review STOP; no merge/tag M9, M10,
+deployment/Hetzner/Hermes or real LLM calls.

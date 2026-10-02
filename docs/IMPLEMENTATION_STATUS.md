@@ -2,7 +2,7 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M9 — REVIEW FIX IMPLEMENTED / LOCAL VERIFIED / NOT ACCEPTED; M8 ACCEPTED
+**Current milestone:** M9 — REVIEW FIX VERIFIED / AWAITING INDEPENDENT REVIEW / NOT ACCEPTED; M8 ACCEPTED
 **Last updated:** 2026-10-02 (Codex)
 **Last known good commit:** 490227ac8e27ca4c8870891277fd8783d8a7f1af (v0.9-m8, PR #10 merged)
 
@@ -15,7 +15,8 @@ Current task: [M9_REVIEW_FIX_SCOPE.md](M9_REVIEW_FIX_SCOPE.md). Immutable histor
 truthful approval mapping and narrow football-label validation hardening only. Prior green gates are
 historical implementation receipts, not acceptance. Focused fixes now PASS: 33 new integration and
 20 new unit cases (54 M9 contract unit total). Full local gates: 893 unit + 233 integration =
-1126 full PASS, 68.77s; static/migrations/Compose/secret/diff PASS. Exact source/final CI still required.
+1126 full PASS, 68.77s; static/migrations/Compose/secret/diff PASS. Fix source `642dd3690919cbb3dfed8b37a2ac089b74e3a308`
+/ CI `37061295354` all three jobs SUCCESS. Final documentation delivery tip/CI is origin/build/m9 and the completion receipt.
 
 M8 / M8.1 = PASS / ACCEPTED. PR #10 merged; accepted main `490227ac8e27ca4c8870891277fd8783d8a7f1af`.
 Annotated tag `v0.9-m8`; merged-main CI `36981326405`, all three jobs SUCCESS on exact SHA (verified).
@@ -763,6 +764,16 @@ All review items implemented and independently verified:
 - 873 unit + 200 integration PASS; wrappers and actual M2→M9 E2E PASS; local static/migration/Compose/secret gates PASS.
 - Full pytest 1073 PASS (64.93s); all local gates complete. Runtime source `dff83c17e2eddcde08ca0a5676dcc9d516a4cf6c` / CI `37053961881` all jobs SUCCESS; not independently accepted.
 - Details: [EXPERIMENTS.md](EXPERIMENTS.md). Zero live LLM calls, deployment/Hetzner/Hermes interaction.
+
+### M9 review-fix receipt (not independent acceptance)
+
+- Reviewed 383c32f9...; fix source `642dd3690919cbb3dfed8b37a2ac089b74e3a308`, exact CI `37061295354` all jobs SUCCESS.
+- Frozen-only broad population; strict explicit missing IDs; visible population_basis; no current Fixture census.
+- Component-compatible frozen-arm validation before writes; prompt-only default, explicit reviewed model test;
+  unsupported components refuse; legacy invalid links cannot advance; Telegram advice and football labels fixed.
+- 893 unit + 233 integration = 1126 full PASS, 68.77s; all static/migration/Compose/secret/diff gates PASS.
+- Schema/migrations/providers/forecast/evaluation/config unchanged. No production mutation/live LLM calls.
+- STOP for independent review; M9 NOT ACCEPTED/MERGED/TAGGED, M10 NOT STARTED; local development only.
 
 # 3. M8 acceptance and authorized finalization
 
