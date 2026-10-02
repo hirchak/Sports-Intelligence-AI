@@ -3024,3 +3024,16 @@ deployment/Hetzner/Hermes or real LLM calls.
 **Spec/ADR deviations:** reversible operational choices only; architecture and migration history unchanged.
 **Git commit:** operational checkpoint follows.
 **Next action:** reproduce from a clean local checkout; native restore, restarts, bounded measurements/smokes and full final gates; independent review STOP. No deployment/SSH/Hetzner/Hermes or M11.
+
+
+### 2026-10-03 CEST — Codex (M10 acceptance, fixture isolation and logger correction)
+
+**Milestone/task:** M10 complete local acceptance and final v1 operational documentation.
+**Files changed:** M10 fixture cleanup, Alembic logging config (no revision edits), bounded publish config, static provider API error, production API command, local runtime/live scripts, README/architecture/model/pipelines/Telegram/security/deploy/runbooks/readiness/matrix/evidence/history snapshots.
+**Behavior:** cleanup only disposable *_test prediction dependencies; migrations preserve existing loggers; secret-safe provider exception; actual queued API/worker/beat restart and Redis/Postgres outages preserve frozen truth; native compressed restore compares full-row inventories/hashes; bounded mock resource batch; explicit live sports/search/Telegram probes.
+**Commands/tests:** initial full 1084 PASS/50 setup ERROR/1 FAIL; fixed full 1135 PASS 79.28s; standalone 900 unit 5.13s/235 integration77.68s; Ruff/format258/mypy171; fresh local head/down -1/head/check; unchanged revisions0001–0014; all Compose/topology/diff; heuristic352 paths/1786 history objects/3 known-local credential fingerprints PASS.
+**Results:** initial FK cleanup error caused by new M10 test ordering and hidden logs from Alembic fileConfig fixed. Clean bootstrap2959f68 PASS. Native dump460915 bytes/restore tables+context/prediction/results/evaluations/M9 records PASS; temporary DB/archive cleaned. Actual queued restart/outage recovery PASS;12 synthetic jobs/144 probabilities1.12s, worker2; RAM/CPU/DB/Redis/log snapshots persisted. Sports one bounded real call →ProviderResponseError/NOT_VERIFIED; no fake raw/normalized pass. One real Tavily query →one document/zero claims/fresh-repeat zero ledger delta, explicit recorded fixture; PASS infrastructure only. Telegram getMe+one allowlisted test-message acknowledgement PASS transport only. Odds/real runtime LLM absent, zero such real calls.
+**Known problems:** final source/delivery CI/latest clean reproduction pending; live sports/odds/LLM, independent M10 review and empirical multi-day operation remain NOT_VERIFIED. Unknown paid-call/lost dispatch inspection/rerun explicit; no forecasts/quality/cost fabricated.
+**Spec/ADR deviations:** no forecasting/schema redesign; historical current-state snapshots archived with superseded labels, worklog preserved append-only.
+**Git commit:** checkpoint2959f68; scoped verification/source documentation commit follows.
+**Next action:** source push/exact CI, latest clean/populated no-op receipts, final docs-only handoff CI; STOP for independent M10 review. No merge/tag M10, M11/deployment/SSH/Hetzner/Hermes.

@@ -1,7 +1,8 @@
 # M9 — controlled experiments, frozen replay and proposal-only improvement
 
 Scope: [M9_SCOPE.md](M9_SCOPE.md); design: [ADR 0012](adr/0012-m9-frozen-replay-and-human-proposals.md).
-LOCAL DEVELOPMENT ONLY. M9 delivery requires independent review; no M10, deployment or production promotion.
+LOCAL DEVELOPMENT ONLY. M9 independently PASS / ACCEPTED and tagged v0.10-m9.
+M10 readiness work does not authorize deployment or automatic production promotion.
 
 ## Architecture and persistence
 

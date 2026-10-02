@@ -1,6 +1,6 @@
 # ADR 0010 — M7 forecasting semantics and separate market comparison
 
-Status: implemented under the explicit M7 scope, pending independent milestone review.
+Status: Accepted with M7 / M7.1 independent PASS / ACCEPTED.
 Date: 2026-10-01. Scope: LOCAL DEVELOPMENT ONLY. No M8/deployment.
 
 The existing architecture already requires immutable MatchContext and deterministic scheduling/math.

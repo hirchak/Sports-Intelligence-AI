@@ -1,6 +1,6 @@
 # Data Model
 
-Status: **M7 implemented, review pending** — migrations 0001–0012. M0–M6 history unchanged.
+Status: **M0–M9 independently accepted** — migrations 0001–0014. M10 adds no schema migration.
 Authoritative design: `10_DATABASE_AND_DATA_LIFECYCLE.md`.
 
 ## Principles (from spec)
@@ -14,7 +14,7 @@ Authoritative design: `10_DATABASE_AND_DATA_LIFECYCLE.md`.
 - Raw provider payloads deduplicated by `payload_hash`.
 - Alembic for every schema change; destructive migration requires ADR.
 
-## Planned entities (implemented in M1+)
+## Logical entity groups (exact implemented tables below)
 
 | Group        | Tables                                                                     |
 |--------------|----------------------------------------------------------------------------|
@@ -114,3 +114,13 @@ improvement_proposals, improvement_proposal_events. UUID FKs reference existing 
 and result versions. Definition/manifest/evidence/comparison immutability protected by database triggers;
 semantic uniqueness and CAS claims protect duplicate requests. No giant context duplication or changes
 to production PredictionRun/evaluation rows. [EXPERIMENTS.md](EXPERIMENTS.md), ADR 0012.
+
+
+## M10 integrity and operations
+
+Migration revisions 0001–0014 remain byte-identical to accepted v0.10-m9. Fresh and populated
+upgrade/downgrade/check gates remain mandatory. Native restore compares all table counts/full-row
+fingerprints and recomputes MatchContext SHA256; probability/result/evaluation/experiment identities
+are part of that inventory. Scripts never restore over an existing database. No DB data/dumps enter Git.
+See BACKUP_RESTORE and M10_ACCEPTANCE_REPORT; context persistence immutability is an application
+authority contract/hash verification, not a claim that Pydantic nested containers are deeply frozen.

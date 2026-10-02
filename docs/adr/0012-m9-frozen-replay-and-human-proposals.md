@@ -1,6 +1,6 @@
 # ADR 0012 — Frozen replay, paired measurement and proposal-only improvement
 
-Date: 2026-10-02. Status: M9 implementation decision, awaiting independent review.
+Date: 2026-10-02. Status: Accepted with M9 independent PASS / ACCEPTED (2026-10-03).
 Scope: LOCAL DEVELOPMENT ONLY; [M9_SCOPE.md](../M9_SCOPE.md).
 
 ## Context

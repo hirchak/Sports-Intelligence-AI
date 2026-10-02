@@ -16,10 +16,19 @@ import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
     return subprocess.run(args, check=True, capture_output=True, **kwargs)
+
+
+def require_local_test_database(url: str) -> None:
+    parsed = urlsplit(url)
+    if parsed.hostname not in {"localhost", "127.0.0.1", "::1"} or not parsed.path.endswith(
+        "_test"
+    ):
+        raise ValueError("local loopback *_test database required")
 
 
 def require_local_docker() -> None:

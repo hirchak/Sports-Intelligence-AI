@@ -107,6 +107,13 @@ def create_celery_app(settings: Settings) -> Celery:
         worker_concurrency=settings.worker_concurrency,
         worker_prefetch_multiplier=1,
         broker_connection_max_retries=5,
+        broker_connection_timeout=3,
+        task_publish_retry_policy={
+            "max_retries": 2,
+            "interval_start": 0.2,
+            "interval_step": 0.2,
+            "interval_max": 1,
+        },
         broker_transport_options={"socket_connect_timeout": 3, "socket_timeout": 5},
         broker_connection_retry_on_startup=True,
         beat_schedule=beat_schedule,

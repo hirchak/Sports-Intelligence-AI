@@ -1,79 +1,41 @@
 # Pipelines
 
-Status: **M7 implemented, independent review pending** — discovery, collectors, research,
-quality/features/context and predictions/ranking. LOCAL DEVELOPMENT ONLY.
-Authoritative design: `08_FOOTBALL_ANALYTICS_PIPELINE.md` and
-`09_AGENT_CATALOG_AND_ORCHESTRATION.md`.
+M0–M9 independently accepted. LOCAL DEVELOPMENT ONLY; schedules are opt-in.
 
-## Core rule
+## Automatic-first path
 
-Never ask an LLM to "research Team A vs Team B and predict it". The pipeline
-is a deterministic chain with LLM used only where specified.
+Beat morning/refresh discovery → one date-level provider batch → normalized fixture evidence.
+Pre-match scan plans fresh/due league/team/fixture collectors and optional research. Each collector
+rechecks freshness under a coalescing lock before quota-budgeted fetch; shared team/league snapshots
+avoid repeated requests. Missing/failed optional work stays explicit, not fabricated.
+Required collectors ready → quality/features/MatchContext build → opt-in automatic prediction job.
+Prediction loads frozen context/prompt/model/policy → bounded provider calls → strict validation → all
+probabilities and candidates/filter reasons → persisted API → Telegram/test transport.
 
-## Pre-match DAG (M2–M7)
+No provider or LLM calls occur inside scheduler planning or ordinary read screens. MORNING/PREMATCH
+are separate historical contexts; reruns never overwrite old evidence. Phase/config/source-generation
+semantic identities deduplicate repeated scans/completions and queued work.
 
-```text
-DISCOVER FIXTURE
-      ├── CORE COLLECTOR ──┐
-      ├── STANDINGS CACHE  │
-      ├── TEAM FORM ───────┤
-      ├── AVAILABILITY ────┼─→ DATA QUALITY → FEATURE BUILDER
-      ├── ODDS ────────────┤         ↓
-      └── RESEARCH ────────┘   CONTEXT BUILDER
-                                        ↓
-                                 PREDICTION AGENT
-                                        ↓
-                              PREDICTION VALIDATOR
-                                        ↓
-                                CANDIDATE RANKER
-                                        ↓
-                                    PUBLISHER
-```
+## Post-match and improvement
 
-## Post-match DAG (M8+)
+Opt-in result scan selects due dates → P0 date-level result collection → append-only result versions →
+regulation_v1 settlements against original probabilities/captured prices → 7d/30d/all frozen evaluations.
+Confirmed completed results are not refetched automatically; explicit correction appends a new version.
+Weekly opt-in improvement scan considers bounded existing comparisons; analysis cannot opt into live
+calls by itself. Replay uses frozen historical contexts and result versions for evaluation only.
+Human approval authorizes a compatible experiment; running it requires a separate explicit request.
 
-```text
-RESULT SCAN → RESULT COLLECTOR → SETTLEMENT → EVALUATION
-   → AGGREGATES → WEEKLY IMPROVEMENT ANALYST
-```
+## Control switches and assurance
 
-## Deterministic vs LLM boundary
+SCHEDULER_ENABLED, discovery hours/minutes, SCHEDULER_PRE_MATCH_SCAN_ENABLED/cron,
+PREDICTION_AUTO_ENABLED/variant, RESULT_SCAN_ENABLED/interval/lookback, IMPROVEMENT_SCHEDULE_ENABLED;
+live experiment and analyst switches are separate. Disabled optional search/odds degrade visibly.
+Physical retry/repair budgets, quota reserves and no-malformed-publication policies apply in workers.
 
-Deterministic code: scheduler, quota manager, normalization, feature
-calculations, no-vig math, EV, market settlement, duplicate detection.
+The acceptance suite simulates three days of discovery slots and duplicate scans at frozen time;
+existing collector/context/prediction/result/improvement regressions verify the downstream boundaries.
+Actual restart/outage tests use a bounded local queued workload. They do not empirically prove multiple
+unattended days. Lost dispatch or interrupted unknown paid calls require operator inspection/rerun.
 
-LLM: research claim extraction, contextual reasoning, probability estimation,
-improvement hypotheses.
-
-## Implementation plan
-
-| Piece                    | Milestone | State |
-|--------------------------|-----------|-------|
-| Jobs, queues, retries    | M1        | done (jobs schema + queues) |
-| Fixture discovery        | M2        | done (API-Football + mock, batch-first, idempotent) |
-| Match collectors + odds  | M4        | accepted |
-| Research                 | M5        | accepted |
-| Features + MatchContext  | M6        | accepted |
-| Prediction + ranking     | M7        | implemented; review pending |
-| Settlement + evaluation  | M8        | implemented; review pending |
-| Improvements + replay    | M9        | planned |
-
-## M7 automatic prediction boundary
-
-Existing M4 scheduler scans collector freshness, then enqueues `context.build_match_context`.
-After M6 context persistence, `automatic_prediction` can enqueue one semantic prediction job
-when `PREDICTION_AUTO_ENABLED=true`, the context is eligible, and its score meets policy.
-Existing phases remain `MORNING` and `PREMATCH`. Context-generation and prediction-request
-keys deduplicate repeated scans/completions; no LLM call occurs inside the scanner.
-No scheduler or automatic calls were activated in the running local stack.
-
-`prediction.predict_match` runs on `llm`, receives only job/run UUIDs, claims QUEUED by CAS,
-loads exact context and frozen prompt/config/policy from PostgreSQL, validates integrity, applies
-bounded calls/repair/fallback, stores every probability and candidate/filter reason, then marks
-Job/JobAttempt. UI reads persisted state. See [PREDICTIONS.md](PREDICTIONS.md).
-
-## M8 implementation
-
-See [EVALUATION.md](EVALUATION.md) and [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
-Migration 0013 adds versioned results, probability/candidate settlements, immutable evaluation runs,
-normalized metrics and calibration buckets. Local scheduled date batches feed API and thin Telegram stats.
+Full keyless command: `make acceptance-mock` (isolated *_test DB/Redis). See LOCAL_DEVELOPMENT,
+PREDICTIONS, EVALUATION and EXPERIMENTS for precise formulas, identities, gates and known limitations.

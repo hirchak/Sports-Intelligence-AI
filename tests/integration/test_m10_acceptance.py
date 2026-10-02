@@ -13,11 +13,12 @@ import httpx
 import pytest
 from redis.asyncio import Redis
 from sqlalchemy import delete, func, select
-from test_m9_experiments import factory as factory
 from test_m9_experiments import test_real_m2_m8_pipeline_extends_to_m9_keyless_e2e
 
 from sports_intelligence.context.models import MatchContextV1
 from sports_intelligence.db.models import (
+    Base,
+    EvaluationRun,
     ExperimentComparison,
     FixtureResult,
     ImprovementProposal,
@@ -26,6 +27,7 @@ from sports_intelligence.db.models import (
     PredictionRun,
     PromptVersion,
 )
+from sports_intelligence.db.session import create_engine, create_session_factory
 from sports_intelligence.workers.tasks.llm import run_prediction_job
 
 pytestmark = [
@@ -35,7 +37,33 @@ pytestmark = [
     ),
 ]
 
-# Fixture import, not a duplicate collected test.
+
+@pytest.fixture
+async def factory(service_settings):
+    engine = create_engine(service_settings.database_url)
+    sf = create_session_factory(engine)
+
+    async def clean():
+        async with sf() as session, session.begin():
+            for table in reversed(Base.metadata.sorted_tables):
+                if table.name.startswith(("experiment", "improvement")):
+                    await session.execute(delete(table))
+            # Delete dependent prediction truth before older collector fixtures remove odds.
+            await session.execute(delete(EvaluationRun))
+            await session.execute(delete(FixtureResult))
+            await session.execute(delete(PredictionRun))
+
+    await clean()
+    try:
+        yield sf
+    finally:
+        # Runtime acceptance explicitly retains only this disposable test population.
+        if not os.environ.get("M10_KEEP_RUNTIME_DATA"):
+            await clean()
+        await engine.dispose()
+
+
+# Scenario import, not a duplicate collected test.
 scenario = test_real_m2_m8_pipeline_extends_to_m9_keyless_e2e
 del test_real_m2_m8_pipeline_extends_to_m9_keyless_e2e
 

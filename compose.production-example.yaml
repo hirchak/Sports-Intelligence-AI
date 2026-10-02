@@ -8,6 +8,9 @@ services:
   sports-redis:
     ports: !reset []
   sports-api:
+    build:
+      target: production
+    command: ["uvicorn", "sports_intelligence.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--no-proxy-headers"]
     ports: !reset []
     environment:
       PRODUCTION_LIKE: "true"

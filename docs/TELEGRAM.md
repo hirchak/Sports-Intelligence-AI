@@ -1,6 +1,7 @@
 # Telegram
 
-Status: **implemented (M3)** — private thin control plane on `build/m3`.
+Status: **M0–M9 independently accepted** — private thin control plane with prediction, results,
+stats, experiments and improvement screens. M10 verifies local test transport and operational safety.
 Authoritative design: `07_TELEGRAM_BOT_SPEC.md`.
 
 ## Role
@@ -38,7 +39,7 @@ power-user fallback and reach the same screens.
   `pg:<date>:<page>`, `rf:<date>`, `disc`, `health`, `menu:*`).
 - Commands: `/start /help /dashboard /today /fixtures [YYYY-MM-DD]
   /match <uuid> /health /discover [YYYY-MM-DD]`. M7 adds `/predictions` and
-  `/analyze <uuid>`; `/stats /evaluate /improvements` remain later milestones.
+  `/analyze <uuid>`; `/stats /evaluate /results /experiments /improvements` are implemented.
 - Access control: `TELEGRAM_BOT_TOKEN` + `TELEGRAM_ALLOWED_USER_IDS`,
   enforced centrally by middleware for messages and callbacks; unknown
   users receive "Доступ запрещён." (or a silent callback answer). Empty
@@ -78,3 +79,14 @@ push was activated. M7 was verified with test transport, not a new live Telegram
 See [EVALUATION.md](EVALUATION.md) and [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
 Migration 0013 adds versioned results, probability/candidate settlements, immutable evaluation runs,
 normalized metrics and calibration buckets. Local scheduled date batches feed API and thin Telegram stats.
+
+
+## M10 acceptance and startup
+
+Empty allowlist refuses process startup before any network call; positive user IDs required. Existing
+central middleware still denies unauthorized/missing users on messages/callbacks across every router.
+Complete keyless transport gates cover today/details/analyze/duplicates/predictions/evidence/risks/model,
+results/stats/experiments/improvements/health/pagination/malformed backend and safe failures. Russian
+UI/navigation retained. Actual live transport smoke, bot command flow and human receipt are separate
+claims in M10_ACCEPTANCE_REPORT. Do not run two polling instances on one token. No bot/core-state
+dependency or automatic production promotion exists.
