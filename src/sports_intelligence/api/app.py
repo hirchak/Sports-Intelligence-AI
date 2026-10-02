@@ -11,6 +11,7 @@ from sports_intelligence.api.resources import close_resources
 from sports_intelligence.api.routes import (
     context,
     evaluation,
+    experiments,
     fixtures,
     health,
     jobs,
@@ -68,6 +69,7 @@ def create_app(settings: Settings) -> FastAPI:
     application.include_router(context.router)
     application.include_router(predictions.router)
     application.include_router(evaluation.router)
+    application.include_router(experiments.router)
     return application
 
 

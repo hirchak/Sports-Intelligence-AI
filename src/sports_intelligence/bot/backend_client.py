@@ -255,6 +255,63 @@ class BackendClient:
             raise BackendPayloadError("invalid evaluation request")
         return payload
 
+    async def experiment_list(self, offset: int = 0) -> list[dict[str, Any]]:
+        payload = await self._get_json(
+            "/v1/experiments", params={"limit": "8", "offset": str(offset)}
+        )
+        return self._m9_rows(payload, ("id", "name", "status"))
+
+    async def improvement_list(self, offset: int = 0) -> list[dict[str, Any]]:
+        payload = await self._get_json(
+            "/v1/improvements", params={"limit": "8", "offset": str(offset)}
+        )
+        rows = self._m9_rows(payload, ("id", "title", "status", "risk_level"))
+        if any(type(row.get("sample_size")) is not int or row["sample_size"] < 0 for row in rows):
+            raise BackendPayloadError("invalid proposal sample")
+        return rows
+
+    async def experiment_view(self, identity: str) -> dict[str, Any]:
+        payload = await self._get_json(f"/v1/experiments/{UUID(identity)}")
+        self._m9_rows([payload], ("id", "name", "status"))
+        if not isinstance(payload.get("definition"), dict) or not isinstance(
+            payload.get("runs"), list
+        ):
+            raise BackendPayloadError("invalid experiment detail")
+        return self._m9_rows([payload], ("id", "status"))[0]
+
+    async def improvement_view(self, identity: str) -> dict[str, Any]:
+        payload = await self._get_json(f"/v1/improvements/{UUID(identity)}")
+        self._m9_rows([payload], ("id", "title", "status", "problem", "hypothesis", "test_plan"))
+        if type(payload.get("sample_size")) is not int or payload["sample_size"] < 0:
+            raise BackendPayloadError("invalid proposal detail")
+        return self._m9_rows([payload], ("id", "status"))[0]
+
+    async def improvement_action(self, identity: str, action: str, actor: str) -> dict[str, Any]:
+        if action not in ("approve-experiment", "reject"):
+            raise ValueError("invalid improvement action")
+        payload = await self._post_json(
+            f"/v1/improvements/{UUID(identity)}/{action}",
+            body={
+                "actor": actor,
+                "reason": "Manual Telegram " + action,
+            },
+        )
+        self._m9_rows([payload], ("id", "title", "status"))
+        return self._m9_rows([payload], ("id", "status"))[0]
+
+    @staticmethod
+    def _m9_rows(payload: Any, fields: tuple[str, ...]) -> list[dict[str, Any]]:
+        if not isinstance(payload, list) or any(not isinstance(row, dict) for row in payload):
+            raise BackendPayloadError("invalid experiment/proposal response")
+        for row in payload:
+            if any(not isinstance(row.get(k), str) for k in fields):
+                raise BackendPayloadError("invalid experiment/proposal fields")
+            try:
+                UUID(row["id"])
+            except ValueError:
+                raise BackendPayloadError("invalid experiment/proposal identity") from None
+        return payload
+
     async def _get_json(self, path: str, params: dict[str, str] | None = None) -> Any:
         try:
             response = await self._client.get(f"{self._base_url}{path}", params=params)

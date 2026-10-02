@@ -1,18 +1,20 @@
 # Current Task
 
-**Task:** Finalize independently accepted Milestone M8.
-**Status:** M8 / M8.1 = PASS / ACCEPTED; PR/merge/tag/build/m9 closeout in progress.
-**Branch:** build/m8
-**Accepted origin/build/m8 HEAD:** f8863a8065df307ff47552750d900accad1ab666.
-**M8.1 implementation commit:** 248e6b190faf4d5b232b7f6eb60a67510c57ae86.
-**Final accepted exact-head CI:** 36977001070 — all three jobs SUCCESS.
-**Accepted main/tag base:** 4eff88bcaaac387ec047d50575d25b8135baa567 / v0.8-m7.
+**Task:** M9 — Experiments / Historical Replay / Model-Prompt Comparison / Improvement Proposals.
+**Status:** IMPLEMENTED; full final gates and exact remote CI in progress.
+**Branch:** build/m9
 
-Owner supplied the independent M8 / M8.1 PASS / ACCEPTED verdict. No M8 blockers remain.
-Full M8 verification and method: [REVIEW_HANDOFF.md](REVIEW_HANDOFF.md),
-[EVALUATION.md](EVALUATION.md), [M8_SCOPE.md](M8_SCOPE.md).
+M8 / M8.1 = PASS / ACCEPTED. PR #10 merged; accepted main `490227ac8e27ca4c8870891277fd8783d8a7f1af`.
+Annotated tag `v0.9-m8`; merged-main CI `36981326405`, all three jobs SUCCESS on exact SHA (verified).
+Startup after fetch: build/m9 == origin/build/m9 == origin/main == v0.9-m8^{} == accepted main.
+M9 now ACTIVE under [M9_SCOPE.md](M9_SCOPE.md); M9 not merged/tagged; M10 NOT STARTED.
+LOCAL DEVELOPMENT ONLY; no deployment / Hetzner / Hermes interaction.
 
-Next: docs-only commit/push and exact-head CI; open PR build/m8→main; wait for checks and merge with
-repository merge-commit strategy; verify merged main and its CI; create/push annotated v0.9-m8 on the
-merged SHA; create/push build/m9 from that same SHA. M9 implementation NOT STARTED.
-LOCAL DEVELOPMENT ONLY; no deployment, Hetzner or Hermes interaction.
+State-doc drift corrected first; historical worklog preserved.
+Implemented: ADR 0012, migration 0014 (ten tables), frozen replay/historical-arm reuse, M8 metrics,
+bounded analyst, human lifecycle, CLI/private API/thin Telegram. [EXPERIMENTS.md](EXPERIMENTS.md).
+Verified: 872 unit PASS; 196 integration PASS; actual task wrappers and keyless M2→M9 E2E PASS.
+Ruff/format/strict mypy, fresh/populated Alembic cycles/no drift, Compose default/dev/Telegram,
+325-file/history secret sanity, accepted M0–M8 migration/prediction/evaluation byte identity PASS.
+Full pytest 1068 PASS, 56.11s; then scoped commit/push and exact remote CI.
+Final gate: full local checks, push build/m9, exact-head CI SUCCESS, clean tree; STOP for independent review.

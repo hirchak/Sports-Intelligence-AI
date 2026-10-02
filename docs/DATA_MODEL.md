@@ -105,3 +105,12 @@ explicit rerun creates another row. See [PREDICTIONS.md](PREDICTIONS.md).
 See [EVALUATION.md](EVALUATION.md) and [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
 Migration 0013 adds versioned results, probability/candidate settlements, immutable evaluation runs,
 normalized metrics and calibration buckets. Local scheduled date batches feed API and thin Telegram stats.
+
+## M9 implementation (migration 0014)
+
+Ten isolated tables: experiments, experiment_arms, experiment_runs, experiment_cases,
+experiment_predictions, experiment_calls, experiment_comparisons, improvement_analyses,
+improvement_proposals, improvement_proposal_events. UUID FKs reference existing frozen context/evidence
+and result versions. Definition/manifest/evidence/comparison immutability protected by database triggers;
+semantic uniqueness and CAS claims protect duplicate requests. No giant context duplication or changes
+to production PredictionRun/evaluation rows. [EXPERIMENTS.md](EXPERIMENTS.md), ADR 0012.

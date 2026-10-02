@@ -2,23 +2,22 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M8 / M8.1 — PASS / ACCEPTED (owner-supplied); GitHub closeout in progress
+**Current milestone:** M9 — ACTIVE; M8 / M8.1 MERGED / TAGGED / ACCEPTED
 **Last updated:** 2026-10-02 (Codex)
-**Last known good commit:** 4eff88bcaaac387ec047d50575d25b8135baa567 (v0.8-m7, PR #9 merged)
+**Last known good commit:** 490227ac8e27ca4c8870891277fd8783d8a7f1af (v0.9-m8, PR #10 merged)
 
 ---
 
 # 1. Current objective
 
-M8 / M8.1 independent verdict supplied by owner: PASS / ACCEPTED. Accepted
-origin/build/m8 HEAD `f8863a8065df307ff47552750d900accad1ab666`; M8.1 implementation
-`248e6b190faf4d5b232b7f6eb60a67510c57ae86`; exact-head CI `36977001070` all 3 jobs SUCCESS.
-The M8.1 summary-selection fix addresses the scoped-run shadowing blocker. No remaining M8 blockers.
+M8 / M8.1 = PASS / ACCEPTED. PR #10 merged; accepted main `490227ac8e27ca4c8870891277fd8783d8a7f1af`.
+Annotated tag `v0.9-m8`; merged-main CI `36981326405`, all three jobs SUCCESS on exact SHA (verified).
+Startup after fetch: build/m9 == origin/build/m9 == origin/main == v0.9-m8^{} == accepted main.
+M9 now ACTIVE under [M9_SCOPE.md](M9_SCOPE.md); M9 not merged/tagged; M10 NOT STARTED.
+LOCAL DEVELOPMENT ONLY; no deployment / Hetzner / Hermes interaction.
 
-M8 authorized by [M8_SCOPE.md](M8_SCOPE.md). Fetched refs confirm build/m8 starts at
-accepted M7 4eff88b / v0.8-m7; origin/main is unchanged. Older milestone entries below are historical; failed review/verdict records are preserved.
-Owner-supplied M8 / M8.1 PASS / ACCEPTED is the current verdict.
-Policy: [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
+Post-M8 state-doc drift corrected before substantive M9 implementation. Historical receipts below
+remain prior-session evidence; superseded pending closeout text is not current authority.
 
 Milestone review verdicts:
 - M4 → **PASS / ACCEPTED** (HEAD `0d0cd4a631c067a29c21ce584e806a47c534dc82`, merged in PR #6 `2e4683a`, tagged `v0.5-m4`)
@@ -36,8 +35,12 @@ Milestone review verdicts:
   Final source CI: `36911970853` (SUCCESS across all jobs). Historical failed verdicts above remain intact.
 
 Accepted M7 is merged via PR #9 at `4eff88bcaaac387ec047d50575d25b8135baa567`, tagged `v0.8-m7`.
-Accepted M8 is on `build/m8`; PR/merge/tag/empty-build/m9 closeout is in progress. Main currently
-remains accepted M7 until the authorized PR merge. M9 implementation is NOT STARTED. No deployment.
+M8 / M8.1 = PASS / ACCEPTED. PR #10 merged; accepted main `490227ac8e27ca4c8870891277fd8783d8a7f1af`.
+Annotated tag `v0.9-m8`; merged-main CI `36981326405`, all three jobs SUCCESS on exact SHA (verified).
+Startup after fetch: build/m9 == origin/build/m9 == origin/main == v0.9-m8^{} == accepted main.
+M9 now ACTIVE under [M9_SCOPE.md](M9_SCOPE.md); M9 not merged/tagged; M10 NOT STARTED.
+LOCAL DEVELOPMENT ONLY; no deployment / Hetzner / Hermes interaction.
+
 
 M8 flow: date-level result provider → immutable result versions → regulation_v1 settlements →
 metrics_v1 evaluation (separate roles/variants/baselines) → persisted API / thin Telegram.
@@ -737,11 +740,22 @@ All review items implemented and independently verified:
 - Final accepted exact-head CI: [36977001070](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36977001070), all 3 jobs SUCCESS.
 - Local acceptance: 839 unit + 151 integration = 990 full tests PASS; Ruff/format/mypy, fresh/populated
   Alembic cycles/drift, Compose default/dev/Telegram, and secret sanity PASS.
-- No remaining M8 blockers. M8 is not merged/tagged yet. M9 is NOT STARTED.
-- Current objective is owner-authorized PR → main merge → `v0.9-m8` → empty `build/m9` creation.
+- No remaining M8 blockers. PR #10 merged; annotated v0.9-m8; main CI 36981326405 SUCCESS.
+- M9 ACTIVE on build/m9 from exact accepted M8 base; not merged; M10 NOT STARTED.
 - No deployment, server, Hetzner or Hermes interaction.
 
 ---
+
+## M9 — controlled experiments and proposals (implemented, gates in progress)
+
+- ADR 0012; isolated experiment/arm/run/case/output/call/comparison/analyst/proposal/event persistence.
+- Exact frozen context authority; NOT_REPLAYABLE reasons, bounded plan; no current provider backfill.
+- Model/prompt/projection and historical PRIMARY/CHALLENGER comparisons; M8 metric reuse; full/paired n.
+- Strict bounded ModelRouter analyst; evidence supplied by Python; approval only authorizes experiments.
+- Private API, replay CLI, thin allowlisted Telegram; weekly schedule disabled; live execution gated.
+- 872 unit + 196 integration PASS; wrappers and actual M2→M9 E2E PASS; local static/migration/Compose/secret gates PASS.
+- Full pytest 1068 PASS (56.11s); all local gates complete. Commit/push/exact CI pending; not independently accepted.
+- Details: [EXPERIMENTS.md](EXPERIMENTS.md). Zero live LLM calls, deployment/Hetzner/Hermes interaction.
 
 # 3. M8 acceptance and authorized finalization
 
@@ -749,8 +763,12 @@ M8 / M8.1 = PASS / ACCEPTED by the owner. Accepted branch HEAD, M8.1 fix, exact-
 scope and limitations are recorded above and in `docs/REVIEW_HANDOFF.md`. There are no M8 blockers.
 Historical review failures, CI failures and prior pending notes remain unchanged as historical records.
 
-Owner-authorized PR/merge/tag/build/m9 finalization is in progress. M9 implementation is NOT STARTED.
-`main`/`v0.8-m7` are the accepted base until the PR merges. Stay LOCAL DEVELOPMENT ONLY.
+M8 / M8.1 = PASS / ACCEPTED. PR #10 merged; accepted main `490227ac8e27ca4c8870891277fd8783d8a7f1af`.
+Annotated tag `v0.9-m8`; merged-main CI `36981326405`, all three jobs SUCCESS on exact SHA (verified).
+Startup after fetch: build/m9 == origin/build/m9 == origin/main == v0.9-m8^{} == accepted main.
+M9 now ACTIVE under [M9_SCOPE.md](M9_SCOPE.md); M9 not merged/tagged; M10 NOT STARTED.
+LOCAL DEVELOPMENT ONLY; no deployment / Hetzner / Hermes interaction.
+
 
 ---
 
@@ -847,7 +865,8 @@ Owner-authorized PR/merge/tag/build/m9 finalization is in progress. M9 implement
 
 # 8. Database/migrations
 
-Latest: `0013_m8_results_and_evaluation` (six M8 tables: fixture_results, prediction_settlements,
+Latest: `0014_m9_experiments_and_proposals` (ten isolated M9 tables; gates in progress).
+Accepted M8: `0013_m8_results_and_evaluation` (six M8 tables: fixture_results, prediction_settlements,
 candidate_settlements, evaluation_runs, evaluation_metrics, calibration_buckets).
 Fresh and populated accepted M7 migration cycles + drift PASS. Revisions 0001–0012 unchanged.
 Only isolated local *_test databases migrated for M8; development DB untouched.
@@ -888,20 +907,18 @@ LLM provider routing:
 
 # 11. Current Git state
 
-Local/accepted `build/m8` HEAD: `f8863a8065df307ff47552750d900accad1ab666`.
-M8.1 implementation: `248e6b190faf4d5b232b7f6eb60a67510c57ae86`.
-Final accepted source CI: `36977001070`, SUCCESS across all three jobs.
-Owner verdict M8 / M8.1 PASS / ACCEPTED. No remaining blockers.
-Main/tag are still accepted M7 `4eff88bcaaac387ec047d50575d25b8135baa567` / `v0.8-m7` pending PR merge.
+M8 / M8.1 = PASS / ACCEPTED. PR #10 merged; accepted main `490227ac8e27ca4c8870891277fd8783d8a7f1af`.
+Annotated tag `v0.9-m8`; merged-main CI `36981326405`, all three jobs SUCCESS on exact SHA (verified).
+Startup after fetch: build/m9 == origin/build/m9 == origin/main == v0.9-m8^{} == accepted main.
+M9 now ACTIVE under [M9_SCOPE.md](M9_SCOPE.md); M9 not merged/tagged; M10 NOT STARTED.
+LOCAL DEVELOPMENT ONLY; no deployment / Hetzner / Hermes interaction.
 
 ---
 
 # 12. Next action
 
-Commit/push the docs-only acceptance record; verify exact-head Actions; open PR build/m8→main;
-wait for checks and merge with the established merge-commit strategy; verify merged main and its CI;
-create annotated `v0.9-m8` on the merge SHA; create/push empty `build/m9` from that same SHA.
-STOP without M9 implementation. LOCAL DEVELOPMENT ONLY.
+Push only build/m9, exact-head CI, STOP for independent review.
+No M9 merge/tag or M10 work.
 
 ---
 

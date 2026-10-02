@@ -2780,3 +2780,57 @@ connected GitHub API for supported operations. No server/deploy interaction.
 **Git:** docs-only acceptance commit pending on build/m8.
 **Next action:** push docs closeout, verify exact-head CI, open/check/merge PR, verify main CI, tag v0.9-m8,
 create/push empty build/m9 at same main SHA; STOP. Zero deployment, SSH, Hetzner or Hermes interaction.
+
+
+### 2026-10-02 CEST — Codex (M9 startup / state-doc drift correction)
+
+**Milestone/task:** M9 startup; reconcile completed M8 closeout before implementation.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, M9_SCOPE, append-only worklog.
+**Behavior:** M8 ACCEPTED/MERGED/TAGGED; M9 ACTIVE on exact base; historical receipts preserved.
+**Commands/tests:** mandatory specs/state/history read; git status/fetch/refs; gh run view 36981326405.
+**Results:** all startup refs 490227ac8e27ca4c8870891277fd8783d8a7f1af; clean tree at startup; all three main CI jobs SUCCESS.
+**Known problems:** none; sandbox Git/network escalation succeeded. No source changes/tests yet.
+**Spec/ADR deviations:** none. **Git commit:** docs checkpoint pending.
+**Next:** M9 only; full gates, push build/m9, exact CI, independent review STOP.
+Zero real LLM calls; no M10/deployment/Hetzner/Hermes interaction.
+
+
+### 2026-10-02 CEST — Codex (M9 implementation and deterministic acceptance checkpoint)
+
+**Milestone/task:** M9 experiment/replay/comparison and proposal-only human control.
+**Files changed:** experiments package, ten DB models/migration 0014, registered prompts/analyst route,
+Celery tasks, API/CLI/bot, env/Compose defaults, synthetic fixtures and tests, methodology/current docs.
+**Behavior:** exact frozen-context replay; explicit unavailable reasons; immutable definitions/manifests;
+separate outputs, bounded physical-call ledger; M8 paired/full measurements; historical forecast reuse;
+strict bounded analyst, deterministic evidence, approvals only create research experiments; audit-only promotion.
+**Commands/tests:** Ruff/format/mypy; standalone unit/integration; actual E2E/task-wrapper targeted tests.
+**Results:** 872 unit PASS; 195 integration PASS before final task-wrapper regression; wrapper PASS;
+real collectors→M6→M7→M8→M9 keyless E2E PASS. Populated M8→M9 roundtrip/no drift in suite PASS.
+**Known problems:** final full gates/fresh migration/Compose/secret checks and remote CI still pending.
+Initial targeted assertions needed JSON-default normalization and isolation from stale synthetic settlements;
+no runtime leakage found. Intermediate local 0014 test schema was reapplied through Alembic only.
+**Spec/ADR deviations:** ADR 0012 separate outputs, measurement-only interpretation, conservative numeric
+analyst-prose rejection, manual interrupted-claim recovery. No production mutation/paid call/deployment.
+**Git commit:** pending scoped M9 delivery. **Next:** full gates, commit/push build/m9, exact CI, review STOP.
+
+
+### 2026-10-02 CEST — Codex (M9 final local acceptance gates)
+
+**Milestone/task:** M9 complete local verification before scoped delivery commit.
+**Files changed:** M9 implementation/test/docs/config paths only; startup tree was clean.
+**Behavior:** frozen replay/control-treatment/historical arms; M8 measurements; proposal-only analyst;
+immutable evidence and deterministic human lifecycle; no automatic production writes.
+**Commands/tests:** uv run ruff check .; ruff format --check .; mypy src; unit; integration; full pytest;
+fresh sports_intel_m9_fresh_test upgrade head/down -1/up/check; populated M8→M9 integrity test;
+Compose default/dev/Telegram config -q; 325-file/history heuristic secret sanity; git diff --check;
+accepted migrations 0001–0013, predictions/evaluation source and production prompt byte-identity check.
+**Results:** **872 unit + 196 integration = 1068 full pytest PASS** (56.11s), no skips in full suite;
+Ruff/format clean (245 Python files), strict mypy clean (168 source files), migrations/no drift PASS,
+Compose PASS, secrets PASS. Keyless full E2E and actual Celery task wrappers PASS.
+**Known problems:** no local blockers; exact remote source/final delivery CI still required.
+Live LLM/result/new Telegram interactions unverified; zero live LLM calls in this implementation.
+**Spec/ADR deviations:** ADR 0012 only; independent fixture-pair minimum, no significance/winner,
+manual interrupted-claim recovery, qualitative numeric-prose restriction, null closing/cost measurements.
+**Git commit:** scoped M9 source commit follows; main/tag still accepted 490227ac... / v0.9-m8.
+**Next action:** push build/m9, exact-head all-job CI, completed handoff, clean-tree independent-review STOP.
+M9 not merged/tagged; M10 not started; zero deployment/Hetzner/SSH/Hermes interaction.

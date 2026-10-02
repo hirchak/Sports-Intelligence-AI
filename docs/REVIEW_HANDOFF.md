@@ -1,3 +1,35 @@
+# M9 implementation handoff — local gates, delivery in progress
+
+**Branch:** build/m9. **Accepted M8 main/tag base:** `490227ac8e27ca4c8870891277fd8783d8a7f1af` / annotated `v0.9-m8`.
+M8/M8.1 PASS/ACCEPTED; PR #10 merged; exact merged-main CI `36981326405` all three jobs SUCCESS.
+At startup after fetch, build/m9 == origin/build/m9 == origin/main == v0.9-m8^{}. Post-M8 state-doc drift
+corrected before implementation. Historical worklog receipts preserved; current M9 authority is this section.
+
+Scope: [M9_SCOPE.md](M9_SCOPE.md). Architecture/method/CLI/API/limits: [EXPERIMENTS.md](EXPERIMENTS.md),
+[ADR 0012](adr/0012-m9-frozen-replay-and-human-proposals.md).
+
+Implemented: ten isolated experiment/analyst/proposal tables, Alembic 0014, immutable DB-protected identities;
+exact frozen-context planning/replay; paired/full M8 comparisons; historical PRIMARY/CHALLENGER reuse;
+bounded ModelRouter analyst and deterministic evidence; human authorization/rejection/audit-only promotion;
+CLI, internal API, thin allowlisted Telegram; weekly scan disabled, zero notifications/live execution.
+
+Verified locally: **872 unit + 196 integration PASS**. **Full pytest: 1068 PASS**, 56.11s. Ruff/format (245 files),
+strict mypy (168 source files), fresh DB→head→down -1→head→check and populated accepted M8→M9 cycle
+PASS with no drift; Compose default/dev/Telegram PASS; 325 working-file/history secret sanity PASS;
+git diff --check PASS. Accepted migrations 0001–0013, M7 prediction modules/production prompt and M8
+settlement/evaluation source remain byte-identical to accepted base. Synthetic unit/integration fixtures
+are infrastructure evidence only. Actual task wrappers and collectors→M6→M7→M8→M9 keyless E2E PASS.
+
+Remaining: scoped commit/push, exact remote HEAD CI SUCCESS, clean-tree review STOP.
+M9 NOT MERGED/TAGGED; M10 NOT STARTED. LOCAL DEVELOPMENT ONLY. Zero paid/live LLM calls;
+zero deployment / Hetzner / SSH / Hermes interaction. No profitability/model-superiority/proposal-merit claim.
+Operational limits: interrupted paid-call claims/lost broker delivery require inspection/explicit rerun;
+no fitted statistics/ensembles, closing comparison null, monetary cost unknown; no new live Telegram smoke.
+
+---
+
+# Historical M8 handoff (superseded closeout wording retained as prior evidence)
+
 # M8 finalization handoff — independently ACCEPTED
 
 **Independent verdict (owner-supplied): M8 / M8.1 = PASS / ACCEPTED.**

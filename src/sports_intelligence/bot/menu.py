@@ -33,6 +33,8 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text=TODAY_LABEL, callback_data=MENU_TODAY)
     builder.button(text="Прогнозы", callback_data="menu:predictions")
     builder.button(text="Результаты и статистика", callback_data="menu:stats")
+    builder.button(text="Эксперименты", callback_data="menu:experiments")
+    builder.button(text="Предложения улучшений", callback_data="menu:improvements")
     builder.button(text=FIND_LABEL, callback_data=MENU_FIND)
     builder.button(text=HEALTH_LABEL, callback_data=MENU_HEALTH)
     builder.button(text=HELP_LABEL, callback_data=MENU_HELP)
