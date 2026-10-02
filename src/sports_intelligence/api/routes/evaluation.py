@@ -5,8 +5,9 @@ from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import literal, select
+from sqlalchemy import case, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from sports_intelligence.api.dependencies import get_session
 from sports_intelligence.db.models import (
@@ -210,35 +211,57 @@ async def summary(
     q = select(EvaluationRun).where(EvaluationRun.status == "SUCCEEDED")
     if evaluation_id:
         q = q.where(EvaluationRun.id == evaluation_id)
-    runs = list(
-        (
-            await session.scalars(
-                q.order_by(EvaluationRun.source_cutoff.desc(), EvaluationRun.id).limit(100)
-            )
-        ).all()
-    )
+    query_values = filters.model_dump(mode="json", exclude_none=True)
+    for name in (*FACETS, "role", "variant", "baseline"):
+        stored_value = EvaluationRun.filters_jsonb[name].as_string()
+        value = query_values.get(name)
+        # An extra stored restriction cannot be removed by reading an aggregate.
+        q = q.where(
+            stored_value.is_(None)
+            if value is None
+            else or_(stored_value.is_(None), stored_value == value)
+        )
+    specificity: ColumnElement[int] = literal(0)
+    uncovered: ColumnElement[int] = literal(0)
+    for name, value in requested.items():
+        stored_value = EvaluationRun.filters_jsonb[name].as_string()
+        specificity += case((stored_value == value, 1), else_=0)
+        uncovered += case((stored_value.is_(None), 1), else_=0)
+        if group_by and name != group_by:
+            q = q.where(stored_value == value)
+    if not group_by:
+        q = q.where(uncovered <= 1)
+    # M8 persists partition base + single-facet groups. group_by consumes that one facet;
+    # all other requested dimensions must therefore already be scoped by the run.
+    q = q.order_by(specificity.desc(), EvaluationRun.source_cutoff.desc(), EvaluationRun.id)
     chosen = None
-    for run in runs:
-        stored = EvaluationFilters.model_validate(run.filters_jsonb)
-        if start or end:
-            if stored.start != start or stored.end != end:
+    run_offset = 0
+    while chosen is None:
+        runs = list((await session.scalars(q.limit(100).offset(run_offset))).all())
+        if not runs:
+            break
+        for run in runs:
+            stored = EvaluationFilters.model_validate(run.filters_jsonb)
+            if start or end:
+                if stored.start != start or stored.end != end:
+                    continue
+            elif (
+                (stored.start is None) != (period == "all")
+                or stored.start
+                and stored.end
+                and stored.end - stored.start != timedelta(days=int(period[:-1]))
+            ):
                 continue
-        elif (
-            (stored.start is None) != (period == "all")
-            or stored.start
-            and stored.end
-            and stored.end - stored.start != timedelta(days=int(period[:-1]))
-        ):
-            continue
-        if any(
-            getattr(stored, name) is not None and getattr(stored, name) != getattr(filters, name)
-            for name in (*FACETS, "role", "variant", "baseline")
-        ):
-            continue
-        chosen = run
-        break
+            chosen = run
+            break
+        run_offset += len(runs)
     if chosen is None:
-        return {"status": "not_available", "groups": [], "sample_size": 0}
+        return {
+            "status": "not_available",
+            "groups": [],
+            "sample_size": 0,
+            "reason": "no_compatible_persisted_materialization",
+        }
     effective = {"role": role.value, "variant": variant.value, "baseline": baseline, **requested}
     mq = select(EvaluationMetric).where(EvaluationMetric.evaluation_run_id == chosen.id)
     for name, value in effective.items():

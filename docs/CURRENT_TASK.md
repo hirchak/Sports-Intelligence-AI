@@ -1,23 +1,17 @@
 # Current Task
 
-**Task:** M8 — Result Collection, Deterministic Settlement and Forecast Evaluation.
-**Status:** Implementation COMPLETE; local acceptance PASS; independent review required.
-**Delivery gate:** all Actions jobs on exact final origin/build/m8 HEAD must be SUCCESS.
+**Task:** M8.1 acceptance fix — persisted EvaluationRun selection for summary reads.
+**Status:** IN PROGRESS; reviewed M8 blocker supplied by owner.
 **Branch:** build/m8
-**Accepted base/main:** 4eff88bcaaac387ec047d50575d25b8135baa567 / v0.8-m7.
+**Reviewed HEAD:** d56aa3620f728eae500a1d95bce167c986d3dfda.
+**Accepted main/tag:** 4eff88bcaaac387ec047d50575d25b8135baa567 / v0.8-m7.
 
-Binding scope: [M8_SCOPE.md](M8_SCOPE.md). Methodology: [EVALUATION.md](EVALUATION.md).
-Review: [REVIEW_HANDOFF.md](REVIEW_HANDOFF.md). LOCAL DEVELOPMENT ONLY.
-Authorized: M8 commits/push/CI. No merge/tag, M9, deployment, Hetzner/Hermes or server access.
+Scope: prefer compatible scoped materializations for combined filters / filter + group_by;
+preserve cutoff ordering among equally suitable runs; return not_available when the persisted
+materializations cannot answer. Add regressions A–D and full acceptance gates.
+No changes to metric formulas, settlements, result collection, M7, or schema.
+LOCAL DEVELOPMENT ONLY. Authorized commits/push build/m8 and exact-head CI verification.
+No M9, merge/tag M8, deployment, Hetzner/Hermes/server interaction.
 
-Verified: 839 unit + 146 integration = 985 full pytest; Ruff/format/mypy clean;
-fresh and populated M7 migration cycles/drift; Compose default/dev/Telegram; secret sanity.
-Full keyless discovery→M7→result worker→evaluation→API→Telegram transport passes.
-Zero live result/LLM calls; live result provider/new live Telegram interaction unverified.
-
-Verified runtime-code HEAD: 7cbf1a1148e162130a25828138f09e99f6963654.
-Source CI: 36936292769 — all 3 jobs SUCCESS (lint/type/unit, integration, Compose).
-Final documentation-only closeout HEAD must pass the same CI; exact delivery receipt is returned
-in the completion message and is authoritative in GitHub Actions / origin/build/m8.
-
-Next: STOP for independent review after final exact-head delivery check. No further implementation.
+Next: reproduce scoped-run shadowing, implement selection fix, run requested full gates,
+update exact verified source/CI receipts and stop for independent review.

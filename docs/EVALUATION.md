@@ -101,7 +101,13 @@ WITHOUT_ODDS also removes research free text, so it is not a pure causal odds-an
 Single-facet persisted summaries: league, market, selection, captured odds bucket ([1,1.5), [1.5,2),
 [2,3), [3,5), [5,inf), missing), model config ID, provider/model, prompt semantic version, phase,
 M6 quality band, confidence, baseline version. Multiple simultaneous filters are supported through a
-scoped queued evaluation; summary reads that persisted scope. Each metric and calibration bucket retains n.
+scoped queued evaluation; summary reads that persisted scope.
+Summary selection first excludes incompatible stored restrictions and shapes, then prefers the run
+covering the most requested scoped dimensions, then latest source_cutoff (UUID breaks ties).
+A run can supply only one remaining unscoped facet; group_by consumes that facet. Newer broad runs
+cannot shadow compatible scoped runs. Candidate metadata is read in bounded pages without a fixed
+100-run history ceiling. Unsupported dimensional combinations return not_available with reason
+no_compatible_persisted_materialization; no synchronous aggregation is introduced. Each metric and calibration bucket retains n.
 There is no warehouse/cross-product materialization or automatic statistical significance claim.
 
 ## Automatic local operation and API

@@ -1,13 +1,31 @@
-# M8 independent review handoff
+# M8.1 independent review handoff
 
-Branch `build/m8`; accepted base/main `4eff88bcaaac387ec047d50575d25b8135baa567`, tag `v0.8-m7`.
-Implementation/local gates complete; branch pushed. Final delivery requires all jobs SUCCESS on
-exact final origin/build/m8 HEAD (receipt in completion message). M8 NOT merged or tagged.
-M9 NOT started. LOCAL DEVELOPMENT ONLY; zero deployment, Hetzner, SSH or Hermes interaction.
+Branch `build/m8`; reviewed M8 HEAD `d56aa3620f728eae500a1d95bce167c986d3dfda`.
+Accepted main/tag `4eff88bcaaac387ec047d50575d25b8135baa567` / `v0.8-m7`, unchanged.
+LOCAL DEVELOPMENT ONLY. M8 unmerged/untagged, M9 not started, zero deployment/server/Hermes interaction.
 
-Binding complete scope: [M8_SCOPE.md](M8_SCOPE.md). Methodology and limits:
-[EVALUATION.md](EVALUATION.md), [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
-Historical verdicts remain in IMPLEMENTATION_STATUS and append-only AI_WORKLOG.
+## M8.1 acceptance fix
+
+Blocker: newer broad evaluation could shadow older scoped evaluation and return empty SUCCEEDED groups.
+Summary selection now rejects unsupported restrictions/shapes before choosing; prefers more requested
+scoped dimensions, then latest source_cutoff, with stable UUID tie-break. Base + one unscoped facet is
+answerable; group_by consumes that facet. No compatible scope → not_available with explicit reason.
+Read-only bounded pages, no formula/schema/provider/M7/settlement changes or synchronous recalculation.
+
+Regressions in `tests/integration/test_m8_summary_selection.py`:
+A older league+market scope vs newer automatic broad; B league scope+market group_by vs newer broad;
+C broad base/single filter/group_by still works; D unsupported multi-dimensional/explicit broad ID safely
+not_available. Fifth test checks most-specific scope, latest equal-scope cutoff and a valid partial scope.
+Before fix: 4 FAIL / 1 PASS. After fix: all 5 PASS with persisted numerical metrics/sample sizes checked.
+
+M8.1 local gates: **839 unit + 151 integration = 990 full pytest PASS**, 43.67s;
+Ruff/format clean (228 Python files), strict mypy clean (155 source files). Alembic fresh→head→down -1→
+head→check on isolated sports_intel_m81_test PASS; populated migration tests PASS; no schema drift or
+migration edits. Compose default/dev/Telegram PASS; working-file/history secret sanity PASS (302 files).
+Exact pushed M8.1 source CI verification follows; independent acceptance is not claimed.
+
+M8 scope/methodology: [M8_SCOPE.md](M8_SCOPE.md), [EVALUATION.md](EVALUATION.md),
+[ADR 0011](adr/0011-m8-result-authority-and-measurement.md). Historical M8 contract/gates below are unchanged.
 
 ## Implementation / evaluation contract
 
@@ -91,8 +109,7 @@ retain safe ledger/job failure, no unsafe partial settlement. See EVALUATION.md 
   **SUCCESS** for lint/type/unit, Postgres/Redis integration, and Compose validation.
 - Final runtime-code/scanner HEAD 7cbf1a1148e162130a25828138f09e99f6963654: [36936292769](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36936292769),
   **all three jobs SUCCESS** (lint/type/unit, integration, Compose). All code/local gates complete.
-- Documentation-only closeout follows; its exact final origin/build/m8 HEAD and CI ID are returned in
-  completion and can be resolved through `gh run list --branch build/m8`. Final delivery still requires
-  all-job SUCCESS on that HEAD. Independent acceptance is not claimed.
+- Reviewed M8 delivery d56aa3620f728eae500a1d95bce167c986d3dfda: [36936656574](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/36936656574),
+  all jobs SUCCESS. That M8 delivery verification is complete; it does not independently accept M8.1.
 
 Next: exact final HEAD Actions SUCCESS and clean tree, then STOP for independent review only.

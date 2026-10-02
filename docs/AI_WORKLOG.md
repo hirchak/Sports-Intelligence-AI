@@ -2687,3 +2687,41 @@ result/LLM calls. Closing comparator/cost/crash-recovery limits are explicit in 
 and returned in completion; GitHub Actions and origin/build/m8 provide the canonical final receipt.
 **Next:** final documentation HEAD CI SUCCESS + clean tree, then STOP for independent review.
 M8 NOT merged/tagged; M9 NOT started; zero deployment/Hetzner/SSH/Hermes interaction.
+
+### 2026-10-02 CEST — Codex (M8.1 acceptance blocker reproduction and narrow fix)
+
+**Milestone:** M8.1 on build/m8. **Task:** Correct persisted summary materialization selection.
+**Reviewed HEAD:** d56aa3620f728eae500a1d95bce167c986d3dfda; reviewed delivery CI 36936656574 SUCCESS.
+**Files changed:** api/routes/evaluation.py; tests/integration/test_m8_summary_selection.py;
+CURRENT_TASK, IMPLEMENTATION_STATUS, EVALUATION documentation and append-only AI_WORKLOG.
+**Behavior:** exclude incompatible restrictions and unsupported multi-facet shapes before run selection;
+prefer more covered scoped dimensions, then source cutoff/UUID; retain bounded metadata paging without
+100-run history truncation; unsupported requests return not_available with an explicit reason.
+No changes to metrics, settlements, providers, M7, worker flow, database models or migrations.
+**Commands/tests:** reviewed-head PostgreSQL regressions (A/B/D + suitability failed; broad single-facet
+control passed); Ruff/format/mypy; focused five regressions after fix.
+**Results:** before 4 FAIL / 1 PASS reproduces blocker; after 5 PASS. Full acceptance still in progress.
+**Known problems:** no focused blocker remains; full local gates and exact pushed CI not yet verified.
+**Spec/ADR deviations:** none; existing base + single-facet materialization contract preserved.
+**Git:** no M8.1 commit yet; main remains 4eff88b / v0.8-m7; M8 unmerged/untagged.
+**Next:** full requested gates, scoped commit/push build/m8, exact-head CI, verified persistent receipts;
+STOP for independent review. No M9/deployment/Hetzner/Hermes/server interaction.
+
+### 2026-10-02 CEST — Codex (M8.1 full local gates)
+
+**Milestone/task:** M8.1 narrow persisted-summary acceptance fix on build/m8.
+**Files changed:** one API route, five integration regressions, current/status/review/methodology docs.
+**Behavior:** appropriate scoped materialization precedes source-cutoff recency; one remaining facet
+allowed; group_by reserves it; incompatible restrictions/combinations yield not_available. No formulas,
+settlements, collectors, M7, database models, migrations or worker changes.
+**Commands/tests:** uv run Ruff/check/format; mypy src; unit; integration; full pytest on Docker
+sports_intel_m8_test + Redis15; isolated fresh sports_intel_m81_test Alembic head/down -1/head/check;
+Compose default/dev/Telegram; secret sanity working files/history; git diff --check.
+**Results:** 839 unit + 151 integration = **990 full PASS** (43.67s), Ruff/format clean (228 files),
+mypy clean (155 source files); Alembic cycles/no drift PASS; Compose PASS; 302-file/history sanity PASS.
+Regressions A–D and latest equal-scope cutoff/partial-scope coverage PASS; old reviewed code reproduced
+4 FAIL / 1 PASS. Historical reviewed M8 delivery d56aa36/CI 36936656574 all-job SUCCESS, completed.
+**Known problems:** no local blockers; exact pushed M8.1 CI remains to verify. No live provider calls.
+**Spec/ADR deviations:** none; original materialization contract and metrics/settlement versions unchanged.
+**Git:** narrow implementation commit next; main still accepted 4eff88b / v0.8-m7.
+**Next:** push build/m8, exact source/final CI SUCCESS, completed persistent receipt, STOP for review.

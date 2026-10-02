@@ -2,13 +2,18 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M8 — Result Collection, Settlement and Evaluation (IN PROGRESS)
+**Current milestone:** M8.1 — Summary materialization acceptance fix (IN PROGRESS)
 **Last updated:** 2026-10-02 (Codex)
 **Last known good commit:** 4eff88bcaaac387ec047d50575d25b8135baa567 (v0.8-m7, PR #9 merged)
 
 ---
 
 # 1. Current objective
+
+M8.1 owner-reported acceptance blocker: newer broad EvaluationRun shadows a valid scoped run
+for combined-filter summary queries. Narrow API-read selection fix + A–D regressions authorized;
+reviewed HEAD d56aa3620f728eae500a1d95bce167c986d3dfda. No metric/settlement/provider/M7/schema changes.
+Historical M8 delivery CI 36936656574 on that exact reviewed HEAD was all-job SUCCESS.
 
 M8 authorized by [M8_SCOPE.md](M8_SCOPE.md). Fetched refs confirm build/m8 starts at
 accepted M7 4eff88b / v0.8-m7; origin/main is unchanged. Older M7 finalization prose below
@@ -724,22 +729,22 @@ All review items implemented and independently verified:
 
 ---
 
-# 3. In progress
+# 3. Current M8.1 verification
 
-M8 implementation complete; local gates PASS. Source CI 36936292769 on 7cbf1a1148e162130a25828138f09e99f6963654 PASS (all jobs).
-All M8 code gates passed. Documentation-only closeout must pass final exact-head delivery CI; STOP for review. M8 is not independently accepted; M9 is not started.
+Owner-reported M8 acceptance blocker: scoped summary shadowed by newer broad run.
+Narrow fix implemented and locally verified: materializable scope first, more covered request
+filters next, source_cutoff DESC / UUID among ties. Unsupported combinations → not_available.
+No changes to metric formulas, settlements, collectors, M7, models or migrations.
 
-Local gates (2026-10-02): **839 unit + 146 integration = 985 full pytest PASS**;
-Ruff/format clean (227 Python files); strict mypy clean (155 source files).
-Full keyless M2→M8 E2E + Telegram test transport PASS; original FeatureSnapshot/MatchContext/M7
-prediction/ranking/price payloads remain unchanged. Results outside evaluation cutoff excluded.
-Fresh sports_intel_m8_fresh_test→0013/down→0012/up→0013/Alembic check PASS;
-populated M7→M8 migration regression PASS. Docker default/dev/Telegram configs PASS;
-working-file/history secret sanity PASS. No live result/LLM calls or new live Telegram smoke.
+Local gates: **839 unit + 151 integration = 990 full pytest PASS** (43.67s);
+Ruff/format clean (228 Python files); mypy clean (155 source files).
+New regressions A–D plus suitability/cutoff ordering: before fix 4 FAIL/1 PASS; after 5 PASS.
+Alembic sports_intel_m81_test: fresh→head→downgrade -1→head→check PASS, zero drift.
+Populated M7→M8 migration regression remains PASS in full integration; schema history unchanged.
+Compose default/dev/Telegram PASS. 302-file/history secret sanity PASS. Exact M8.1 source CI next.
 
-The full suite uncovered an existing UTC/Warsaw midnight test-date mismatch: only the test's
-requested date changed to configured local_today. Provider protocol stub and menu assertions updated
-for the new explicit M8 interface/UI. No pre-M8 runtime behavior or historical migrations changed.
+Historical M8 delivery: d56aa3620f728eae500a1d95bce167c986d3dfda, CI 36936656574 — all jobs SUCCESS.
+Historical failed CI/test notes remain in append-only worklog; M8/M8.1 independent acceptance unclaimed.
 
 ---
 
@@ -877,18 +882,17 @@ LLM provider routing:
 
 # 11. Current Git state
 
-Branch: `build/m8`. Accepted base/main/tag: `4eff88bcaaac387ec047d50575d25b8135baa567` / `v0.8-m7`.
-Implementation commit: a0c9332d2fca5fb8807d16015a7a331928dccbc4; UTC-test fix: 9de803022600ed761ec3af81c63b9091c47e3230.
-Latest runtime-code HEAD: 7cbf1a1148e162130a25828138f09e99f6963654; CI 36936292769 all-job SUCCESS.
-Final documentation-only origin/build/m8 receipt/HEAD is returned at handoff;
-its Actions workflow must also be all-success. No M8 merge/tag authorized.
+Branch build/m8; reviewed starting HEAD d56aa3620f728eae500a1d95bce167c986d3dfda.
+Main/tag remain 4eff88bcaaac387ec047d50575d25b8135baa567 / v0.8-m7.
+M8.1 scoped implementation commit and exact source CI verification are next.
+No M8 merge/tag; no M9 or deployment.
 
 ---
 
 # 12. Next action
 
-Confirm all Actions jobs on exact final remote HEAD, and stop for
-independent review. Do not start M9, deploy, SSH, or interact with Hetzner/Hermes.
+Push narrow M8.1, verify exact source/final delivery Actions, record completed receipts,
+then STOP for independent review. No further milestone implementation.
 
 ---
 
