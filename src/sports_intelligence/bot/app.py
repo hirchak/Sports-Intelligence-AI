@@ -7,6 +7,7 @@ from aiogram.enums import ParseMode
 from sports_intelligence.bot.access import AllowlistMiddleware
 from sports_intelligence.bot.backend_client import BackendClient
 from sports_intelligence.bot.context import AppContext
+from sports_intelligence.bot.evaluation import router as evaluation_router
 from sports_intelligence.bot.handlers import router
 from sports_intelligence.bot.predictions import router as prediction_router
 from sports_intelligence.bot.transport import AiogramTransport
@@ -36,6 +37,9 @@ def build_application(settings: Settings, backend: BackendClient) -> tuple[Bot, 
     router.callback_query.middleware(middleware)
     prediction_router.message.middleware(middleware)
     prediction_router.callback_query.middleware(middleware)
+    evaluation_router.message.middleware(middleware)
+    evaluation_router.callback_query.middleware(middleware)
+    dispatcher.include_router(evaluation_router)
     dispatcher.include_router(prediction_router)
     dispatcher.include_router(router)
     return bot, dispatcher

@@ -16,6 +16,14 @@ from sports_intelligence.db.models.discovery import (
     Season,
     Team,
 )
+from sports_intelligence.db.models.evaluation import (
+    CalibrationBucket,
+    CandidateSettlement,
+    EvaluationMetric,
+    EvaluationRun,
+    FixtureResult,
+    PredictionSettlement,
+)
 from sports_intelligence.db.models.jobs import Job, JobAttempt
 from sports_intelligence.db.models.predictions import (
     LLMCallAttempt,
@@ -43,6 +51,12 @@ from sports_intelligence.db.models.snapshots import (
 )
 
 __all__ = [
+    "FixtureResult",
+    "PredictionSettlement",
+    "CandidateSettlement",
+    "EvaluationRun",
+    "EvaluationMetric",
+    "CalibrationBucket",
     "LLMCallAttempt",
     "MarketPrediction",
     "ModelConfig",

@@ -55,7 +55,7 @@ improvement hypotheses.
 | Research                 | M5        | accepted |
 | Features + MatchContext  | M6        | accepted |
 | Prediction + ranking     | M7        | implemented; review pending |
-| Settlement + evaluation  | M8        | planned |
+| Settlement + evaluation  | M8        | implemented; review pending |
 | Improvements + replay    | M9        | planned |
 
 ## M7 automatic prediction boundary
@@ -71,3 +71,9 @@ No scheduler or automatic calls were activated in the running local stack.
 loads exact context and frozen prompt/config/policy from PostgreSQL, validates integrity, applies
 bounded calls/repair/fallback, stores every probability and candidate/filter reason, then marks
 Job/JobAttempt. UI reads persisted state. See [PREDICTIONS.md](PREDICTIONS.md).
+
+## M8 implementation
+
+See [EVALUATION.md](EVALUATION.md) and [ADR 0011](adr/0011-m8-result-authority-and-measurement.md).
+Migration 0013 adds versioned results, probability/candidate settlements, immutable evaluation runs,
+normalized metrics and calibration buckets. Local scheduled date batches feed API and thin Telegram stats.

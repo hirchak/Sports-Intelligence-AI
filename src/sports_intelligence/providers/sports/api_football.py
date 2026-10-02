@@ -22,6 +22,7 @@ from sports_intelligence.providers.dto import (
     ProviderLineupPlayer,
     ProviderLineupsResult,
     ProviderResponseMetadata,
+    ProviderResultsBatch,
     ProviderSeason,
     ProviderStandingRow,
     ProviderStandingsResult,
@@ -53,6 +54,7 @@ _RATE_HEADER_NAMES = (
     "x-ratelimit-requests-remaining",
     "x-ratelimit-limit",
     "x-ratelimit-remaining",
+    "retry-after",
 )
 
 
@@ -89,6 +91,7 @@ class ApiFootballProvider:
             supports_availability=True,
             supports_lineups=True,
             supports_completed_fixtures=True,
+            supports_results_by_date=True,
         )
 
     async def get_fixtures_by_date(
@@ -223,6 +226,27 @@ class ApiFootballProvider:
             provider_team_id=provider_team_id,
             retrieved_at=retrieved_at,
             rate_headers=_rate_headers(response.headers),
+        )
+
+    async def get_results_by_date(self, fixture_date: date) -> ProviderResultsBatch:
+        from sports_intelligence.providers.sports.results import parse_results
+
+        response = await self._single_request(
+            "GET",
+            "/fixtures",
+            {"date": fixture_date.isoformat(), "timezone": "UTC"},
+            {"x-apisports-key": self._api_key},
+        )
+        if response.status_code >= 400:
+            raise ProviderResponseError("invalid result request", status_code=response.status_code)
+        payload = self._decode_payload(response)
+        observed_at = utc_now()
+        return ProviderResultsBatch(
+            provider="api_football",
+            retrieved_at=observed_at,
+            raw_payload=payload,
+            rate_headers=_rate_headers(response.headers),
+            results=parse_results(payload, observed_at),
         )
 
     async def aclose(self) -> None:

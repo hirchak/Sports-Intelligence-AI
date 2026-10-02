@@ -2572,3 +2572,211 @@ push/CI receipt is returned in the completion message.
 **Spec/ADR deviations:** none. No source/schema change. LOCAL DEVELOPMENT ONLY.
 **Git:** docs-only acceptance finalization commit pending.
 **Next action:** commit/push docs, verify exact docs-head CI, open PR build/m7→main, wait checks, merge normally, verify merged-main CI, tag v0.8-m7, then push empty build/m8 from exact main and stop.
+
+### 2026-10-02 CEST — Codex (M8 implementation and focused verification)
+
+**Milestone:** M8, build/m8, accepted base/main 4eff88bcaaac387ec047d50575d25b8135baa567 / v0.8-m7.
+**Task:** Binding result truth, settlement, evaluation, scheduled local flow, API and thin Telegram.
+**Files changed:** M8 result/metric/config/services, SportsDataProvider date result adapters, DB models +
+0013 migration, worker/Beat, API/schemas, bot/backend/menu, tests, methodology ADR/doc and current state.
+**Behavior:** append-only corrected result versions; regulation_v1; all 12 settlements; displayed-only fixed-unit
+research return; separate roles/variants/baselines; cutoff/config-bound immutable evaluation; segmented metrics
+and calibration; opt-in automatic date worker → settlement → queued 7d/30d/all metrics; persisted read UI.
+**Commands/tests:** uv run Ruff/format/mypy; focused M8 unit/provider/Telegram tests; isolated Docker
+sports_intel_m8_test + Redis db15 integration; populated 0012→0013/downgrade/re-upgrade/Alembic check.
+**Results:** 299 focused unit passed, 12 integration initially passed including full keyless E2E and migration.
+Further hardening checks found a closing-proxy synthetic market label mismatch; corrected test fixture to
+accepted M4 ou_15 canonical identity. Complete gates and remote exact-head CI still pending.
+**Known problems:** full regression/remote gates not yet verified. Zero live result/LLM calls; live bot untested.
+**Spec/ADR deviations:** ADR 0011 explicitly defines time basis, void/postponed, metric/ROI conventions,
+result correction history and immutable evaluation reuse. Existing M0–M7 migrations unchanged.
+**Git commit:** not yet created; implementation scoped to M8; main remains accepted M7.
+**Next action:** finish hardening/full gates/docs, scoped commit/push build/m8, exact-head Actions; stop for
+independent review without M8 merge/tag, M9, deployment/Hetzner/Hermes.
+
+### 2026-10-02 CEST — Codex (M8 full local acceptance gates)
+
+**Milestone:** M8 / build/m8; accepted M7 base 4eff88bcaaac387ec047d50575d25b8135baa567 / v0.8-m7.
+**Task:** Finish full local tests, methodology/integrity hardening and independent-review packet.
+**Files changed:** M8 source/tests/docs and .env.example; existing provider stub/menu assertions;
+M4 pre-match planner test date now uses Warsaw local_today (production planner unchanged).
+**Behavior:** full M8 scope; displayed coverage counts pending results, probability accuracy excludes
+void/unsettled; result/candidate/metric source identities are preserved; optional explicit closing proxy;
+malformed backend responses safe; original FeatureSnapshot plus MatchContext/M7 evidence unchanged.
+**Commands/tests:** uv run ruff check .; ruff format --check .; mypy src; standalone unit/integration;
+full pytest; fresh empty sports_intel_m8_fresh_test upgrade head/down -1/up/check; populated M7 migration
+regression; Compose default/dev/Telegram configs; working-file/history secret sanity; git diff --check.
+**Results:** 834 unit + 145 integration = **979 full pytest PASS** (33.89s). Ruff/format clean (227 files),
+strict mypy clean (155 source files), fresh/populated migration cycles and zero drift PASS, Compose PASS,
+301-file/history secret sanity PASS. Full keyless M2→M8 + API/Telegram test transport PASS.
+**Known problems:** no local code blockers. Live result provider/new bot interaction unverified;
+zero live result/LLM calls. Exact remote HEAD CI still pending.
+**Spec/ADR deviations:** ADR 0011 explicit analytical settlement/measurement conventions; no hidden
+ET/shootout scoring, no fabricated baseline/cost/closing data. Accepted migrations 0001–0012 unchanged.
+**Git commit:** local coherent implementation commit pending; main remains accepted M7.
+**Next action:** commit/push build/m8, verify exact-head CI, update receipt and stop for independent review.
+M8 NOT merged/tagged; M9 NOT started; zero deployment/Hetzner/Hermes/server interaction.
+
+### 2026-10-02 CEST — Codex (M8 final numerical/retry gate)
+
+**Milestone/task:** M8 final gate before scoped source commit.
+**Files changed:** result retry helper/header propagation, safe backend metric DTO, five targeted tests;
+current task/status/review packet counts refreshed. Existing worklog gate entries remain historical.
+**Behavior:** respect eligible Retry-After ≤30s; larger/invalid waits defer without early external retry;
+reject nonfinite backend metric values. Display/settlement metrics and immutable evidence unchanged.
+**Commands/tests:** Ruff check/format, strict mypy; unit; full pytest on isolated Compose DB/Redis;
+secret sanity working files/history; git diff --check and accepted-main/branch verification.
+**Results:** **839 unit + 145 integration = 984 full tests PASS** (32.87s); 304 new M8 unit and 17 new
+M8 integration; Ruff/format/mypy clean (227/155 files); 301-file/history sanity PASS. Fresh/populated
+migration and Compose results remain PASS; no ORM/migration changes since those checks.
+**Known problems:** remote CI pending; live results and new live bot remain unverified, zero live calls.
+**Spec/ADR deviations:** none beyond documented ADR 0011 analytical conventions; no M9 or deployment.
+**Git:** scoped build/m8 commit pending; main unchanged at accepted 4eff88b / v0.8-m7.
+**Next:** commit/push, exact remote CI, final review receipt, stop unmerged for independent review.
+
+### 2026-10-02 CEST — Codex (M8 source CI timezone-test repair)
+
+**Milestone:** M8. **Task:** Repair CI-only date assertion flake before independent-review handoff.
+**Source commit:** a0c9332d2fca5fb8807d16015a7a331928dccbc4, pushed build/m8.
+**Evidence:** Actions 36935276839: integration and Compose SUCCESS; unit job FAIL in pre-existing
+`test_schedule_morning_creates_job_and_enqueues_full_tuple`: Warsaw fixture_date 2026-10-02 versus
+UTC runner date.today() 2026-10-01. Ruff/format/mypy passed. Runtime scheduler was correct.
+**Files changed:** tests/unit/test_scheduled_discovery.py; this append-only worklog and review state.
+**Behavior:** test freezes UTC 2026-08-21 22:30 and explicit Warsaw settings; expected next local date
+2026-08-22 proves boundary deterministically. No scheduler/provider/DB runtime changes.
+**Commands/tests:** exact CI failed-job logs inspected; targeted test under TZ=UTC and unit gates next.
+**Results:** source local 984 tests previously PASS; corrected final CI still pending.
+**Known problems:** only this test gate identified; no implementation/settlement/data leakage issue.
+**Spec/ADR deviations:** none. **Git:** fix commit pending; main unchanged; M8 unmerged/untagged.
+**Next:** run scoped checks, commit/push timezone-test correction, verify exact final remote CI; STOP.
+
+### 2026-10-02 CEST — Codex (M8 exact source CI and scanner reproducibility)
+
+**Milestone/task:** M8 final completion audit and scanner job-deduplication regression.
+**Files changed:** evaluation worker one-line scan-clock fix, actual-scanner integration regression,
+CURRENT_TASK/IMPLEMENTATION_STATUS/REVIEW_HANDOFF and this append-only receipt.
+**Behavior:** schedule_result_scan uses its fixed supplied scan time for evaluation cutoff; repeat with
+same time/config reuses both date and evaluation jobs. Scanner performs no provider I/O. No M7 changes.
+**Commands/tests:** UTC-targeted discovery test (4 PASS); TZ=UTC unit (839 PASS); actual-scanner integration
+(1 PASS); TZ=UTC full pytest on sports_intel_m8_test/Redis15; Ruff/format/mypy; exact source CI view/watch.
+**Results:** source CI 36935653021 on 9de803022600ed761ec3af81c63b9091c47e3230 **all jobs SUCCESS**.
+Final local audit after scanner fix: **839 unit + 146 integration = 985 full tests PASS** (33.32s),
+Ruff/format clean (227 Python files), mypy clean (155 source files). No schema changes; fresh/populated
+migration and Compose gates remain verified. Historical source CI failure 36935276839 remains recorded.
+**Known problems:** no code blockers; final receipt/scanner-fix HEAD CI still must be verified before
+handoff. Live result provider/new Telegram remain unverified; zero live result/LLM calls.
+**Spec/ADR deviations:** none beyond ADR 0011; no M9, merge/tag or deployment/Hetzner/Hermes.
+**Git:** implementation a0c9332..., test-fix 9de8030..., both pushed; final scanner/receipt commit follows.
+**Next:** push final scoped commit, verify exact final all-job CI and clean tree; STOP for independent review.
+
+### 2026-10-02 CEST — Codex (M8 code gates complete / independent-review stop)
+
+**Milestone/task:** M8 exact runtime-code CI receipt and documentation-only final closeout.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, append-only AI_WORKLOG.
+**Behavior:** no source/test/schema changes; record final source verification and review stop.
+**Commands/tests:** gh run watch/view 36936292769; final local UTC full 985 tests; Git status/ref checks,
+secret sanity, unchanged accepted M7 migrations. Previous local fresh/populated cycles/Compose verified.
+**Results:** runtime-code HEAD **7cbf1a1148e162130a25828138f09e99f6963654**, CI **36936292769**:
+all 3 jobs SUCCESS — lint/type/unit, Postgres/Redis integration, Docker Compose validation.
+839 unit + 146 integration = 985 local full PASS; exact CI mirrors those suites. Ruff/format/mypy clean;
+migration/Compose/secret checks passed. main and v0.8-m7 still 4eff88bcaaac387ec047d50575d25b8135baa567.
+**Known problems:** no implementation blockers. Live results/new live Telegram unverified; zero live
+result/LLM calls. Closing comparator/cost/crash-recovery limits are explicit in EVALUATION.md.
+**Spec/ADR deviations:** ADR 0011 only; no M9/model promotion/prompt optimization or deployment.
+**Git:** source 7cbf1a1 pushed; documentation-only final commit follows. Its exact HEAD/CI will be verified
+and returned in completion; GitHub Actions and origin/build/m8 provide the canonical final receipt.
+**Next:** final documentation HEAD CI SUCCESS + clean tree, then STOP for independent review.
+M8 NOT merged/tagged; M9 NOT started; zero deployment/Hetzner/SSH/Hermes interaction.
+
+### 2026-10-02 CEST — Codex (M8.1 acceptance blocker reproduction and narrow fix)
+
+**Milestone:** M8.1 on build/m8. **Task:** Correct persisted summary materialization selection.
+**Reviewed HEAD:** d56aa3620f728eae500a1d95bce167c986d3dfda; reviewed delivery CI 36936656574 SUCCESS.
+**Files changed:** api/routes/evaluation.py; tests/integration/test_m8_summary_selection.py;
+CURRENT_TASK, IMPLEMENTATION_STATUS, EVALUATION documentation and append-only AI_WORKLOG.
+**Behavior:** exclude incompatible restrictions and unsupported multi-facet shapes before run selection;
+prefer more covered scoped dimensions, then source cutoff/UUID; retain bounded metadata paging without
+100-run history truncation; unsupported requests return not_available with an explicit reason.
+No changes to metrics, settlements, providers, M7, worker flow, database models or migrations.
+**Commands/tests:** reviewed-head PostgreSQL regressions (A/B/D + suitability failed; broad single-facet
+control passed); Ruff/format/mypy; focused five regressions after fix.
+**Results:** before 4 FAIL / 1 PASS reproduces blocker; after 5 PASS. Full acceptance still in progress.
+**Known problems:** no focused blocker remains; full local gates and exact pushed CI not yet verified.
+**Spec/ADR deviations:** none; existing base + single-facet materialization contract preserved.
+**Git:** no M8.1 commit yet; main remains 4eff88b / v0.8-m7; M8 unmerged/untagged.
+**Next:** full requested gates, scoped commit/push build/m8, exact-head CI, verified persistent receipts;
+STOP for independent review. No M9/deployment/Hetzner/Hermes/server interaction.
+
+### 2026-10-02 CEST — Codex (M8.1 full local gates)
+
+**Milestone/task:** M8.1 narrow persisted-summary acceptance fix on build/m8.
+**Files changed:** one API route, five integration regressions, current/status/review/methodology docs.
+**Behavior:** appropriate scoped materialization precedes source-cutoff recency; one remaining facet
+allowed; group_by reserves it; incompatible restrictions/combinations yield not_available. No formulas,
+settlements, collectors, M7, database models, migrations or worker changes.
+**Commands/tests:** uv run Ruff/check/format; mypy src; unit; integration; full pytest on Docker
+sports_intel_m8_test + Redis15; isolated fresh sports_intel_m81_test Alembic head/down -1/head/check;
+Compose default/dev/Telegram; secret sanity working files/history; git diff --check.
+**Results:** 839 unit + 151 integration = **990 full PASS** (43.67s), Ruff/format clean (228 files),
+mypy clean (155 source files); Alembic cycles/no drift PASS; Compose PASS; 302-file/history sanity PASS.
+Regressions A–D and latest equal-scope cutoff/partial-scope coverage PASS; old reviewed code reproduced
+4 FAIL / 1 PASS. Historical reviewed M8 delivery d56aa36/CI 36936656574 all-job SUCCESS, completed.
+**Known problems:** no local blockers; exact pushed M8.1 CI remains to verify. No live provider calls.
+**Spec/ADR deviations:** none; original materialization contract and metrics/settlement versions unchanged.
+**Git:** narrow implementation commit next; main still accepted 4eff88b / v0.8-m7.
+**Next:** push build/m8, exact source/final CI SUCCESS, completed persistent receipt, STOP for review.
+
+### 2026-10-02 CEST — Codex (M8.1 verification complete / review stop)
+
+**Milestone/task:** M8.1 completed exact-source acceptance checks and persistent closeout.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, append-only AI_WORKLOG only.
+**Behavior:** no source/test/schema changes; replace obsolete active pending wording with completed
+verification state and exact source receipt. Historical pending notes above remain immutable evidence.
+**Commands/tests:** gh run watch/view/log 36976617246; final refs/status; full local gates recorded above.
+**Results:** implementation HEAD **248e6b190faf4d5b232b7f6eb60a67510c57ae86**, CI **36976617246**
+all jobs SUCCESS — lint/type/unit, integration, Compose. CI logs: 839 unit, 151 integration; mypy155;
+no Alembic drift. Local full 990 PASS; Ruff/format, migration cycles, Compose and secret sanity PASS.
+**Known problems:** no remaining M8.1 blocker; independent review required. No live provider calls.
+**Spec/ADR deviations:** none; no metrics/settlement/provider/M7/schema changes.
+**Git commit:** 248e6b1 implementation pushed. This documentation-only receipt preserves the verified
+implementation; its final checkout HEAD/CI is the canonical Git/Actions tip and completion receipt.
+**Next action:** STOP for independent review after checking the final documentation delivery CI.
+M8 not merged/tagged, main remains 4eff88b / v0.8-m7, M9 not started, no deployment/Hetzner/Hermes.
+
+### 2026-10-02 CEST — Codex (record owner-supplied M8 PASS / ACCEPTED)
+
+**Milestone/task:** Finalize independently accepted M8 release flow.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF and append-only AI_WORKLOG.
+**Behavior:** Record owner-supplied M8/M8.1 PASS/ACCEPTED, accepted branch HEAD
+`f8863a8065df307ff47552750d900accad1ab666`, M8.1 fix `248e6b190faf4d5b232b7f6eb60a67510c57ae86`,
+and final CI `36977001070` (all 3 jobs SUCCESS). Historical failed reviews and pending notes preserved.
+**Commands/tests:** Read mandatory repo instructions/current state/review history; clean build/m8 HEAD and
+accepted main/tag checked locally. GitHub connector confirms repository access, no existing open M8 PR,
+and all jobs of accepted CI succeeded. GitHub CLI/SSH lookup currently has a name-resolution failure;
+release operations will use the connected GitHub API where supported and retry Git transport for tag/ref pushes.
+**Results:** docs-only acceptance update staged locally; no source, tests, metrics, settlements or schema changes.
+PR/merge/tag/build/m9 external operations still to complete.
+**Known problems:** Git transport and GitHub CLI DNS/API calls failed once in this session; connected GitHub app reads work.
+**Spec/ADR deviations:** none. Main remains accepted M7; M8 not merged/tagged; M9 not started.
+**Git:** documentation finalization commit pending; branch build/m8.
+**Next action:** exact-head docs CI; open PR, checks and merge; verify main CI; tag v0.9-m8; push empty build/m9; STOP.
+Zero deployment, SSH, Hetzner, Hermes or server interaction.
+
+### 2026-10-02 07:44 UTC — Codex (record owner-supplied M8 PASS / ACCEPTED)
+
+**Milestone/task:** Finalize independently accepted M8 and prepare authorized GitHub release closeout.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, append-only AI_WORKLOG.
+**Behavior:** Record owner-supplied M8/M8.1 PASS/ACCEPTED, accepted build/m8 HEAD
+f8863a8065df307ff47552750d25b8135baa567, M8.1 implementation 248e6b190faf4d5b232b7f6eb60a67510c57ae86,
+and exact accepted CI 36977001070 (all three jobs SUCCESS). Historical reviews/failures remain intact.
+**Commands/tests:** Repository instructions/state/worklog/history read; current clean branch/main/tag refs
+verified locally. GitHub connector confirms repo access, no existing open M8 PR, accepted CI job results.
+Established repo precedent is merge commit PR #9. GitHub CLI/SSH remote lookup had a name-resolution/API
+error; connector reads are available, so retry remote operations through the authorized GitHub connector.
+**Results:** docs acceptance update in progress; no source/tests/schema changes. PR/merge/tag/build/m9 remain.
+**Known problems:** local git transport/API resolution currently unavailable; continue retrying while using
+connected GitHub API for supported operations. No server/deploy interaction.
+**Spec/ADR deviations:** none. Main remains accepted M7; M8 not merged/tagged; M9 not started.
+**Git:** docs-only acceptance commit pending on build/m8.
+**Next action:** push docs closeout, verify exact-head CI, open/check/merge PR, verify main CI, tag v0.9-m8,
+create/push empty build/m9 at same main SHA; STOP. Zero deployment, SSH, Hetzner or Hermes interaction.
