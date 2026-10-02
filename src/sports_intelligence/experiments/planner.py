@@ -172,20 +172,14 @@ async def plan_replay(
         chosen.setdefault(
             (candidate_record.fixture_id, candidate_record.forecast_phase), candidate_record
         )
-    inventory = select(Fixture.id).where(
-        Fixture.kickoff_at >= pop.start, Fixture.kickoff_at < pop.end
-    )
-    if pop.league_ids:
-        inventory = inventory.where(Fixture.league_id.in_(pop.league_ids))
-    inventory_ids = set((await session.scalars(inventory.limit(1001))).all())
-    requested = (
-        set(pop.fixture_ids)
+    # Automatic denominator is historical frozen contexts, never current fixture inventory.
+    requested = set(pop.fixture_ids) if pop.fixture_ids else {fid for fid, _ in chosen}
+    population_basis = (
+        "explicit_fixture_ids"
         if pop.fixture_ids
-        else (
-            {fid for fid, _ in chosen}
-            if pop.context_ids
-            else inventory_ids | {fid for fid, _ in chosen}
-        )
+        else "explicit_context_ids"
+        if pop.context_ids
+        else "frozen_match_contexts"
     )
     if len(requested) > 1000:
         raise ValueError("historical_plan_limit_exceeded_narrow_scope")
@@ -279,6 +273,7 @@ async def plan_replay(
         "source_cutoff": cutoff.isoformat(),
         "manifest": manifest,
         "counts": {
+            "population_basis": population_basis,
             "requested": len(manifest),
             "eligible": eligible,
             "non_replayable": sum(x["status"] == "NOT_REPLAYABLE" for x in manifest),

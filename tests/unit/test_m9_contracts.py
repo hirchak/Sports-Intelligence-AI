@@ -186,6 +186,8 @@ async def test_telegram_long_special_character_proposal_keeps_valid_bounded_html
         "title": "Synthetic",
         "status": "PROPOSED",
         "sample_size": 0,
+        "automatic_experiment_supported": True,
+        "approval_requirement": "registered_candidate_prompt",
         "problem": "&" * 2000,
         "hypothesis": "<" * 2000,
         "test_plan": "'" * 2000,

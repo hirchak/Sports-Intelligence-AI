@@ -284,6 +284,14 @@ class BackendClient:
         self._m9_rows([payload], ("id", "title", "status", "problem", "hypothesis", "test_plan"))
         if type(payload.get("sample_size")) is not int or payload["sample_size"] < 0:
             raise BackendPayloadError("invalid proposal detail")
+        if type(payload.get("automatic_experiment_supported")) is not bool or payload.get(
+            "approval_requirement"
+        ) not in (
+            "registered_candidate_prompt",
+            "reviewed_model_definition",
+            "unsupported_component",
+        ):
+            raise BackendPayloadError("invalid proposal approval advice")
         return self._m9_rows([payload], ("id", "status"))[0]
 
     async def improvement_action(self, identity: str, action: str, actor: str) -> dict[str, Any]:

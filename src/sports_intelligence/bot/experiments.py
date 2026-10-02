@@ -16,6 +16,18 @@ from sports_intelligence.bot.strings import SAFE_BACKEND_ERROR
 router = Router(name="m9_experiments")
 
 
+def manual_approval_text(requirement: str) -> str:
+    if requirement == "reviewed_model_definition":
+        return (
+            "Нужно ручное проверенное определение model/config эксперимента через API. "
+            "Production не изменяется."
+        )
+    return (
+        "Автоматическое сопоставление этого компонента не поддерживается в M9. "
+        "Нужно совместимое ручное определение эксперимента; Production не изменяется."
+    )
+
+
 def bounded_escape(value: str, limit: int = 700) -> str:
     """Keep the Telegram markup bounded without cutting an HTML entity."""
     parts: list[str] = []
@@ -110,15 +122,23 @@ async def experiment_callback(callback: CallbackQuery, context: AppContext) -> N
             else:
                 identity = str(UUID(identity))
                 if action in ("approve", "reject"):
-                    row = await context.backend.improvement_action(
-                        identity,
-                        "approve-experiment" if action == "approve" else "reject",
-                        f"telegram:{callback.from_user.id}",
+                    row = (
+                        await context.backend.improvement_view(identity)
+                        if action == "approve"
+                        else None
                     )
-                    text = (
-                        f"{html.escape(row['status'])}\n{html.escape(row['title'])}\n"
-                        "Production не изменён. Эксперимент требует отдельного запуска."
-                    )
+                    if row and not row["automatic_experiment_supported"]:
+                        text = manual_approval_text(row["approval_requirement"])
+                    else:
+                        row = await context.backend.improvement_action(
+                            identity,
+                            "approve-experiment" if action == "approve" else "reject",
+                            f"telegram:{callback.from_user.id}",
+                        )
+                        text = (
+                            f"{html.escape(row['status'])}\n{html.escape(row['title'])}\n"
+                            "Production не изменён. Эксперимент требует отдельного запуска."
+                        )
                 elif action == "proposal":
                     row = await context.backend.improvement_view(identity)
                     text = (
@@ -127,25 +147,33 @@ async def experiment_callback(callback: CallbackQuery, context: AppContext) -> N
                         f"{bounded_escape(row['problem'])}\n"
                         f"Гипотеза: {bounded_escape(row['hypothesis'])}\n"
                         f"План: {bounded_escape(row['test_plan'])}\n"
-                        "Одобрение: тест candidate prompt на прежней выборке. "
-                        "Production не изменяется."
+                        + (
+                            "Одобрение: тест candidate prompt на прежней выборке. "
+                            "Production не изменяется."
+                            if row["automatic_experiment_supported"]
+                            else manual_approval_text(row["approval_requirement"])
+                        )
                     )
                     if row["status"] == "PROPOSED":
-                        keyboard = InlineKeyboardMarkup(
-                            inline_keyboard=[
+                        actions = []
+                        if row["automatic_experiment_supported"]:
+                            actions.append(
                                 [
                                     InlineKeyboardButton(
-                                        text="Одобрить эксперимент",
+                                        text="Одобрить candidate prompt",
                                         callback_data=f"m9:approve:{identity}",
                                     )
-                                ],
-                                [
-                                    InlineKeyboardButton(
-                                        text="Отклонить", callback_data=f"m9:reject:{identity}"
-                                    )
-                                ],
+                                ]
+                            )
+                        actions.append(
+                            [
+                                InlineKeyboardButton(
+                                    text="Отклонить", callback_data=f"m9:reject:{identity}"
+                                )
                             ]
-                            + keyboard.inline_keyboard
+                        )
+                        keyboard = InlineKeyboardMarkup(
+                            inline_keyboard=actions + keyboard.inline_keyboard
                         )
                 elif action == "experiment":
                     row = await context.backend.experiment_view(identity)

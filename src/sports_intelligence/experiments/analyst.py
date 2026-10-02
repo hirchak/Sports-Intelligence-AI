@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from sports_intelligence.core.config import Settings
 from sports_intelligence.db.models import (
+    ExperimentArm,
     ExperimentComparison,
     ExperimentRun,
     ExternalApiRequest,
@@ -23,8 +24,11 @@ from sports_intelligence.db.models import (
 from sports_intelligence.experiments.contracts import (
     AnalystOutput,
     ApproveRequest,
+    FrozenArm,
     HumanAction,
+    ProposalExperimentError,
     transition,
+    validate_proposal_experiment,
 )
 from sports_intelligence.experiments.service import create_experiment
 from sports_intelligence.pipelines.discover_fixtures import create_or_get_job
@@ -235,6 +239,18 @@ async def generate_proposal(
                 )
 
 
+async def verify_proposal_experiment(session: AsyncSession, proposal: ImprovementProposal) -> None:
+    if proposal.experiment_id is None:
+        raise ProposalExperimentError("incompatible_proposal_experiment_definition")
+    rows = (
+        await session.scalars(
+            select(ExperimentArm).where(ExperimentArm.experiment_id == proposal.experiment_id)
+        )
+    ).all()
+    arms = {row.name: FrozenArm.model_validate(row.frozen_jsonb) for row in rows}
+    validate_proposal_experiment(proposal.content_jsonb["affected_component"], arms)
+
+
 async def human_transition(
     session: AsyncSession, proposal: ImprovementProposal, target: str, action: HumanAction
 ) -> ImprovementProposal:
@@ -242,6 +258,8 @@ async def human_transition(
         select(ImprovementProposal).where(ImprovementProposal.id == proposal.id).with_for_update()
     )
     assert locked is not None
+    if target in ("EXPERIMENT_RUNNING", "PROMOTED"):
+        await verify_proposal_experiment(session, locked)
     if locked.status == target:
         return locked  # Duplicate same action is idempotent, no duplicate events.
     transition(locked.status, target, proposal=True)
@@ -266,8 +284,14 @@ async def approve_experiment(
     )
     assert locked is not None
     if locked.status == "APPROVED_FOR_EXPERIMENT":
+        await verify_proposal_experiment(session, locked)
         return locked
     transition(locked.status, "APPROVED_FOR_EXPERIMENT", proposal=True)
+    component = locked.content_jsonb["affected_component"]
+    if component not in ("prompt", "model"):
+        raise ProposalExperimentError("unsupported_proposal_experiment_component")
+    if action.experiment is None and component != "prompt":
+        raise ProposalExperimentError("manual_experiment_definition_required")
     definition = action.experiment
     if definition is None:
         from sports_intelligence.db.models import Experiment
@@ -279,9 +303,14 @@ async def approve_experiment(
         data["name"] = "Proposal experiment: " + locked.content_jsonb["title"][:170]
         data["hypothesis"] = locked.content_jsonb["hypothesis"]
         data["created_by"] = action.actor
-        data["treatment"] = {**data["treatment"], "prompt": "candidate"}
+        data["treatment"] = {**data["control"], "prompt": "candidate"}
         definition = ExperimentDefinition.model_validate(data)
-    experiment, _ = await create_experiment(session, definition, settings)
+    experiment, _ = await create_experiment(
+        session,
+        definition,
+        settings,
+        validate_arms=lambda arms: validate_proposal_experiment(component, arms),
+    )
     locked.experiment_id = experiment.id
     return await human_transition(session, locked, "APPROVED_FOR_EXPERIMENT", action)
 
@@ -291,6 +320,14 @@ def proposal_detail(proposal: ImprovementProposal) -> dict[str, Any]:
         "id": str(proposal.id),
         **proposal.content_jsonb,
         "status": proposal.status,
+        "automatic_experiment_supported": proposal.content_jsonb["affected_component"] == "prompt",
+        "approval_requirement": (
+            "registered_candidate_prompt"
+            if proposal.content_jsonb["affected_component"] == "prompt"
+            else "reviewed_model_definition"
+            if proposal.content_jsonb["affected_component"] == "model"
+            else "unsupported_component"
+        ),
         "sample_size": proposal.sample_size,
         "evidence_summary": proposal.evidence_jsonb,
         "evidence_references": {

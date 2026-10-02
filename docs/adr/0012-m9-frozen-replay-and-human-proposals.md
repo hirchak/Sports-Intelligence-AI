@@ -18,9 +18,11 @@ validator/ranking and M8 settlement/aggregate functions, rather than duplicate t
 Freeze prompt content/hash, route/model configs, prediction/evaluation policy at definition creation.
 Definitions cannot be updated; material changes require a new identity. Freeze ordered sample manifest
 and result-version IDs at planning. Results enter deterministic evaluation only, never model payload.
-Date scope means frozen prediction as_of [start,end); discovered fixtures without contexts are
-reported separately using discovery kickoff scope. Mutable discovery metadata is population inventory
-only. Explicit fixture IDs are preferred for exact requested-population control.
+Review-fix correction (2026-10-02): date scope means frozen prediction as_of [start,end).
+Automatic population is the unique fixture identities of matching frozen MatchContexts only; it is not
+an all-discovered-fixture census. Current Fixture kickoff/league/team/status metadata cannot define
+population or denominators. Explicit fixture IDs retain requested cases with no historical contexts;
+explicit context IDs keep strict identity/scope behavior. Counts disclose population_basis.
 
 Both arms share one context unless phases explicitly differ; cross-phase comparison is observational.
 Paired metrics use successful forecasts with the same settled selection on both arms; full-arm metrics
@@ -36,6 +38,15 @@ Known transient failures may resume under the same manifest with counted attempt
 Analyst consumes bounded stored comparison evidence through ModelRouter/provider abstraction.
 Python supplies factual metrics, sample counts and IDs. Strict output permits qualitative proposal
 fields only; no numeric measurement claims. Deduplicate by evidence and frozen analyst identity.
+Review-fix correction: default approval is prompt-only and copies the control arm with the registered
+candidate prompt as treatment. Before any persistence, frozen arms must show an actual prompt hash
+change with identical model/config/phase/variant/policy, or an explicit reviewed model definition must
+show an actual model/config change with identical prompt/phase/variant/policy. Historical arms cannot
+prove this via their unused declared route, so mapping requires replay arms. Unsupported data_quality,
+features, ranking and sources remain proposals; definitions in M9 cannot express those treatment changes.
+No partial approval event/status/link on refusal. Existing incompatible links cannot advance to running
+or promoted, and remain rejectable without rewriting history. Telegram consumes backend approval advice.
+Known football labels H2H/1X2/O/U1.5/O/U2.5 are prose exceptions; measured numbers and extra facts remain forbidden.
 Human approval creates an experiment authorization; execution is a separate explicit queue request.
 PROMOTED/ROLLED_BACK, if recorded, are audit decisions requiring an actor/reason; no config application.
 Weekly analysis is disabled by default, mock-only when enabled unless separately live-opted-in.

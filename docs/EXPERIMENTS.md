@@ -30,9 +30,14 @@ updated. WITHOUT_ODDS also masks research; this is not a clean causal odds-only 
 Scope is frozen prediction **as_of [start,end)**, configured phase, leagues and markets. Exact `context_ids`
 or `fixture_ids` can bound the population. More than one explicitly selected context per fixture/phase is
 refused; each fixture contributes at most one pair. Automatic selection uses latest frozen as_of, then
-stable UUID. Mutable fixture kickoff is used only to inventory discovered matches lacking contexts; that
-inventory never supplies forecast evidence. Maximum requested population is 1000; maximum context rows
-read is 10000. Oversized plans require narrowing scope. Scope/manifest excludes rather than fabricates.
+stable UUID. Broad date-range population is **unique fixture IDs from matching frozen MatchContexts**;
+it does not claim an all-fixture historical census. No current Fixture kickoff/league/team/status metadata
+is used for population. Explicit fixture IDs still count requested cases without frozen contexts. Fixture
+primary-key existence is read only to resolve persistence references, never to infer historical membership.
+Counts and analyst packets expose `population_basis`: frozen_match_contexts / explicit_fixture_ids /
+explicit_context_ids. Maximum requested population is 1000; maximum context rows read is 10000.
+Oversized plans require narrowing scope. Existing immutable pre-fix runs stay historical artifacts;
+use an explicit rerun to obtain a manifest under corrected planning semantics.
 
 Missing context/features/quality/reference, mismatched hash/version/time, unavailable historical forecast,
 future evidence or missing explicit context → `NOT_REPLAYABLE`, counted reason. Entirely empty/unavailable
@@ -103,8 +108,10 @@ queue time. Packet contains persisted comparison metrics/counts/IDs, at most six
 calibration buckets per group; byte cap 50000. No whole database dump or tool/filesystem access.
 Python inserts evidence summary/references, sample_size and actual analyst metadata. Strict LLM output
 contains title, problem, hypothesis, proposed_change, expected_effect, test_plan, risks, risk_level and
-an affected component only. Numeric prose/percent claims and extra measured/status/config fields are
-rejected. This conservative qualitative validator avoids hallucinated measurements; it does not prove
+an affected component only. Numeric measurements/percent claims and extra measured/status/config fields
+are rejected. Complete football labels H2H, 1X2, O/U 1.5 and O/U 2.5 (case-insensitive, optional spacing)
+are allowed; adjacent/remaining numbers, costs, sample sizes and measurements still fail validation.
+This conservative qualitative validator avoids hallucinated measurements; it does not prove
 that a qualitative proposal is correct. Malformed output fails job and creates no proposal.
 
 Deduplicate by exact evidence + frozen analyst config/prompt hash. Job CAS prevents concurrent generation.
@@ -116,9 +123,26 @@ Lifecycle:
 `PROPOSED`, `APPROVED_FOR_EXPERIMENT`, `EXPERIMENT_RUNNING` may be rejected. Invalid transitions fail;
 duplicate same action is idempotent. Actor/reason/from/to/time are append-only proposal events.
 Approval **creates an experiment authorization only**, not a worker call. Explicit run request moves the
-linked approved proposal to EXPERIMENT_RUNNING. Default approval prepares the registered candidate
-prompt against the prior scope; custom approval may supply a reviewed definition. It does not implement
-arbitrary feature/source/ranking changes described in prose.
+linked approved proposal to EXPERIMENT_RUNNING after revalidating its frozen mapping.
+Default approval is **prompt-only**: copy the prior control arm, set treatment to the registered candidate
+prompt, retain scope and require an actual prompt hash difference with identical models/configs, phase,
+variant and prediction/ranking policy. Model proposals require an explicit human-reviewed definition,
+with an actual frozen primary model/config difference and identical prompt, phase, variant and policy.
+Route aliases or renamed prompt versions with unchanged content do not count as changes. Mixed dimensions
+and historical arms are refused for proposal mapping; their declared routes may not be executed.
+
+M9 definitions cannot express treatment changes to data_quality/features/ranking/sources. These components
+are refused even with a supplied prompt/model-only definition; no conversion to a prompt experiment.
+Human review remains responsible for the qualitative intent and registered candidate/route selection;
+the guard validates the implemented dimension, not scientific merit or semantic equivalence of free prose.
+
+Refusal codes: manual_experiment_definition_required / unsupported_proposal_experiment_component /
+incompatible_proposal_experiment_definition, HTTP 409. Validation happens on the same frozen arms used
+for persistence, before creating any experiment/approval event/status/link. Failed prompt/config loading
+also leaves PROPOSED unchanged. Incompatible legacy links cannot reapprove/start/promote; rejection remains
+available, original evidence is not rewritten. Backend detail includes automatic_experiment_supported and
+approval_requirement. Telegram offers default approval only for prompt mappings, explains reviewed/manual
+definition requirements otherwise, and checks advice for old/stale approval callbacks.
 
 PROMOTED/ROLLED_BACK endpoint is **human-recorded audit only**, returns `production_applied=false`.
 No production prompt activation, config writing, routing change, threshold/feature mutation, code edit,

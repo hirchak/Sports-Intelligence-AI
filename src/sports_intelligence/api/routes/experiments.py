@@ -24,6 +24,7 @@ from sports_intelligence.experiments.contracts import (
     ApproveRequest,
     ExperimentDefinition,
     HumanAction,
+    ProposalExperimentError,
     RecordedDecision,
     RunRequest,
 )
@@ -211,6 +212,8 @@ async def approve(
     try:
         proposal = await approve_experiment(session, proposal, payload, request.app.state.settings)
         await session.commit()
+    except ProposalExperimentError as exc:
+        raise HTTPException(409, str(exc)) from None
     except (ValueError, OSError):
         raise HTTPException(409, "invalid_proposal_transition_or_experiment") from None
     return proposal_detail(proposal)

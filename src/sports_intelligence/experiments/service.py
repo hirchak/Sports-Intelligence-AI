@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -34,6 +35,8 @@ async def create_experiment(
     session: AsyncSession,
     definition: ExperimentDefinition,
     settings: Settings,
+    *,
+    validate_arms: Callable[[dict[str, FrozenArm]], None] | None = None,
 ) -> tuple[Experiment, bool]:
     config = load_llm_config(settings)
     frozen = {}
@@ -65,6 +68,8 @@ async def create_experiment(
             route_hash=decision.fingerprint,
         )
         frozen[name] = arm
+    if validate_arms is not None:
+        validate_arms(frozen)
     data = definition.model_dump(mode="json")
     digest = fingerprint({"definition": data, "arms": {n: a.hash for n, a in frozen.items()}})
     inserted = await session.scalar(
@@ -141,6 +146,19 @@ async def request_run(
         or settings.app_env != "live_local"
     ):
         raise ValueError("live_experiment_not_authorized")
+    from sports_intelligence.db.models import ImprovementProposal
+    from sports_intelligence.experiments.analyst import verify_proposal_experiment
+
+    linked_proposals = (
+        await session.scalars(
+            select(ImprovementProposal).where(
+                ImprovementProposal.experiment_id == experiment.id,
+                ImprovementProposal.status == "APPROVED_FOR_EXPERIMENT",
+            )
+        )
+    ).all()
+    for proposal in linked_proposals:
+        await verify_proposal_experiment(session, proposal)
     definition = ExperimentDefinition.model_validate(experiment.definition_jsonb)
     plan = await plan_replay(session, definition)
     mh = fingerprint(plan["manifest"])

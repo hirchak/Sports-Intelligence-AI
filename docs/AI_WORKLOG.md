@@ -2910,3 +2910,59 @@ is verified after this commit; current origin/build/m9 and final chat receipt ar
 **Git commit:** runtime source dff83c17e2eddcde08ca0a5676dcc9d516a4cf6c, verified above; documentation-only final commit follows.
 **Next action:** after final docs CI and clean tree confirmation, STOP for independent review.
 M9 not merged/tagged; main/v0.9-m8 still accepted M8; M10 not started; no deployment/Hetzner/Hermes.
+
+
+### 2026-10-02T21:53:12+02:00 — Codex (M9 independent-review fix startup)
+
+**Milestone/task:** M9 blockers only; M9 NOT ACCEPTED.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, binding M9_REVIEW_FIX_SCOPE;
+append-only worklog. **Behavior:** record owner-supplied review findings and scoped fix checkpoint.
+**Commands/tests:** read binding findings/current contract/state/relevant M9 code/spec; git status/history;
+fetch origin and verify build/m9 reviewed delivery 383c32f9..., accepted main/v0.9-m8 490227ac....
+**Results:** clean reviewed startup; both blockers confirmed in planner/approval code. No fix/tests yet.
+**Known problems:** two independent-review blockers; scope does not authorize redesign or acceptance.
+**Spec/ADR deviations:** none yet; ADR 0012 population/approval interpretation will be corrected.
+**Git commit:** none this fix session. **Next:** red regressions, minimal fixes, full gates, exact CI, review STOP.
+No merge/tag M9, M10/deployment/Hetzner/Hermes; no live LLM calls.
+
+
+### 2026-10-02T22:19:44+02:00 — Codex (M9 blockers reproduced / focused fixes PASS)
+
+**Milestone/task:** M9 immutable denominator, component-compatible approval and narrow prose hardening.
+**Files changed:** planner/contracts/service/analyst/API/bot/backend client, focused tests, method/ADR/current docs.
+**Behavior:** frozen-only automatic population; explicit missing IDs retained; population_basis surfaced.
+Prompt-only default compares same model with real candidate hash change; explicit model approval requires
+actual changed model/config. Unsupported/no-op/mixed/history-declared mappings fail before persistence.
+Legacy bad links cannot advance/reapprove/promote; rejection remains allowed. Telegram uses typed backend
+advice and hides unsupported automatic actions. Football token allowlist leaves numeric facts guarded.
+**Commands/tests:** reviewed-code red regressions; corrected population setup executed against reviewed
+planner loaded from git show without reverting current sources; focused unit/integration, Ruff/mypy.
+**Results:** initial 22 integration FAIL/3 PASS, 6 unit FAIL/13 PASS. Population setup initially collided
+with natural fixture key; kickoff offsets corrected. Reviewed planner then 2 FAIL specifically on counts
+before/after mutation. Corrected current code: 33 new integration PASS; 54 M9 contract unit PASS.
+**Known problems:** full gates/CI pending; no focused runtime blocker. No schema/models/migration changes.
+**Spec/ADR deviations:** corrected ADR 0012 mutable inventory and generic approval interpretation;
+unsupported component changes remain outside M9, not a new experiment dimension.
+**Git commit:** pending scoped fix. **Next:** full gates, source/final push CI, independent-review STOP.
+M9 NOT ACCEPTED; no merge/tag/M10/deployment/Hetzner/Hermes; zero real LLM calls.
+
+
+### 2026-10-02T22:32:55+02:00 — Codex (M9 review-fix full local gates)
+
+**Milestone/task:** Independent-review blockers and their regressions only, ready for source delivery.
+**Files changed:** scoped M9 planner/approval/contracts/control/bot tests and supporting docs listed above.
+**Behavior:** captured-context denominator; truthful component mapping before any approval writes;
+legacy bad links cannot advance; football labels allowed without trusting LLM measurements.
+**Commands/tests:** focused reviewed/red/current/green; uv Ruff check/format/mypy; standalone unit/integration;
+full pytest; fresh sports_intel_m9_review_fresh_test head/down -1/head/check; populated accepted M8→M9
+roundtrip regression; Compose default/dev/Telegram; secret sanity/history; diff and unchanged-path checks.
+**Results:** **893 unit + 233 integration = 1126 full PASS**, 68.77s, zero skips. Ruff247/mypy168 PASS;
+fresh/populated/no drift PASS; Compose PASS; 328-file/history heuristic secrets PASS; diff PASS.
+DB models/migrations 0001–0014, providers, prediction/evaluation math, prompts/runtime config byte-identical
+to reviewed delivery. Existing explicit fixtures/contexts, budgets, fairness, no production mutation PASS.
+**Known problems:** no local blocker; exact source/final remote CI required. Unsupported component dimensions
+remain unsupported; broad sample is captured contexts only; no empirical/live acceptance claimed.
+**Spec/ADR deviations:** ADR 0012 interpretation corrected, no new architecture/dimensions/schema.
+**Git commit:** coherent source fix follows; reviewed base 383c32f9..., accepted main/v0.9-m8 490227ac....
+**Next action:** source push + exact CI, completed persistent receipts + final CI, clean-tree independent review STOP.
+M9 NOT ACCEPTED; no merge/tag M9/M10/deployment/Hetzner/Hermes; zero real LLM calls.

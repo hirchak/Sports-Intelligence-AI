@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -132,6 +133,35 @@ class FrozenArm(StrictModel):
         return fingerprint(self.model_dump(mode="json"))
 
 
+class ProposalExperimentError(ValueError):
+    """Safe refusal codes for proposal-to-experiment mapping."""
+
+
+def validate_proposal_experiment(component: str, arms: dict[str, FrozenArm]) -> None:
+    if component not in ("prompt", "model"):
+        raise ProposalExperimentError("unsupported_proposal_experiment_component")
+    if set(arms) != {"control", "treatment"}:
+        raise ProposalExperimentError("incompatible_proposal_experiment_definition")
+    control, treatment = arms["control"], arms["treatment"]
+    if (
+        control.request.source != "replay"
+        or treatment.request.source != "replay"
+        or control.request.phase != treatment.request.phase
+        or control.request.variant != treatment.request.variant
+        or control.policy.hash != treatment.policy.hash
+    ):
+        raise ProposalExperimentError("incompatible_proposal_experiment_definition")
+    if component == "prompt":
+        valid = control.prompt_hash != treatment.prompt_hash and control.models == treatment.models
+    else:
+        valid = (
+            control.prompt_hash == treatment.prompt_hash
+            and control.models[0].hash != treatment.models[0].hash
+        )
+    if not valid:
+        raise ProposalExperimentError("incompatible_proposal_experiment_definition")
+
+
 class RunRequest(StrictModel):
     rerun_key: UUID | None = None
     live_opt_in: bool = False
@@ -163,8 +193,12 @@ class AnalystOutput(StrictModel):
 
     @model_validator(mode="after")
     def qualitative_only(self) -> AnalystOutput:
-        # All measured values are inserted by Python. Numeric prose could invent measurements.
+        # Known football labels carry digits, but are not measured values.
+        # Remove only complete labels before applying the existing strict numeric-claim guard.
         for value in self.model_dump().values():
-            if any(c.isdigit() for c in str(value)) or "%" in str(value):
+            prose = re.sub(
+                r"(?<!\w)(?:H2H|1X2|O/U\s*(?:1\.5|2\.5))(?!\w)", "", str(value), flags=re.IGNORECASE
+            )
+            if any(c.isdigit() for c in prose) or "%" in prose:
                 raise ValueError("analyst_numeric_claim_forbidden")
         return self

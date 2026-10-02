@@ -1,3 +1,21 @@
+# M9 independent-review fix — LOCAL VERIFIED / CI PENDING / NOT ACCEPTED
+
+Reviewed delivery: `383c32f9ba5255f9c72d74c5e7c2ffbcdeba66fb`.
+Scope: [M9_REVIEW_FIX_SCOPE.md](M9_REVIEW_FIX_SCOPE.md). Two blockers: mutable Fixture inventory
+changes historical denominators; generic prompt approval creates false lineage for unrelated proposals.
+Small hardening: allow explicit football identifiers, keep measurements Python-authoritative.
+
+Fixes and local gates complete: **893 unit + 233 integration = 1126 full PASS**, 68.77s, zero skips.
+New review regressions: 20 unit + 33 integration; population mutation, strict IDs/no backfill, all component
+mappings, compatible reviewed definitions, aliases/no-op/mixed/historical mappings, failed creation atomicity,
+legacy-link advancement, safe Telegram advice, domain labels with measured claims still blocked.
+Ruff/format247/mypy168; fresh and populated M8→M9 migration/no drift, Compose default/dev/Telegram,
+328-file/history secret sanity and git diff --check PASS. No schema/migration/config/provider/metric redesign.
+Source/final delivery push and exact-head CI pending. No M10, merge/tag or deployment/Hetzner/Hermes.
+Historical M9 handoff below records previous delivery only; current review status supersedes it.
+
+---
+
 # M9 handoff — VERIFIED / INDEPENDENT REVIEW REQUIRED
 
 **Branch:** build/m9. **Verified runtime-source HEAD:** `dff83c17e2eddcde08ca0a5676dcc9d516a4cf6c`.

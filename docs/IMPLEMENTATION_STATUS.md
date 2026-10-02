@@ -2,13 +2,20 @@
 
 **Project:** Sports Intelligence AI
 **Development phase:** LOCAL DEVELOPMENT ONLY
-**Current milestone:** M9 — IMPLEMENTED / VERIFIED / AWAITING INDEPENDENT REVIEW; M8 ACCEPTED
+**Current milestone:** M9 — REVIEW FIX IMPLEMENTED / LOCAL VERIFIED / NOT ACCEPTED; M8 ACCEPTED
 **Last updated:** 2026-10-02 (Codex)
 **Last known good commit:** 490227ac8e27ca4c8870891277fd8783d8a7f1af (v0.9-m8, PR #10 merged)
 
 ---
 
 # 1. Current objective
+
+M9 independent review identified two blockers in delivery `383c32f9ba5255f9c72d74c5e7c2ffbcdeba66fb`.
+Current task: [M9_REVIEW_FIX_SCOPE.md](M9_REVIEW_FIX_SCOPE.md). Immutable historical population,
+truthful approval mapping and narrow football-label validation hardening only. Prior green gates are
+historical implementation receipts, not acceptance. Focused fixes now PASS: 33 new integration and
+20 new unit cases (54 M9 contract unit total). Full local gates: 893 unit + 233 integration =
+1126 full PASS, 68.77s; static/migrations/Compose/secret/diff PASS. Exact source/final CI still required.
 
 M8 / M8.1 = PASS / ACCEPTED. PR #10 merged; accepted main `490227ac8e27ca4c8870891277fd8783d8a7f1af`.
 Annotated tag `v0.9-m8`; merged-main CI `36981326405`, all three jobs SUCCESS on exact SHA (verified).
