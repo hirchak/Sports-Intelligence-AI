@@ -3,9 +3,11 @@
 Private football forecasting laboratory, with reproducible evidence and deterministic measurement.
 **LOCAL DEVELOPMENT ONLY. No deployment, server access or Hermes interaction is authorized.**
 
-M0–M9 independently accepted. M9: PR #11, main `03789b7b7b4af2179271a7797faa754d48ad0d0d`,
-annotated `v0.10-m9`. M10 prepares local operational readiness; it stops for independent review,
-without merge/tag. Current authority: [IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md).
+M0–M10 independently accepted. M9: PR #11, main `03789b7b7b4af2179271a7797faa754d48ad0d0`,
+annotated `v0.10-m9`. M10 / local acceptance: PASS / ACCEPTED on HEAD
+`76a221afbf06aeba464bbddbcfca315cf9b276d8`, CI `37083328438`. Its release closeout is in progress.
+Deployment gate remains **NOT READY** because the live gates remain NOT_VERIFIED. Current authority:
+[IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md).
 
 ## Bootstrap from repository sources
 

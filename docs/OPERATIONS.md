@@ -63,7 +63,7 @@ M9 interrupted arm claims become NEEDS_INSPECTION; proposal approval does not ex
 Use BACKUP_RESTORE for native dumps/disposable restore checks. Take a protected backup before a controlled
 future change. Rollback concept: stop writers, select independently accepted code/schema compatibility,
 restore to a clean separate DB, verify hashes/counts, then switch only under an explicit approved process.
-No destructive automatic downgrades. M10 is not accepted/tagged merely because implementation tests pass.
+No destructive automatic downgrades. M10 is accepted/tagged only through its recorded independent review and authorized merge/tag closeout; this does not authorize deployment.
 
 Rotation concept: provision a replacement credential outside Git/chat, update the protected local env/secret
 mechanism, restart affected services, run a separately authorized bounded smoke, revoke old key, rescan logs/

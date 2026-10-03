@@ -1,3 +1,5 @@
+> **Scope history:** this file preserves the original implementation handoff verbatim. Its final “not merged/tagged” stop applied before independent review. The owner has since supplied M10 PASS / ACCEPTED and explicitly authorized the separate release closeout recorded in [CURRENT_TASK.md](CURRENT_TASK.md) and [REVIEW_HANDOFF.md](REVIEW_HANDOFF.md). Deployment remains unauthorized/NOT READY, and no M11 is defined.
+
 # Binding M9 closeout and M10 scope
 
 CONTINUATION OF THE ACTIVE GOAL.

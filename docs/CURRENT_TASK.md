@@ -1,25 +1,12 @@
-# Current Task — completed implementation / independent-review STOP
+# Current Task — finalize independently accepted M10
 
-**Task:** Finalize independently accepted M9, implement M10 Production Readiness.
-**Status:** IMPLEMENTATION READY / LOCAL ACCEPTANCE VERIFIED / AWAITING INDEPENDENT REVIEW.
-**Branch:** build/m10. **Verified source:** `e137f4b5bfd19f1074644682cea49ee5932a0094`.
-**Exact source CI:** [37082136185](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37082136185), all three jobs SUCCESS.
-Binding scope: [M10_SCOPE](M10_SCOPE.md). Full receipts/remaining gates: [M10_ACCEPTANCE_REPORT](M10_ACCEPTANCE_REPORT.md).
+**Task:** Close out accepted Milestone M10 through PR, merge CI, and annotated release tag.
+**Independent verdict:** M10 implementation / local acceptance = **PASS / ACCEPTED** (owner supplied).
+**Accepted review HEAD:** `76a221afbf06aeba464bbddbcfca315cf9b276d8`.
+**Exact accepted CI:** [37083328438](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37083328438); all 3 jobs SUCCESS.
+**Branch:** `build/m10`. **State at acceptance:** main/M9 tag `03789b7b7b4af2179271a7797faa754d48ad0d0d`; M9 annotated tag `v0.10-m9`.
 
-M9 PR #11/main `03789b7b7b4af2179271a7797faa754d48ad0d0d`, main CI `37070774858` SUCCESS,
-annotated v0.10-m9 object `952356ed97ef8f47e7cdbd8a58a58cdbfc229c76`, peeled to that exact main.
-build/m10 began from the same remote main/tag SHA. Main/M9 tag remain unchanged.
+Binding M10 scope and verified gates remain in [M10_SCOPE](M10_SCOPE.md) and [M10_ACCEPTANCE_REPORT](M10_ACCEPTANCE_REPORT.md).
+Live sports, odds, and real runtime LLM remain **NOT_VERIFIED**; deployment gate stays **NOT READY**. Preserve the reasons and limitations as recorded. Do not create `build/m11`.
 
-Final local gates: 909 unit + 237 integration = 1146 full PASS; Ruff/format/mypy, fresh/populated migrations,
-Compose/private topology, known-secret/history/diff sanity, clean bootstrap, complete keyless E2E,
-native backup/restore, queued actual restarts/outages/resources, scheduler simulation PASS.
-No forecast architecture/math/schema rewrite. Runtime request attempts/calendar/startup privacy audited.
-
-Deployment gate NOT READY: live sports unavailable, odds/real runtime LLM credentials/routes absent,
-independent M10 review pending. Search/live Telegram have narrowly stated transport receipts; no forecast
-quality, human receipt, exact target sizing or empirical multi-day proof. Unknown paid-call recovery manual.
-
-Final subsequent delivery is docs/evidence only; canonical tip/CI resolves origin/build/m10 and its exact
-GitHub Actions run. Final handoff occurs only after that run succeeds and the tree is clean.
-**Next action: independent M10 review only.** M10 NOT ACCEPTED/MERGED/TAGGED; no M11.
-LOCAL DEVELOPMENT ONLY; zero deployment/SSH/Hetzner/Hermes interaction.
+Acceptance receipt is documentation only; it does not alter accepted implementation HEAD. Next: exact-head CI on receipt, PR `build/m10` → `main`, all PR checks, merge commit, all merged-main CI checks, annotated `v0.11-m10` verified to peel to that exact merge SHA. Record final release identities, then STOP. Zero deployment, Hetzner, SSH, or Hermes interaction.

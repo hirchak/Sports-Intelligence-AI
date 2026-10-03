@@ -3076,3 +3076,16 @@ deployment/Hetzner/Hermes or real LLM calls.
 **Spec/ADR deviations:** no forecasting/schema redesign; supported adapter data interfaces, immutable authority and all migrations preserved.
 **Git commit:** verified source e137f4b5bfd19f1074644682cea49ee5932a0094; final docs-only delivery follows and its exact-head CI is required before completion. Main/v0.10-m9 peeled remains03789b7b7b4af2179271a7797faa754d48ad0d0d; tag object952356ed97ef8f47e7cdbd8a58a58cdbfc229c76.
 **Next action:** final docs push/exact-head all-job CI/clean-tree check, then STOP for independent M10 review only. M10 NOT merged/tagged, no M11, zero deployment/SSH/Hetzner/Hermes. All task-owned local stacks/volumes/test DB/worktrees and native restore temps cleaned; original local runtime/data preserved.
+
+
+### 2026-10-03T09:38:13+02:00 — Codex (owner-supplied independent M10 acceptance)
+
+**Milestone/task:** Finalize independently ACCEPTED M10 using the exact user-authorized PR/merge/tag sequence.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, M10_ACCEPTANCE_REPORT, README, append-only AI_WORKLOG.
+**Behavior:** Documentation-only acceptance receipt records M10 PASS / ACCEPTED on reviewed HEAD 76a221afbf06aeba464bbddbcfca315cf9b276d8; all NOT_VERIFIED live sports/odds/real-runtime-LLM gates remain unchanged; deployment stays NOT READY. Previous review failures and evidence remain historical.
+**Commands/tests:** inspected clean branch/ref/tag state; confirmed HEAD and origin/build/m10 = 76a221afbf06aeba464bbddbcfca315cf9b276d8, main/v0.10-m9^{} = 03789b7b7b4af2179271a7797faa754d48ad0d0d; verified annotated M9 tag object 952356ed97ef8f47e7cdbd8a58a58cdbfc229c76; fetched exact accepted CI 37083328438 from GitHub, all three jobs SUCCESS. No tests rerun or source changes.
+**Results:** M10 acceptance receipt prepared; source/local acceptance evidence remains exactly as previously verified.
+**Known problems:** live sports and odds/runtime-LLM remain NOT_VERIFIED deployment blockers; independent M10 verdict is now PASS / ACCEPTED.
+**Spec/ADR deviations:** none; no source/schema change and no live-gate promotion.
+**Git commit:** this docs-only acceptance receipt commit follows.
+**Next action:** receipt push and exact-head CI; PR build/m10→main; merge commit and merged-main CI; annotated v0.11-m10 to exact merged SHA; no build/m11. Then stop. No deployment/SSH/Hetzner/Hermes interaction.

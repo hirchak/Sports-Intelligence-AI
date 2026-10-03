@@ -13,7 +13,8 @@ D. DEPLOYMENT GATE READY — all required local/live/independent-review/known-go
 
 A/B do not imply C/D. Every gate is PASS, FAIL, NOT_VERIFIED or NOT_APPLICABLE, with command/evidence,
 date, commit and limitation. Implementation-agent security work never marks independent audit PASS.
-Missing runtime LLM/odds credentials, failed sports smoke or missing independent review remain explicit.
+M10 independent review is PASS / ACCEPTED. Missing runtime LLM/odds credentials and the failed sports smoke
+remain live blockers; the deployment gate is NOT READY.
 
 ## v1 operational limits
 
@@ -31,4 +32,4 @@ Missing runtime LLM/odds credentials, failed sports smoke or missing independent
 
 README/LOCAL_DEVELOPMENT recreate the system without chat history. OPERATIONS and BACKUP_RESTORE
 cover start/stop/restart/health/queue/failures/quotas/data/secrets/rollback. SECURITY records implementation
-findings; independent review owns acceptance. Main/tag stay accepted M9 while build/m10 is handed off.
+findings; M10 was independently accepted PASS / ACCEPTED. Main and v0.10-m9 stay unchanged until the authorized M10 merge/tag closeout.

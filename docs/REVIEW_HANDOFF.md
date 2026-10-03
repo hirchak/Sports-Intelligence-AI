@@ -1,8 +1,9 @@
-# M10 independent-review handoff — implementation/local acceptance verified
+# M10 release closeout — independent implementation review PASS / ACCEPTED
 
-**Branch:** build/m10. **Verified implementation:** `e137f4b5bfd19f1074644682cea49ee5932a0094`.
-**Exact source CI:** [37082136185](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37082136185),
-all three jobs SUCCESS. Final subsequent delivery is documentation/evidence only. Resolve canonical delivery:
+**Branch:** build/m10. **Accepted review HEAD:** `76a221afbf06aeba464bbddbcfca315cf9b276d8`.
+**Independent verdict:** M10 implementation / local acceptance = **PASS / ACCEPTED**, supplied by the owner.
+**Exact accepted CI:** [37083328438](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37083328438), all three jobs SUCCESS.
+M10 acceptance receipt is docs-only. Resolve its pushed head and exact CI with:
 
 ```bash
 git rev-parse origin/build/m10
@@ -10,9 +11,8 @@ gh run list --branch build/m10 --json databaseId,headSha,status,conclusion
 gh run view <run-matching-exact-remote-head> --json headSha,status,conclusion,jobs
 ```
 
-Final exact delivery SHA/run is returned in the handoff after all jobs succeed; GitHub stores that immutable
-run receipt. Source/evidence identities here are pinned without a self-referencing commit/CI loop.
-**M10 NOT independently accepted, merged or tagged. DEPLOYMENT GATE NOT READY.**
+Independent M10 review is PASS / ACCEPTED. PR/merge/annotated-tag closeout remains in progress.
+Preserve every documented NOT_VERIFIED live gate. **DEPLOYMENT GATE NOT READY.** No M11.
 
 ## M9 closeout / base authority
 
@@ -45,7 +45,7 @@ Initial origin/build/m10 == origin/main == tag peeled verified. Main/M9 tag stay
     Search1 real query on explicit recorded fixture:1 doc/0 claims/fresh-repeat0; no forecast-quality claim.
     Telegram getMe+1 allowlisted message acknowledged; transport proof, not human receipt/full live commands.
 15. No active local credentials found in3 raw/normalized live records; heuristic reachable-history/working scan PASS.
-    This implementation security pass is not the independent audit; that status remains NOT_VERIFIED.
+    The owner-supplied independent M10 verdict is PASS / ACCEPTED; the live and deployment gates remain separate.
 
 ## Evidence and limitations
 
@@ -54,8 +54,8 @@ Current implementation evidence: final-e2e-backup, final-runtime-resources, fina
 final-command-receipts and final-source-ci JSONs under docs/evidence. Earlier eaa/d6/2959 evidence and
 red verification remain preserved. Historical accepted/failed M9 reviews remain in AI_WORKLOG/history.
 
-Required live sports, real odds/LLM routes/credentials and independent M10 review remain unverified;
+Required live sports, real odds/LLM routes/credentials remain unverified;
 deployment gate NOT READY. Interrupted unknown paid calls/lost broker dispatch need manual inspection/
 explicit rerun; Redis reservation loss/conservative aborted lookup counts are explicit. Mock quality,
 profitability, complete human/live-command receipt, empirical multi-day operation and target sizing are
-not established. No M11 or deployment/SSH/Hetzner/Hermes interaction. **STOP for independent review.**
+not established. No M11 or deployment/SSH/Hetzner/Hermes interaction. After the tagged merge-main receipt is verified, STOP.

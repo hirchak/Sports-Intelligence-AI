@@ -1,6 +1,6 @@
 # Pipelines
 
-M0–M9 independently accepted. LOCAL DEVELOPMENT ONLY; schedules are opt-in.
+M0–M10 independently accepted. LOCAL DEVELOPMENT ONLY; schedules are opt-in.
 
 ## Automatic-first path
 

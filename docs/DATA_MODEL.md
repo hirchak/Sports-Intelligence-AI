@@ -1,6 +1,6 @@
 # Data Model
 
-Status: **M0–M9 independently accepted** — migrations 0001–0014. M10 adds no schema migration.
+Status: **M0–M10 independently accepted** — migrations 0001–0014. M10 adds no schema migration.
 Authoritative design: `10_DATABASE_AND_DATA_LIFECYCLE.md`.
 
 ## Principles (from spec)

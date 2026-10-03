@@ -1,6 +1,6 @@
 # Telegram
 
-Status: **M0–M9 independently accepted** — private thin control plane with prediction, results,
+Status: **M0–M10 independently accepted** — private thin control plane with prediction, results,
 stats, experiments and improvement screens. M10 verifies local test transport and operational safety.
 Authoritative design: `07_TELEGRAM_BOT_SPEC.md`.
 

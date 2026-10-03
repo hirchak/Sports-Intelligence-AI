@@ -1,6 +1,6 @@
 # Architecture
 
-M0–M9 independently accepted; M10 adds local operational readiness. LOCAL DEVELOPMENT ONLY.
+M0–M10 independently accepted. LOCAL DEVELOPMENT ONLY; deployment gate NOT READY for live integrations.
 
 ```text
 Telegram UI → private FastAPI/control → deterministic Celery/Beat planner
