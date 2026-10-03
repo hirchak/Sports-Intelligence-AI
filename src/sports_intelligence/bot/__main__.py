@@ -18,7 +18,8 @@ async def run() -> None:
         logger.error("TELEGRAM_BOT_TOKEN is not configured; refusing to start")
         raise SystemExit(1)
     if not settings.telegram_allowed_user_ids:
-        logger.warning("TELEGRAM_ALLOWED_USER_IDS is empty; every user will be denied")
+        logger.error("TELEGRAM_ALLOWED_USER_IDS is empty; refusing to start")
+        raise SystemExit(1)
     async with BackendClient(settings.bot_backend_base_url) as backend:
         bot, dispatcher = build_application(settings, backend)
         logger.info("telegram bot starting (long polling)")

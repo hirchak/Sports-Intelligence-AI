@@ -11,7 +11,7 @@ help:
 	@echo "  telegram-up     - start the stack with the telegram bot profile"
 	@echo "  telegram-down   - stop the telegram bot service"
 	@echo "  telegram-logs   - follow telegram bot logs"
-	@echo "  bootstrap       - create .env if missing, start postgres + redis"
+	@echo "  bootstrap       - locked install, build, migrate, seed, start, health checks"
 	@echo "  migrate         - run alembic migrations inside the api container"
 	@echo "  test            - run pytest (unit, no external services)"
 	@echo "  test-integration- run pytest integration tests (needs local services)"
@@ -48,8 +48,7 @@ telegram-logs:
 	docker compose logs -f sports-telegram
 
 bootstrap:
-	@test -f .env || cp .env.example .env
-	docker compose up -d sports-postgres sports-redis
+	bash scripts/bootstrap.sh
 
 migrate:
 	docker compose run --rm sports-api alembic upgrade head
@@ -81,3 +80,16 @@ lock:
 	uv lock
 
 check: lint typecheck test
+
+.PHONY: acceptance-mock backup-verify security-check compose-safety
+acceptance-mock:
+	uv run pytest -q tests/integration/test_m10_acceptance.py
+
+backup-verify:
+	uv run python scripts/backup_restore.py --project $(or $(COMPOSE_PROJECT_NAME),sports-intel) --database $(or $(BACKUP_DATABASE),sports_intel)
+
+security-check:
+	uv run python scripts/security_check.py
+
+compose-safety:
+	uv run python scripts/compose_safety.py

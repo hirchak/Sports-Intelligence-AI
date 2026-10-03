@@ -1,148 +1,81 @@
 # Sports Intelligence AI
 
-Private football forecasting platform: modular, reproducible, measurement-first.
+Private football forecasting laboratory, with reproducible evidence and deterministic measurement.
+**LOCAL DEVELOPMENT ONLY. No deployment, server access or Hermes interaction is authorized.**
 
-Current phase: **LOCAL DEVELOPMENT ONLY** (no server deployment, no Hermes dependency).
+M0–M10 independently accepted. M9: PR #11, main `03789b7b7b4af2179271a7797faa754d48ad0d0`,
+annotated `v0.10-m9`. M10 / local acceptance: PASS / ACCEPTED on HEAD
+`76a221afbf06aeba464bbddbcfca315cf9b276d8`, CI `37083328438`. Its release closeout is in progress.
+Deployment gate remains **NOT READY** because the live gates remain NOT_VERIFIED. Current authority:
+[IMPLEMENTATION_STATUS](docs/IMPLEMENTATION_STATUS.md).
 
-## Status
+## Bootstrap from repository sources
 
-- Milestones M0–M8 accepted; **M9 implemented and verified, awaiting independent review** (`build/m9`).
-- See `docs/IMPLEMENTATION_STATUS.md` for the canonical state.
-
-## What this is
-
-A forecasting laboratory, not a "chatbot that guesses scores":
-
-- raw data is separated from interpretation;
-- deterministic features are separated from LLM reasoning;
-- market odds are separated from model probabilities;
-- every prediction is timestamped and reproducible;
-- accuracy is evaluated honestly (Brier, log loss, calibration);
-- the system can abstain when data quality is insufficient.
-
-Authoritative specifications live in the repository root (`00_MASTER_TECHNICAL_SPEC.md`,
-`07_…`–`18_…`). See `README_EXECUTION_ORDER.md` for the document map.
-
-## Repository layout
-
-```text
-src/sports_intelligence/   application code (src layout)
-  api/                     FastAPI (/health, /ready, /v1/fixtures, /v1/jobs)
-  core/                    config, logging, time, ids, league config, job status
-  db/                      engine/session, models, repositories, migrations
-  providers/               typed DTOs, API-Football + mock adapters, errors
-  workers/                 Celery app, queues, tasks (control + sports)
-  pipelines/               fixture discovery service, job helpers
-  schemas/                 Pydantic request/response models
-  bot/ domain/ features/ research/ ranking/
-                           reserved packages for future milestones
-tests/                     unit / integration / contract / fixtures
-docs/                      architecture, ADRs, dev/deploy/security docs
-config/                    league configuration (YAML)
-prompts/                   versioned LLM prompts (future milestones)
-```
-
-## Quick start
-
-Prerequisites: Docker (with Compose), `uv`.
+Prerequisites: local Docker Desktop/Engine with Compose >=2.24.4, `uv`, Git.
 
 ```bash
-git clone git@github.com:hirchak/Sports-Intelligence-AI.git sports-intelligence
+git clone https://github.com/hirchak/Sports-Intelligence-AI.git sports-intelligence
 cd sports-intelligence
-cp .env.example .env                 # safe MOCK defaults, no real keys needed
-docker compose up -d --build         # postgres + redis + api
-curl http://127.0.0.1:8000/health    # -> {"status": "ok", ...}
-curl http://127.0.0.1:8000/ready     # -> 200 when DB+Redis are up
+cp .env.example .env
+make bootstrap
 ```
 
-Alternatively: `make bootstrap && make up`.
-
-The stack: API, Postgres 16, Redis 7, Celery worker, Celery beat.
-
-Host-side ports (loopback only): Postgres 5433, Redis 6380, API 8000.
-
-Celery queues (per agent catalog): `control`, `sports_io`, `research_io`,
-`llm`, `evaluation`, `notifications`.
-
-M2: fixture discovery via API-Football (`SPORTS_PROVIDER=api_football` +
-`SPORTS_API_KEY`) or offline mock provider (default). See
-`docs/LOCAL_DEVELOPMENT.md`.
-
-## Local development
+`make bootstrap` installs locked dependencies, builds production images serially, starts fresh or existing
+PostgreSQL/Redis, upgrades Alembic to head, seeds configured leagues, starts API/worker/beat, verifies
+`/health` and `/ready`, and validates the optional Telegram profile. Existing env/volumes are preserved.
+The default MOCK config requires no credentials; schedules and live experiments are disabled.
+Leagues default disabled to conserve quota; use `LEAGUES_CONFIG_PATH=config/leagues.mock.yaml` for demo discovery.
 
 ```bash
-uv sync --dev                # install locked dependencies
-make check                   # ruff + mypy + pytest (unit)
-make test-integration        # pytest integration (needs running services)
-make migrate                 # alembic upgrade head (inside api container)
-make dev                     # stack up + follow api logs
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/ready
+make down                 # preserves volumes
+make up                   # builds/starts the local stack
 ```
 
-Dev mode with hot reload:
+Ports bind loopback: API 8000, PostgreSQL 5433, Redis 6380. Change `API_PORT`, `POSTGRES_PORT`,
+`REDIS_PORT` and corresponding host URLs in your local env when running another project.
+See [LOCAL_DEVELOPMENT](docs/LOCAL_DEVELOPMENT.md) for isolated acceptance and Telegram setup.
+
+## Verification
 
 ```bash
-docker compose -f compose.yaml -f compose.dev.yaml up --build
+make check                # Ruff, format, mypy, unit
+make test-integration     # dedicated *_test PostgreSQL, Redis15
+make acceptance-mock      # supply TEST_DATABASE_URL / TEST_REDIS_URL, both isolated
+make security-check       # heuristic history/known-secret sanity, no values printed
+make compose-safety       # production-like private topology, no containers started
+make backup-verify        # native compressed dump + disposable restore verification
 ```
 
-See `docs/LOCAL_DEVELOPMENT.md` for details.
+Full keyless v1 acceptance includes discovery, sports/odds/research, data quality/features/context,
+MockLLM, all probabilities and ranking, Telegram test transport, results, settlement, evaluation,
+frozen M9 replay and a human-gated proposal. External HTTP transport is explicitly forbidden in that test.
+Test integrations never imply live provider acceptance or forecasting quality.
 
-## Runtime modes
+## Runtime and layout
 
-| Mode         | Purpose                        | External keys required |
-|--------------|--------------------------------|------------------------|
-| `mock`       | offline, deterministic, CI     | none                   |
-| `sandbox`    | real APIs, limited fixtures    | yes                    |
-| `live_local` | full local scheduler           | yes                    |
+- `src/sports_intelligence/api`, `bot`: private control plane and thin allowlisted Russian Telegram UI.
+- `collectors`, `providers`, `research`: batching/freshness/coalescing/quota, normalized immutable evidence.
+- `features`, `quality`, `context`: deterministic, point-in-time MatchContext with source/hash identities.
+- `predictions`, `ranking`: configurable routes, bounded retries/repair/budgets; math outside the LLM.
+- `evaluation`, `experiments`: deterministic result truth/measurement, frozen replay, proposal-only improvement.
+- `db`, `workers`: PostgreSQL/Alembic, Redis/Celery/Beat; six named queues.
+- `scripts`, `config`, `prompts`, `tests`, `docs`: reproducible operations and versioned contracts.
 
-Set via `APP_ENV`. In non-mock modes, startup fails fast if a configured
-provider has no API key.
-
-## Testing / quality gates
-
-```bash
-uv run pytest -q -m "not integration"   # unit tests
-uv run pytest -q -m integration         # DB/Redis tests (services required)
-uv run ruff check .                     # lint
-uv run ruff format --check .
-uv run mypy src                         # strict type checking
-```
-
-CI runs the same gates on every push/PR (`.github/workflows/ci.yml`).
+`APP_ENV=mock` is keyless. `sandbox`/`live_local` require configured provider credentials and reject
+implicit mock substitution. Secrets stay in ignored local env files. The API is private and has no
+public authentication platform; do not publish it. Telegram requires a token and positive user-ID allowlist.
+Production-like topology removes host ports; `PRODUCTION_LIKE=true` refuses DEBUG and hides OpenAPI.
 
 ## Documentation
 
-- `docs/ARCHITECTURE.md` — boundaries and data flow
-- `docs/LOCAL_DEVELOPMENT.md` — local workflow details
-- `docs/DATA_MODEL.md` — database plan (models arrive in M1)
-- `docs/PIPELINES.md` — pipeline plan (implementation arrives M2+)
-- `docs/TELEGRAM.md` — private bot UI
-- `docs/PREDICTIONS.md` — M7 providers, probabilities, ranking, API and local acceptance
-- `docs/DEPLOYMENT.md` — deployment status (NOT authorized yet)
-- `docs/SECURITY.md` — security requirements
-- `docs/adr/` — architecture decision records
+- [ARCHITECTURE](docs/ARCHITECTURE.md), [DATA_MODEL](docs/DATA_MODEL.md), [PIPELINES](docs/PIPELINES.md)
+- [TELEGRAM](docs/TELEGRAM.md), [PREDICTIONS](docs/PREDICTIONS.md), [EVALUATION](docs/EVALUATION.md), [EXPERIMENTS](docs/EXPERIMENTS.md)
+- [OPERATIONS](docs/OPERATIONS.md), [BACKUP_RESTORE](docs/BACKUP_RESTORE.md), [SECURITY](docs/SECURITY.md)
+- [PRODUCTION_READINESS](docs/PRODUCTION_READINESS.md), [M10 acceptance](docs/M10_ACCEPTANCE_REPORT.md)
+- [DEPLOYMENT](docs/DEPLOYMENT.md): future only, explicit owner authorization required
+- [ADRs](docs/adr/), [specification map](README_EXECUTION_ORDER.md), [binding M10 scope](docs/M10_SCOPE.md)
 
-## Milestones
-
-M0 → M1 core infra → M2 sports provider/fixtures →
-M3 Telegram → M4 match collection → M5 research → M6 features/context →
-M7 prediction → M8 settlement/evaluation → M9 improvements/experiments →
-M10 production readiness. M0–M6 accepted; M7 awaits independent review. See `00_MASTER_TECHNICAL_SPEC.md` §36.
-
-## Rules for AI agents
-
-Read `AGENTS.md` before any session. State files:
-`docs/IMPLEMENTATION_STATUS.md`, `docs/CURRENT_TASK.md`, `docs/AI_WORKLOG.md`,
-`docs/REVIEW_HANDOFF.md`.
-
-## M8 result truth and measurement
-
-Implemented local post-match flow and methodology: [EVALUATION.md](docs/EVALUATION.md).
-Result scans are opt-in (`RESULT_SCAN_ENABLED=false` default); no deployment or M9.
-API `/v1/results`, `/v1/jobs/evaluate`, `/v1/evaluations/summary`; Telegram `/stats`, `/results`, `/evaluate`.
-
-## M9 controlled experiments and proposals
-
-Frozen historical replay, paired model/prompt/variant comparison using M8 measurements, bounded
-proposal-only analyst and human experiment authorization. [EXPERIMENTS.md](docs/EXPERIMENTS.md)
-contains CLI examples, internal API, schema, replay authority and limitations. Defaults are MOCK-only;
-no automatic production mutation or deployment. Current gate/review state: [REVIEW_HANDOFF.md](docs/REVIEW_HANDOFF.md).
+Read `AGENTS.md` and current state/task/handoff before coding. Historical review failures and delivery
+receipts remain in the append-only [AI_WORKLOG](docs/AI_WORKLOG.md) and clearly marked history snapshots.

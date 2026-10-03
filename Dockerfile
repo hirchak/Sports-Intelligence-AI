@@ -7,7 +7,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.8.15 /uv /bin/uv
 
 WORKDIR /app
 
@@ -27,7 +27,7 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "sports_intelligence.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "sports_intelligence.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--no-proxy-headers"]
 
 FROM base AS development
 

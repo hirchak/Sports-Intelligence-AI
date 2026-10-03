@@ -31,3 +31,9 @@ logs/
 # Database dumps (never commit runtime data)
 *.sql
 *.dump
+
+# M10 backup archives and local operational artifacts
+*.sql.gz
+*.backup
+backups/
+.acceptance/

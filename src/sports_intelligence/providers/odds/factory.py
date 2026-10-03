@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
-from datetime import datetime
+from collections.abc import Awaitable, Callable, Sequence
+from contextvars import ContextVar
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -23,6 +24,7 @@ from sports_intelligence.providers.odds.mock import EventNotFoundError
 from sports_intelligence.providers.odds.parse import parse_event_odds_payload, parse_odds_response
 
 logger = logging.getLogger(__name__)
+EventObserver = Callable[[datetime, httpx.Response | None, BaseException | None], Awaitable[None]]
 
 _ODDS_HEADER_NAMES = ("x-requests-remaining", "x-requests-used", "x-requests-last")
 
@@ -80,9 +82,20 @@ class TheOddsApiProvider:
         self._backoff_seconds = backoff_seconds
         self._client = client or httpx.AsyncClient(timeout=timeout_seconds)
         self._owns_client = client is None
+        self._event_observer: ContextVar[EventObserver | None] = ContextVar(
+            "odds_event_observer", default=None
+        )
         # Always silence httpx logging: even with an injected client the
         # apiKey appears in the URL query string.
         _silence_httpx_info()
+
+    @property
+    def event_observer(self) -> EventObserver | None:
+        return self._event_observer.get()
+
+    @event_observer.setter
+    def event_observer(self, value: EventObserver | None) -> None:
+        self._event_observer.set(value)
 
     async def aclose(self) -> None:
         if self._owns_client:
@@ -259,6 +272,19 @@ class TheOddsApiProvider:
         return payload, headers
 
     async def _single_get(self, path: str, params: dict[str, str]) -> httpx.Response:
+        observer = self.event_observer if path.endswith("/events") else None
+        started = datetime.now(UTC)
+        try:
+            response = await self._single_get_unobserved(path, params)
+        except Exception as exc:
+            if observer is not None:
+                await observer(started, None, exc)
+            raise
+        if observer is not None:
+            await observer(started, response, None)
+        return response
+
+    async def _single_get_unobserved(self, path: str, params: dict[str, str]) -> httpx.Response:
         merged = {"apiKey": self._api_key, **params}
         try:
             response = await self._client.get(f"{self._base_url}{path}", params=merged)
@@ -330,5 +356,7 @@ def build_odds_provider(settings: Any) -> Any:
         return TheOddsApiProvider(
             api_key=settings.odds_api_key,
             base_url=settings.odds_provider_base_url,
+            # No hidden retry under one quota reservation/ledger record.
+            max_attempts=1,
         )
     raise ProviderConfigError(f"unknown ODDS_PROVIDER {name!r}; supported: mock, the_odds_api")

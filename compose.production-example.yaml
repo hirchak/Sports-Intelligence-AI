@@ -1,0 +1,29 @@
+# Future private topology; LOCAL validation only, never deployment authority.
+# Compose >=2.24.4. Never combine this file with compose.dev.yaml.
+services:
+  sports-postgres:
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a dedicated database password}
+  sports-redis:
+    ports: !reset []
+  sports-api:
+    build:
+      target: production
+    command: ["uvicorn", "sports_intelligence.api.app:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log", "--no-proxy-headers"]
+    ports: !reset []
+    environment:
+      PRODUCTION_LIKE: "true"
+      LOG_LEVEL: INFO
+  sports-worker:
+    environment:
+      PRODUCTION_LIKE: "true"
+      LOG_LEVEL: INFO
+  sports-beat:
+    environment:
+      PRODUCTION_LIKE: "true"
+      LOG_LEVEL: INFO
+  sports-telegram:
+    environment:
+      PRODUCTION_LIKE: "true"
+      LOG_LEVEL: INFO

@@ -7,9 +7,30 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any, TextIO
 
+from sports_intelligence.core.redaction import redact_payload
+
 LOG_CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar("sports_log_context", default=None)
 
-CONTEXT_FIELD_NAMES = ("correlation_id", "job_id", "fixture_id", "prediction_run_id")
+CONTEXT_FIELD_NAMES = (
+    "correlation_id",
+    "job_id",
+    "fixture_id",
+    "prediction_run_id",
+    "experiment_run_id",
+    "task_id",
+    "task_name",
+    "status",
+    "duration_ms",
+    "error_class",
+    "provider",
+    "model",
+    "input_tokens",
+    "output_tokens",
+    "latency_ms",
+    "method",
+    "path",
+    "status_code",
+)
 
 
 def _current_context() -> dict[str, Any]:
@@ -37,7 +58,7 @@ class JsonFormatter(logging.Formatter):
                 payload[field_name] = value
         if record.exc_info is not None:
             payload["exc_info"] = self.formatException(record.exc_info)
-        return json.dumps(payload, ensure_ascii=False, default=str)
+        return json.dumps(redact_payload(payload), ensure_ascii=False, default=str)
 
 
 def setup_logging(level: str = "INFO", stream: TextIO | None = None) -> None:

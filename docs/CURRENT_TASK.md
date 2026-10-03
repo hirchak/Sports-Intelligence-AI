@@ -1,19 +1,12 @@
-# M9 acceptance receipt — PASS / ACCEPTED
+# Current Task — finalize independently accepted M10
 
-Date: 2026-10-03 (Europe/Warsaw). Independent verdict supplied by the owner:
-**M9 / M9 review-fix = PASS / ACCEPTED**.
-Accepted review HEAD: `354c8f5ff27fe5427313a459937c17054073f36a`.
-Exact accepted CI: [37061920047](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37061920047),
-all three jobs SUCCESS (verified live). Accepted M8 main: `490227ac8e27ca4c8870891277fd8783d8a7f1af` / `v0.9-m8`.
+**Task:** Close out accepted Milestone M10 through PR, merge CI, and annotated release tag.
+**Independent verdict:** M10 implementation / local acceptance = **PASS / ACCEPTED** (owner supplied).
+**Accepted review HEAD:** `76a221afbf06aeba464bbddbcfca315cf9b276d8`.
+**Exact accepted CI:** [37083328438](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37083328438); all 3 jobs SUCCESS.
+**Branch:** `build/m10`. **State at acceptance:** main/M9 tag `03789b7b7b4af2179271a7797faa754d48ad0d0d`; M9 annotated tag `v0.10-m9`.
 
-Authorized closeout: docs receipt → exact-head CI → PR build/m9 to main → merge commit →
-merged-main CI → annotated v0.10-m9 → build/m10 from that exact SHA.
-M10 source changes may start only after origin/build/m10 == origin/main == v0.10-m9^{}.
-M10 then stops for independent review, unmerged and untagged. LOCAL DEVELOPMENT ONLY;
-no deployment, SSH, Hetzner or Hermes interaction. Historical review failures/receipts below
-are preserved and their pending-review wording is superseded by this acceptance receipt.
+Binding M10 scope and verified gates remain in [M10_SCOPE](M10_SCOPE.md) and [M10_ACCEPTANCE_REPORT](M10_ACCEPTANCE_REPORT.md).
+Live sports, odds, and real runtime LLM remain **NOT_VERIFIED**; deployment gate stays **NOT READY**. Preserve the reasons and limitations as recorded. Do not create `build/m11`.
 
----
-
-Current task: finalize accepted M9 using the exact procedure above, then implement the owner binding M10 scope.
-No source changes before verified M9 closeout.
+Acceptance receipt is documentation only; it does not alter accepted implementation HEAD. Next: exact-head CI on receipt, PR `build/m10` → `main`, all PR checks, merge commit, all merged-main CI checks, annotated `v0.11-m10` verified to peel to that exact merge SHA. Record final release identities, then STOP. Zero deployment, Hetzner, SSH, or Hermes interaction.

@@ -12,11 +12,15 @@ SUPPORTED_PROVIDERS = ("mock", "api_football")
 def build_sports_provider(settings: Settings) -> SportsDataProvider:
     provider_name = settings.sports_provider
     if provider_name == "mock":
+        if not settings.is_mock_mode:
+            raise ProviderConfigError("Mock sports provider refused in non-mock environment")
         return MockSportsDataProvider()
     if provider_name == "api_football":
         return ApiFootballProvider(
             api_key=settings.sports_api_key,
             base_url=settings.api_football_base_url,
+            # Runtime quota/ledger covers one physical attempt. Retry through the job policy.
+            max_attempts=1,
         )
     raise ProviderConfigError(
         f"unknown SPORTS_PROVIDER {provider_name!r}; "

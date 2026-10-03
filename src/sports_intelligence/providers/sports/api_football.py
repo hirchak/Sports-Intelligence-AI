@@ -308,7 +308,7 @@ class ApiFootballProvider:
             raise ProviderResponseError("api-football returned a non-object payload")
         errors = payload.get("errors")
         if errors:
-            raise ProviderResponseError(f"api-football reported errors: {errors!r}")
+            raise ProviderResponseError("api-football reported an API error")
         return payload
 
 

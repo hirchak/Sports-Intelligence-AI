@@ -1,0 +1,53 @@
+{
+  "date": "2026-10-03",
+  "logs": {
+    "sports-m10-full-locked-source.log": {
+      "last_lines": [
+        "........................................................................ [ 94%]",
+        "..................................................................       [100%]",
+        "1146 passed in 73.44s (0:01:13)"
+      ],
+      "sha256": "2d09fa6a844fa6cba7fcb5063f61ffb436c2285dd01f762c854ad478e038d258"
+    },
+    "sports-m10-integration-locked.log": {
+      "last_lines": [
+        "............. [ 91%]",
+        ".....................                                                    [100%]",
+        "237 passed, 909 deselected in 70.83s (0:01:10)"
+      ],
+      "sha256": "68331998caa6827c81f4ac50fe70c3b2de3eb7eba0f2c4ae933a0653e98f5752"
+    },
+    "sports-m10-migrations.log": {
+      "last_lines": [
+        "INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.comments",
+        "INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.checkconstraint_byname",
+        "No new upgrade operations detected."
+      ],
+      "sha256": "726d1ad56a9602f71d03c5f319d1e7e7e04099830a552bf7fe789c7a45fbc4f1"
+    },
+    "sports-m10-review-bootstrap.log": {
+      "last_lines": [
+        " Container sports-m10-review-sports-redis-1 Healthy ",
+        " Container sports-m10-review-sports-api-1 Healthy ",
+        "health/ready PASS"
+      ],
+      "sha256": "25612680d547bd2cd4b59822a8ea2dd1acfd4180f5bc92aedff0e8abfddbdcf4"
+    },
+    "sports-m10-review-e2e-backup.log": {
+      "last_lines": [
+        ".                                                                        [100%]",
+        "1 passed in 22.46s"
+      ],
+      "sha256": "e712875d8a18c1ccec74bdbb7985a80817828fd53819ef75ad35c763b2baca0e"
+    },
+    "sports-m10-unit-locked.log": {
+      "last_lines": [
+        "........................................................................ [ 95%]",
+        ".............................................                            [100%]",
+        "909 passed, 237 deselected in 5.01s"
+      ],
+      "sha256": "72c3f996c44392d9e941a9a2eabc2ab37a039198480aead8e88c59e92b5f2ad0"
+    }
+  },
+  "source_commit": "e137f4b5bfd19f1074644682cea49ee5932a0094"
+}

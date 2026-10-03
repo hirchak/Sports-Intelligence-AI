@@ -1,7 +1,8 @@
 # M9 — controlled experiments, frozen replay and proposal-only improvement
 
 Scope: [M9_SCOPE.md](M9_SCOPE.md); design: [ADR 0012](adr/0012-m9-frozen-replay-and-human-proposals.md).
-LOCAL DEVELOPMENT ONLY. M9 delivery requires independent review; no M10, deployment or production promotion.
+LOCAL DEVELOPMENT ONLY. M9 independently PASS / ACCEPTED and tagged v0.10-m9.
+M10 readiness work does not authorize deployment or automatic production promotion.
 
 ## Architecture and persistence
 
@@ -148,7 +149,8 @@ PROMOTED/ROLLED_BACK endpoint is **human-recorded audit only**, returns `product
 No production prompt activation, config writing, routing change, threshold/feature mutation, code edit,
 Git merge or deployment operation exists in the analyst. Telegram has no promote action.
 
-Optional Monday 09:00 (configured app timezone) weekly scan is **disabled by default**. When enabled it
+Optional weekly scan (default Monday09:00, configured app timezone;
+IMPROVEMENT_SCHEDULE_DAY_OF_WEEK/HOUR/MINUTE) is **disabled by default**. When enabled it
 considers up to ten recent comparisons, deduplicates identical evidence, and cannot opt into live calls.
 No proposal notifications are sent; manual UI reads only. Schedule is infrastructure, not an activated run.
 

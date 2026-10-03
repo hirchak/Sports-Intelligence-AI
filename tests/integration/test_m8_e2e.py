@@ -36,7 +36,7 @@ pytestmark = [
 
 
 async def test_m8_full_keyless_result_worker_to_evaluation_api_telegram(
-    factory, service_settings, tmp_path, enqueued, monkeypatch
+    factory, service_settings, tmp_path, enqueued, monkeypatch, *, include_research=False
 ):
     """Real M2/M4/M6/M7 local services; synthetic providers, actual Postgres/Redis."""
     from datetime import UTC
@@ -97,7 +97,7 @@ async def test_m8_full_keyless_result_worker_to_evaluation_api_telegram(
     settings = service_settings.model_copy(
         update={
             "leagues_config_path": str(league_config),
-            "research_enabled": False,
+            "research_enabled": include_research,
             "sports_provider": provider_name,
         }
     )
@@ -161,11 +161,30 @@ async def test_m8_full_keyless_result_worker_to_evaluation_api_telegram(
             "odds",
             inputs={"fixture_id": fx.id, "markets": ["h2h", "double_chance", "totals", "btts"]},
         )
+        if include_research:
+            import sports_intelligence.collectors.research_collector  # noqa: F401
+            from sports_intelligence.providers.search.mock import MockSearchProvider
+
+            search = MockSearchProvider()
+            research_ctx = CollectorContext(
+                provider=search,
+                quota=quota,
+                locks=ctx.locks,
+                freshness=ctx.freshness,
+                session_factory=factory,
+                settings=settings,
+                redis=redis,
+            )
+            await run_collector(research_ctx, "research", inputs={"fixture_id": fx.id})
+            assert search.calls
+            calls_before = len(search.calls)
+            await run_collector(research_ctx, "research", inputs={"fixture_id": fx.id})
+            assert len(search.calls) == calls_before  # Freshness avoids repeated queries.
         as_of = datetime.now(UTC)
         build_policy = ContextBuildPolicy(
             quality_policy=build_quality_policy(settings),
             freshness_policy=FreshnessPolicy(settings),
-            research_enabled=False,
+            research_enabled=include_research,
         )
         async with factory() as session:
             rec, quality, _, context = await build_and_persist_match_context(
@@ -180,6 +199,8 @@ async def test_m8_full_keyless_result_worker_to_evaluation_api_telegram(
                 await session.get(FeatureSnapshot, rec.feature_snapshot_id)
             ).features_jsonb
         assert quality.can_predict and context.market_snapshot.prices
+        if include_research:
+            assert context.research_claims.claims
         with TestClient(create_app(settings)) as client:
             response = client.post(f"/v1/fixtures/{fx.id}/analyze", json={})
             assert response.status_code == 202

@@ -1,6 +1,7 @@
 name: sports-intel
 
 x-app-environment: &app-environment
+  PRODUCTION_LIKE: ${PRODUCTION_LIKE:-false}
   APP_ENV: ${APP_ENV:-mock}
   APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Warsaw}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
@@ -18,6 +19,12 @@ x-app-environment: &app-environment
   IMPROVEMENT_LIVE_ENABLED: ${IMPROVEMENT_LIVE_ENABLED:-false}
   IMPROVEMENT_MAX_CALLS_PER_DAY: ${IMPROVEMENT_MAX_CALLS_PER_DAY:-10}
 
+x-log-policy: &log-policy
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   sports-postgres:
     image: postgres:16-alpine
@@ -26,7 +33,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-sports_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-sports_intel}
     ports:
-      - "127.0.0.1:5433:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
     volumes:
       - sports_intel_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -34,12 +41,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    logging: *log-policy
     restart: unless-stopped
 
   sports-redis:
     image: redis:7-alpine
     ports:
-      - "127.0.0.1:6380:6379"
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
     volumes:
       - sports_intel_redisdata:/data
     healthcheck:
@@ -47,15 +55,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    logging: *log-policy
     restart: unless-stopped
 
   sports-api:
+    env_file:
+      - path: ${APP_ENV_FILE:-.env}
+        required: false
     build:
       context: .
       target: production
     environment: *app-environment
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
       sports-postgres:
         condition: service_healthy
@@ -73,9 +85,13 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    logging: *log-policy
     restart: unless-stopped
 
   sports-worker:
+    env_file:
+      - path: ${APP_ENV_FILE:-.env}
+        required: false
     build:
       context: .
       target: production
@@ -94,9 +110,13 @@ services:
         condition: service_healthy
       sports-redis:
         condition: service_healthy
+    logging: *log-policy
     restart: unless-stopped
 
   sports-beat:
+    env_file:
+      - path: ${APP_ENV_FILE:-.env}
+        required: false
     build:
       context: .
       target: production
@@ -115,9 +135,13 @@ services:
         condition: service_healthy
       sports-redis:
         condition: service_healthy
+    logging: *log-policy
     restart: unless-stopped
 
   sports-telegram:
+    env_file:
+      - path: ${APP_ENV_FILE:-.env}
+        required: false
     build:
       context: .
       target: production
@@ -131,6 +155,7 @@ services:
     depends_on:
       sports-api:
         condition: service_healthy
+    logging: *log-policy
     restart: unless-stopped
 
 volumes:

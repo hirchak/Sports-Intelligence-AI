@@ -5,6 +5,7 @@ from celery.schedules import crontab
 from kombu import Queue
 
 from sports_intelligence.core.config import Settings, get_settings
+from sports_intelligence.workers import observability  # noqa: F401
 
 QUEUE_NAMES = ("control", "sports_io", "research_io", "llm", "evaluation", "notifications")
 
@@ -57,7 +58,11 @@ def create_celery_app(settings: Settings) -> Celery:
     if settings.improvement_schedule_enabled:
         beat_schedule["improvements.weekly"] = {
             "task": "experiment.improvement_scan",
-            "schedule": crontab(day_of_week="mon", hour=9, minute=0),
+            "schedule": crontab(
+                day_of_week=settings.improvement_schedule_day_of_week,
+                hour=settings.improvement_schedule_hour,
+                minute=settings.improvement_schedule_minute,
+            ),
             "options": {"queue": "control"},
         }
 
@@ -103,6 +108,17 @@ def create_celery_app(settings: Settings) -> Celery:
             "sports_intelligence.workers.tasks.notifications.*": {"queue": "notifications"},
         },
         task_track_started=True,
+        worker_concurrency=settings.worker_concurrency,
+        worker_prefetch_multiplier=1,
+        broker_connection_max_retries=5,
+        broker_connection_timeout=3,
+        task_publish_retry_policy={
+            "max_retries": 2,
+            "interval_start": 0.2,
+            "interval_step": 0.2,
+            "interval_max": 1,
+        },
+        broker_transport_options={"socket_connect_timeout": 3, "socket_timeout": 5},
         broker_connection_retry_on_startup=True,
         beat_schedule=beat_schedule,
     )

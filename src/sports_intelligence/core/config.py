@@ -16,11 +16,14 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
         env_ignore_empty=True,
+        hide_input_in_errors=True,
     )
 
     app_env: AppEnv = "mock"
     app_timezone: str = "Europe/Warsaw"
     log_level: str = "INFO"
+    production_like: bool = False
+    worker_concurrency: int = Field(default=2, ge=1, le=16)
 
     database_url: str = (
         "postgresql+asyncpg://sports:sports_dev_password@localhost:5433/sports_intel"
@@ -29,16 +32,16 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://localhost:6380/0"
     celery_result_backend: str = "redis://localhost:6380/1"
 
-    telegram_bot_token: str = ""
+    telegram_bot_token: str = Field(default="", repr=False)
     telegram_allowed_user_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
     bot_backend_base_url: str = "http://localhost:8000"
 
     # --- M4: scheduler, freshness, quota, odds ---
     scheduler_enabled: bool = False
-    scheduler_discovery_morning_hour: int = 9
-    scheduler_discovery_morning_minute: int = 0
-    scheduler_discovery_refresh_hour: int = 13
-    scheduler_discovery_refresh_minute: int = 0
+    scheduler_discovery_morning_hour: int = Field(default=9, ge=0, le=23)
+    scheduler_discovery_morning_minute: int = Field(default=0, ge=0, le=59)
+    scheduler_discovery_refresh_hour: int = Field(default=13, ge=0, le=23)
+    scheduler_discovery_refresh_minute: int = Field(default=0, ge=0, le=59)
     scheduler_pre_match_scan_enabled: bool = False
     scheduler_pre_match_scan_cron: str = "*/15"
 
@@ -88,16 +91,16 @@ class Settings(BaseSettings):
     evaluation_default_days: int = Field(default=30, ge=1, le=3650)
 
     sports_provider: str = "mock"
-    sports_api_key: str = ""
+    sports_api_key: str = Field(default="", repr=False)
     api_football_base_url: str = "https://v3.football.api-sports.io"
     leagues_config_path: str = "config/leagues.yaml"
     odds_provider: str = ""
-    odds_api_key: str = ""
+    odds_api_key: str = Field(default="", repr=False)
     # Explicit intentional mock override for non-mock environments.
     # MOCK odds are NEVER used silently when credentials are missing.
     odds_allow_mock_override: bool = False
     search_provider: str = ""
-    search_api_key: str = ""
+    search_api_key: str = Field(default="", repr=False)
     research_enabled: bool = True
     research_allow_mock_override: bool = False
     research_max_queries_per_fixture: int = 6
@@ -126,6 +129,11 @@ class Settings(BaseSettings):
     experiment_live_enabled: bool = False
     improvement_prompt_path: str = "prompts/improvement/1.0.0.txt"
     improvement_schedule_enabled: bool = False
+    improvement_schedule_day_of_week: Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"] = (
+        "mon"
+    )
+    improvement_schedule_hour: int = Field(default=9, ge=0, le=23)
+    improvement_schedule_minute: int = Field(default=0, ge=0, le=59)
     improvement_live_enabled: bool = False
     improvement_max_calls_per_day: int = Field(default=10, ge=0, le=100)
 
@@ -184,6 +192,14 @@ class Settings(BaseSettings):
                 return []
             return [part.strip() for part in stripped.split(",") if part.strip()]
         return value
+
+    @model_validator(mode="after")
+    def validate_operational_safety(self) -> Settings:
+        if self.production_like and self.log_level.upper() == "DEBUG":
+            raise ValueError("PRODUCTION_LIKE forbids DEBUG logging")
+        if any(user_id <= 0 for user_id in self.telegram_allowed_user_ids):
+            raise ValueError("TELEGRAM_ALLOWED_USER_IDS requires positive user IDs")
+        return self
 
     @model_validator(mode="after")
     def validate_mode_requirements(self) -> Settings:

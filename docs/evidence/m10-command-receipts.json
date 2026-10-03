@@ -1,0 +1,42 @@
+{
+  "sports-m10-bootstrap.log": {
+    "last_lines": [
+      " Container sports-m10-clean-sports-redis-1 Healthy ",
+      " Container sports-m10-clean-sports-api-1 Healthy ",
+      "health/ready PASS"
+    ],
+    "sha256": "05d4ee0eb714768809659b9058370a1b15228da2eda8351c1bdba26f137405b8"
+  },
+  "sports-m10-full-final.log": {
+    "last_lines": [
+      "........................................................................ [ 95%]",
+      ".......................................................                  [100%]",
+      "1135 passed in 79.28s (0:01:19)"
+    ],
+    "sha256": "7039b8dd9b418eeee32fa2884429e4c9f05fbe7bccc38befc10b2e40dfdfa05e"
+  },
+  "sports-m10-integration-final.log": {
+    "last_lines": [
+      "............... [ 91%]",
+      "...................                                                      [100%]",
+      "235 passed, 900 deselected in 77.68s (0:01:17)"
+    ],
+    "sha256": "2f741fe95df3415e43c2f2e0265bb9dfa68f66a637854ef94027a3c97f7c1d46"
+  },
+  "sports-m10-migrations.log": {
+    "last_lines": [
+      "INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.comments",
+      "INFO  [alembic.runtime.plugins] setting up autogenerate plugin alembic.autogenerate.checkconstraint_byname",
+      "No new upgrade operations detected."
+    ],
+    "sha256": "726d1ad56a9602f71d03c5f319d1e7e7e04099830a552bf7fe789c7a45fbc4f1"
+  },
+  "sports-m10-unit-final.log": {
+    "last_lines": [
+      "........................................................................ [ 96%]",
+      "....................................                                     [100%]",
+      "900 passed, 235 deselected in 5.13s"
+    ],
+    "sha256": "82095c5d50c6bd906c070f0f841470d38d231cebf5997a7aba1e67dffafaba72"
+  }
+}

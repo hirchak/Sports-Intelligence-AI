@@ -2998,3 +2998,94 @@ deployment/Hetzner/Hermes or real LLM calls.
 **Spec/ADR deviations:** none; no source/schema changes.
 **Git commit:** docs-only receipt follows.
 **Next action:** exact docs CI, PR merge commit, main CI, annotated v0.10-m9, exact build/m10 base; then authorized local M10 only. No deployment/SSH/Hetzner/Hermes.
+
+
+### 2026-10-03 CEST — Codex (M9 finalized, M10 startup)
+
+**Milestone/task:** Accepted M9 closeout and explicitly authorized M10 Production Readiness.
+**Files changed:** binding M10_SCOPE, CURRENT_TASK, IMPLEMENTATION_STATUS, append-only AI_WORKLOG.
+**Behavior:** no M10 source yet; record exact release/base chain and review boundary.
+**Commands/tests:** docs CI 37070235725; PR #11 checks/CI 37070527662; gh pr merge --merge with exact-head guard; HTTPS fetch and main fast-forward; merged-main CI 37070774858; annotated tag/push; build/m10 creation/push; exact ref equality. Accepted-source local integration 233 PASS.
+**Results:** all CI jobs SUCCESS; main/base/peeled tag 03789b7b7b4af2179271a7797faa754d48ad0d0d; tag object 952356ed97ef8f47e7cdbd8a58a58cdbfc229c76.
+**Known problems:** M10 pending; old local service images are M3-era and will not serve as current acceptance evidence.
+**Spec/ADR deviations:** none; existing manual crash recovery preserved.
+**Git commit:** M9 acceptance receipt b0112a0dfb5328d8679526c17606805bd4bb9105; merge above.
+**Next action:** scoped M10 implementation and local isolated acceptance; STOP for independent review, no merge/tag M10 or M11/deployment/Hetzner/Hermes.
+
+
+### 2026-10-03 CEST — Codex (M10 operational implementation checkpoint)
+
+**Milestone/task:** M10 local operational hardening and deterministic acceptance.
+**Files changed:** config/redaction/logging/API/Celery telemetry, strict sports/bot startup, Compose/env/Docker/Make/CI, local bootstrap/backup/security/topology scripts, M10 tests and binding state.
+**Behavior:** runtime config reaches containers; private production-like override removes all host ports; log rotation/concurrency/prefetch/broker connection bounds; sensitive tracebacks redacted; HTTP correlation/task duration; no mock sports in non-mock; bot empty allowlist fails startup; no schema/math/prompt redesign. Full synthetic pipeline adds actual mock research and tests frozen truth through Redis loss.
+**Commands/tests:** Ruff/format/mypy171, focused security/startup/provider 16 PASS; unit900 PASS; full research→M9 E2E PASS; secret sanity 339 paths/1742 history objects/3 local credential fingerprints PASS; default/dev/Telegram/production Compose and private topology PASS.
+**Results:** focused implementation gates green; clean bootstrap/native restore/runtime recovery/resource/live gates and final full CI still pending.
+**Known problems:** interrupted paid calls require manual inspection/rerun; no live runtime LLM/odds key present.
+**Spec/ADR deviations:** reversible operational choices only; architecture and migration history unchanged.
+**Git commit:** operational checkpoint follows.
+**Next action:** reproduce from a clean local checkout; native restore, restarts, bounded measurements/smokes and full final gates; independent review STOP. No deployment/SSH/Hetzner/Hermes or M11.
+
+
+### 2026-10-03 CEST — Codex (M10 acceptance, fixture isolation and logger correction)
+
+**Milestone/task:** M10 complete local acceptance and final v1 operational documentation.
+**Files changed:** M10 fixture cleanup, Alembic logging config (no revision edits), bounded publish config, static provider API error, production API command, local runtime/live scripts, README/architecture/model/pipelines/Telegram/security/deploy/runbooks/readiness/matrix/evidence/history snapshots.
+**Behavior:** cleanup only disposable *_test prediction dependencies; migrations preserve existing loggers; secret-safe provider exception; actual queued API/worker/beat restart and Redis/Postgres outages preserve frozen truth; native compressed restore compares full-row inventories/hashes; bounded mock resource batch; explicit live sports/search/Telegram probes.
+**Commands/tests:** initial full 1084 PASS/50 setup ERROR/1 FAIL; fixed full 1135 PASS 79.28s; standalone 900 unit 5.13s/235 integration77.68s; Ruff/format258/mypy171; fresh local head/down -1/head/check; unchanged revisions0001–0014; all Compose/topology/diff; heuristic352 paths/1786 history objects/3 known-local credential fingerprints PASS.
+**Results:** initial FK cleanup error caused by new M10 test ordering and hidden logs from Alembic fileConfig fixed. Clean bootstrap2959f68 PASS. Native dump460915 bytes/restore tables+context/prediction/results/evaluations/M9 records PASS; temporary DB/archive cleaned. Actual queued restart/outage recovery PASS;12 synthetic jobs/144 probabilities1.12s, worker2; RAM/CPU/DB/Redis/log snapshots persisted. Sports one bounded real call →ProviderResponseError/NOT_VERIFIED; no fake raw/normalized pass. One real Tavily query →one document/zero claims/fresh-repeat zero ledger delta, explicit recorded fixture; PASS infrastructure only. Telegram getMe+one allowlisted test-message acknowledgement PASS transport only. Odds/real runtime LLM absent, zero such real calls.
+**Known problems:** final source/delivery CI/latest clean reproduction pending; live sports/odds/LLM, independent M10 review and empirical multi-day operation remain NOT_VERIFIED. Unknown paid-call/lost dispatch inspection/rerun explicit; no forecasts/quality/cost fabricated.
+**Spec/ADR deviations:** no forecasting/schema redesign; historical current-state snapshots archived with superseded labels, worklog preserved append-only.
+**Git commit:** checkpoint2959f68; scoped verification/source documentation commit follows.
+**Next action:** source push/exact CI, latest clean/populated no-op receipts, final docs-only handoff CI; STOP for independent M10 review. No merge/tag M10, M11/deployment/SSH/Hetzner/Hermes.
+
+
+### 2026-10-03T01:12:08+02:00 — Codex (M10 startup error privacy)
+
+**Milestone/task:** M10 final security edge: Pydantic errors before logging setup.
+**Files changed:** core/config.py, security regression, SECURITY finding S7, append-only worklog.
+**Behavior:** hide validated input values in Settings errors while retaining actionable failure reasons; no accepted-value/runtime/pipeline/schema/identity change.
+**Commands/tests:** focused security8 PASS; full keyless pytest1136 PASS82.29s (901 unit+235 integration); Ruff/format258/mypy171 PASS. Source eaaef78 CI37074324092 all three jobs SUCCESS; exact committed eaa clean bootstrap/E2E/backup/restart/outages PASS; populated M9 head/check preserves all50 table fingerprints and immutable identities.
+**Results:** startup errors cannot render credential-bearing input_value before log redaction starts. Final code CI for this narrow source delta still required.
+**Known problems:** live sports/odds/LLM and independent review remain NOT_VERIFIED; deployment NOT READY; no further live calls requested or performed.
+**Spec/ADR deviations:** no schema/forecast architecture/allowed config-value change.
+**Git commit:** privacy fix follows; previous verified operational source eaaef78bf0b83b5d4f48655cfc9a00436d2fb5e6.
+**Next action:** exact source CI, final receipts/docs delivery CI, temporary resource cleanup, independent M10 review STOP. No M10 merge/tag, M11/deployment/SSH/Hetzner/Hermes.
+
+
+### 2026-10-03T02:26:41+02:00 — Codex (M10 quota audit closure)
+
+**Milestone/task:** M10 existing request accounting and explicit schedule safety.
+**Files changed:** runtime sports/odds factories, odds transport observation/collector and narrow framework failure marker, config/calendar/redaction, focused tests and operational docs.
+**Behavior:** runtime single physical attempts prevent undercounted hidden retries; cold odds event HTTP gets separate metadata/cost-header ledger, task-local observers and no phantom paid-call entry on lookup failure. Pending paid reservation generation is preserved on event success. QuotaManager algorithms, normalization/forecasting/schema unchanged. Explicit weekly day/hour/minute preserve disabled Monday09 defaults; invalid calendar values fail; Redis empty-username URI credentials redacted.
+**Commands/tests:** focused16 unit PASS (6 timeout/429/503 runtime factory cases, concurrent observers, startup/URL/allowlist/schedule guards); focused4 integration PASS (full E2E/scheduler + cold lookup success/failure/cache ledgers). Full1146 PASS73.44s, no skips; standalone909 unit/237 integration pending confirmation; Ruff/format258/mypy171 PASS.
+**Results:** physically observed2 HTTP/2 ledger records for cold odds success, fresh repeat zero HTTP; lookup timeout1 HTTP/1 ledger with unknown actual cost, no paid fetch. No additional live calls. Existing source privacy d6f2a6d CI37076433571 all jobs SUCCESS; new exact source CI still required.
+**Known problems:** conservative reservation after aborted lookup; existing lost delivery/unknown paid-call recovery remains manual. Live sports/odds/LLM, multi-day empirical operation and independent audit NOT_VERIFIED, deployment NOT READY.
+**Spec/ADR deviations:** scoped operational retry/telemetry/config choices only, no new platform or forecasting architecture change; adapter public data interfaces and migrations preserved.
+**Git commit:** scoped accounting/source commit follows.
+**Next action:** final standalone/source CI, final latest runtime/receipt/docs-only CI and cleanup, then independent M10 review STOP. No M10 merge/tag/M11/deployment/SSH/Hetzner/Hermes.
+
+
+### 2026-10-03T02:44:28+02:00 — Codex (M10 final source verified / review handoff)
+
+**Milestone/task:** M10 implementation/local acceptance complete; independent-review STOP.
+**Files changed:** current/status/handoff/matrix/local retained-E2E command and sanitized final evidence; append-only worklog only. No source/test/config-value change after e137f4b.
+**Behavior:** exact final implementation/source CI pinned; distinguish implementation ready/local verified/live partial/deployment NOT READY. Preserve all historical red/pass evidence; final-* receipts authoritative; fix retained population instructions to select full E2E before other destructive fixtures. Temporary task-owned resources removed.
+**Commands/tests:** exact source CI37082136185 on e137f4b5bfd19f1074644682cea49ee5932a0094, all three jobs SUCCESS; local909 unit5.01s/237 integration70.83s/1146 full73.44s, zero skips; Ruff/format258/mypy171; default/dev/Telegram/production Compose/private topology; fresh head/down -1/head/check; populated final e137f4b head/check/all50 inventories unchanged; no model/revision changes versus M9; heuristic361 working paths/1874 history objects/3 active-local fingerprints PASS; diff PASS.
+**Results:** final committed-source clean bootstrap/new PG/Redis/locked install/migrate/seed/API/worker/beat/health/ready PASS; actual worker ping/uid10001/settings and rebuilt startup privacy PASS; full keyless E2E/native restore PASS (archive460779bytes, context SHA256 + all tables/prediction/results/evaluations/M9 identities); actual queued API/worker/beat restart, Redis/Postgres outages and unchanged forecast PASS;12 synthetic jobs/144 probabilities0.85s/concurrency2, DB15973399bytes/Redis1774376bytes/recent logs89784bytes, per-container CPU/RAM snapshots persisted. No more live calls: previous1 sports failed/API error; search1 genuine query/1doc/0claims/fresh repeat0; Telegram getMe+1 message acknowledged; odds/real LLM0calls.0 known-secret matches in3 live raw/normalized records.
+**Known problems:** live sports/odds/LLM, independent M10 review, complete live command/human receipt and multi-day empirical operation NOT_VERIFIED; unknown paid-call/lost-dispatch recovery manual; reservation after aborted lookup conservative; unknown money cost not fabricated; target sizing/security unverified. Deployment NOT READY.
+**Spec/ADR deviations:** no forecasting/schema redesign; supported adapter data interfaces, immutable authority and all migrations preserved.
+**Git commit:** verified source e137f4b5bfd19f1074644682cea49ee5932a0094; final docs-only delivery follows and its exact-head CI is required before completion. Main/v0.10-m9 peeled remains03789b7b7b4af2179271a7797faa754d48ad0d0d; tag object952356ed97ef8f47e7cdbd8a58a58cdbfc229c76.
+**Next action:** final docs push/exact-head all-job CI/clean-tree check, then STOP for independent M10 review only. M10 NOT merged/tagged, no M11, zero deployment/SSH/Hetzner/Hermes. All task-owned local stacks/volumes/test DB/worktrees and native restore temps cleaned; original local runtime/data preserved.
+
+
+### 2026-10-03T09:38:13+02:00 — Codex (owner-supplied independent M10 acceptance)
+
+**Milestone/task:** Finalize independently ACCEPTED M10 using the exact user-authorized PR/merge/tag sequence.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, M10_ACCEPTANCE_REPORT, README, append-only AI_WORKLOG.
+**Behavior:** Documentation-only acceptance receipt records M10 PASS / ACCEPTED on reviewed HEAD 76a221afbf06aeba464bbddbcfca315cf9b276d8; all NOT_VERIFIED live sports/odds/real-runtime-LLM gates remain unchanged; deployment stays NOT READY. Previous review failures and evidence remain historical.
+**Commands/tests:** inspected clean branch/ref/tag state; confirmed HEAD and origin/build/m10 = 76a221afbf06aeba464bbddbcfca315cf9b276d8, main/v0.10-m9^{} = 03789b7b7b4af2179271a7797faa754d48ad0d0d; verified annotated M9 tag object 952356ed97ef8f47e7cdbd8a58a58cdbfc229c76; fetched exact accepted CI 37083328438 from GitHub, all three jobs SUCCESS. No tests rerun or source changes.
+**Results:** M10 acceptance receipt prepared; source/local acceptance evidence remains exactly as previously verified.
+**Known problems:** live sports and odds/runtime-LLM remain NOT_VERIFIED deployment blockers; independent M10 verdict is now PASS / ACCEPTED.
+**Spec/ADR deviations:** none; no source/schema change and no live-gate promotion.
+**Git commit:** this docs-only acceptance receipt commit follows.
+**Next action:** receipt push and exact-head CI; PR build/m10→main; merge commit and merged-main CI; annotated v0.11-m10 to exact merged SHA; no build/m11. Then stop. No deployment/SSH/Hetzner/Hermes interaction.

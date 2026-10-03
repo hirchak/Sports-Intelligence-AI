@@ -1,173 +1,101 @@
 # Local Development
 
-## Prerequisites
+LOCAL DEVELOPMENT ONLY. Use a local Docker Unix socket. No remote Docker context/SSH/server operations.
+Prerequisites: Git, `uv`, Docker with Compose >=2.24.4. Python 3.12 is installed by uv.
 
-- Docker (with Compose v2)
-- `uv` (installs its own Python 3.12)
+## Bootstrap
 
-## One-time bootstrap
-
-```bash
-git clone git@github.com:hirchak/Sports-Intelligence-AI.git sports-intelligence
-cd sports-intelligence
-make bootstrap        # cp .env.example .env; start postgres + redis
-```
-
-`.env.example` is a working MOCK configuration: no external API keys required.
-
-## Starting the stack
+From a clean checkout, follow README: copy `.env.example` to `.env`, run `make bootstrap`.
+The script never overwrites an env file or deletes a volume. It performs locked install, serial builds,
+Postgres/Redis startup, `alembic upgrade head`, `scripts/seed_leagues.py`, API/worker/beat start, health and
+readiness probes and Telegram Compose validation. Serial build avoids the historical Desktop bake bug.
+The application env reaches all application containers; DB/broker URLs are overridden to Docker service DNS.
 
 ```bash
-make up               # docker compose up -d --build (api + postgres + redis + worker + beat)
-make logs             # follow api logs
-make logs-worker      # follow worker logs
-make logs-beat        # follow beat logs
-make down             # stop everything (volumes preserved)
+make up
+make migrate
+make seed
+make logs
+make logs-worker
+make logs-beat
+make down                      # volumes preserved
 ```
 
-Hot-reload development container (editable install + bind mount):
+No reset/drop/down -v is part of bootstrap. Preserve source/evidence before any explicitly approved reset.
+
+## Isolated readiness reproduction
+
+Use a disposable clean local checkout/worktree of the reviewed commit. Create `.env` from the example.
+Choose a separate project and unused loopback ports, for example:
 
 ```bash
-docker compose -f compose.yaml -f compose.dev.yaml up --build
+export COMPOSE_PROJECT_NAME=sports-m10-check
+export POSTGRES_DB=sports_intel_acceptance_test
+export POSTGRES_PORT=15433 REDIS_PORT=16380 API_PORT=18000
+make bootstrap
+export TEST_DATABASE_URL=postgresql+asyncpg://sports:sports_dev_password@localhost:15433/sports_intel_acceptance_test
+export TEST_REDIS_URL=redis://localhost:16380/15
+make acceptance-mock
 ```
 
-Troubleshooting note: on some Docker Desktop versions the combined
-multi-service bake build fails with a `x-docker-expose-session-sharedkey`
-gRPC error. Workaround — build services one at a time:
+These credentials are public MOCK development defaults, never production credentials. Host tools require
+host URLs matching the chosen ports; Compose uses internal service names. Create a **different** *_test DB
+for full destructive suites, keeping any retained runtime acceptance population separate:
 
 ```bash
-docker compose build sports-api
-docker compose build sports-worker
-docker compose build sports-beat
-docker compose up -d
+docker compose exec -T sports-postgres createdb -U sports sports_intel_full_test
+# Set TEST_DATABASE_URL to that database before full/integration pytest.
+uv run pytest -q -m 'not integration'
+uv run pytest -q -m integration
+uv run pytest -q
 ```
 
-## Celery
+Tests refuse non-*_test databases. Redis15 is disposable and must never be a live broker.
+Do not run overlapping integration suites against the same DB/Redis. M10's fixture cleans dependent
+prediction/experiment rows before older collector fixtures; optional `M10_KEEP_RUNTIME_DATA=1` explicitly
+retains the disposable acceptance population for runtime restart checks.
+
+Native restore during the complete E2E:
 
 ```bash
-docker compose logs sports-worker    # worker consumes all 6 queues
-docker compose logs sports-beat      # scheduler (no schedules in M1)
-
-# send the infrastructure ping task through the broker:
-docker compose exec sports-worker \
-  celery -A sports_intelligence.workers.celery_app call control.ping --args='["smoke"]'
+M10_BACKUP_PROJECT=sports-m10-check \
+M10_BACKUP_DATABASE=sports_intel_acceptance_test \
+APP_ENV_FILE=.env M10_REPORT_PATH=/tmp/sports-m10-e2e.json \
+M10_KEEP_RUNTIME_DATA=1 uv run pytest -q \
+  tests/integration/test_m10_acceptance.py::test_complete_v1_no_network_reproducible_redis_loss_and_restore
+uv run python scripts/runtime_acceptance.py --project sports-m10-check --env-file .env --base-url http://127.0.0.1:18000
 ```
 
-## Ports (loopback only)
+The runtime test allows mutations only of `sports-m10-*` projects on a local Unix socket and loopback API.
+It restarts API/worker/beat during queued prediction, tests Redis/Postgres outages, checks original truth,
+and measures twelve keyless mock reruns. It restores service availability on failure and never drops volumes.
 
-| Service  | Host port | Container port |
-|----------|-----------|----------------|
-| Postgres | 5433      | 5432           |
-| Redis    | 6380      | 6379           |
-| API      | 8000      | 8000           |
+## Modes and provider configuration
 
-## Health checks
+MOCK: configured mocks, no sports/search/LLM keys; optional actual Telegram uses its own explicit token.
+SANDBOX/LIVE_LOCAL: real configured providers, no automatic mock fallback. Empty optional search/odds
+means disabled. Model identities and physical-call budgets live in `config/llm.yaml`; preserve frozen routes.
+`config/leagues.yaml` starts disabled; mock demo has explicit provider mappings. Bump its version for semantic
+changes. `SPORTS_PROVIDER=api_football`, `ODDS_PROVIDER=the_odds_api`, `SEARCH_PROVIDER=tavily` require keys.
 
-```bash
-curl http://127.0.0.1:8000/health   # process alive
-curl http://127.0.0.1:8000/ready    # DB + Redis reachable (503 otherwise)
-```
+Scheduling is explicitly configurable: `SCHEDULER_ENABLED`, discovery hours/minutes,
+`SCHEDULER_PRE_MATCH_SCAN_ENABLED`, `PREDICTION_AUTO_ENABLED`, `RESULT_SCAN_ENABLED`,
+`IMPROVEMENT_SCHEDULE_ENABLED` and `IMPROVEMENT_SCHEDULE_DAY_OF_WEEK/HOUR/MINUTE`.
+All automatic gates are disabled by default; weekly default remains Monday09:00. Optional services degrade as documented
+in PIPELINES/PREDICTIONS/EVALUATION/EXPERIMENTS. Live experiments/analyst require their separate opt-ins.
 
-## Connection URLs
+## Telegram
 
-- Host-side (local tools): `DATABASE_URL` / `REDIS_URL` from `.env`
-  (point at localhost:5433 / localhost:6380).
-- Inside the api container they are overridden by `compose.yaml` to
-  `sports-postgres:5432` / `sports-redis:6379`.
+Use ignored env credentials, never chat-pasted keys. Set `TELEGRAM_BOT_TOKEN` and positive
+`TELEGRAM_ALLOWED_USER_IDS`; empty allowlist refuses startup and access middleware denies unknown users.
+`make telegram-up` starts long polling. Avoid running two polling instances with the same token.
+`docker compose --profile telegram config -q` validates topology without connecting to Telegram.
+Test transport needs no token/network. Live smoke is separate and requires explicit authorization.
 
-## Migrations
+## Development and checks
 
-```bash
-make migrate         # alembic upgrade head inside the api container
-```
-
-M1 ships migration `0001` (`jobs` + `job_attempts`, see ADR-0006). Applied
-to a fresh database, downgrade/upgrade is exercised in CI.
-
-## Fixture discovery (M2)
-
-Two provider modes (`SPORTS_PROVIDER` in `.env`):
-
-- `mock` (default): recorded, sanitized API-Football-shaped responses.
-  No API key. Demo config with a league enabled:
-  `config/leagues.mock.yaml`.
-- `api_football`: real API. Requires `SPORTS_API_KEY` in `.env`.
-
-Leagues are configured in YAML (`LEAGUES_CONFIG_PATH`, default
-`config/leagues.yaml` — all leagues disabled by default so no quota is
-spent accidentally). `provider_ids` are explicit per provider (`mock`
-and/or `api_football`); discovery resolves IDs only for the CURRENT
-provider and makes zero external calls when no enabled league exists.
-Seed league rows into the DB with `make seed`.
-
-Manual discovery (bounded: one API request per date):
-
-```bash
-curl -X POST http://127.0.0.1:8000/v1/jobs/discover \
-  -H "Content-Type: application/json" -d '{"date": "2026-08-21"}'
-curl "http://127.0.0.1:8000/v1/fixtures?date=2026-08-21"
-curl "http://127.0.0.1:8000/v1/fixtures?date=2026-08-21&league=premier-league"
-```
-
-The handler enqueues a Celery job (`sports.discover_fixtures` on
-`sports_io`); repeated POSTs for the same identity reuse the same job and
-do not enqueue again. Job identity per `09` spec:
-
-```text
-discover:{provider}:{date}:v{league_config_version}:{timezone}
-```
-
-Rule: any semantic change to `config/leagues.yaml` MUST bump `version`
-(the version is the canonical identity mechanism — never list enabled
-leagues in the key). Changing `APP_TIMEZONE` likewise creates a distinct
-discovery identity. There is no automatic schedule in M2 — quota is only
-spent when you explicitly POST a discovery job.
-
-## Quality gates
-
-```bash
-make check           # lint + typecheck + unit tests
-make test            # pytest unit (no external services)
-make test-integration  # pytest integration against the isolated test DB
-make lint            # ruff check + ruff format --check
-make format          # apply ruff formatting
-make typecheck       # mypy src
-```
-
-## Test database isolation
-
-Integration tests are destructive by design (the migration test runs
-`alembic downgrade base` + reapply). They must never touch the development
-database:
-
-- `make test-integration` auto-creates and uses the dedicated
-  `sports_intel_test` database on the local Postgres (and Redis db `15`).
-- `TEST_DATABASE_URL` must always point at a database whose name ends with
-  `_test`; a guard in `tests/helpers.py` refuses to run integration tests
-  against any other database (loud `RuntimeError`, not a silent skip).
-- The dev database `sports_intel` is never downgraded or dropped by tests.
-- CI uses its own ephemeral Postgres service container with
-  `sports_intel_test`, so nothing shared is touched there either.
-
-## Dependency management
-
-```bash
-make lock            # regenerate uv.lock after editing pyproject.toml
-```
-
-`uv.lock` is committed; CI installs with `uv sync --frozen`.
-
-## Runtime modes
-
-`APP_ENV=mock` (default) — offline, deterministic, no keys.
-`sandbox` / `live_local` — real APIs; startup fails if a configured provider
-has no key (see ADR-0004). Provider integrations arrive in M2+.
-
-## Troubleshooting
-
-- `docker compose config -q` — validate compose files.
-- `docker compose logs sports-postgres` — DB problems.
-- Port conflict: change host-side ports in `compose.yaml` (container ports
-  must stay standard).
-- Reset local state: `docker compose down -v` destroys volumes
-  (safe during M0/M1: no valuable data yet).
+`docker compose -f compose.yaml -f compose.dev.yaml up --build` enables local reload; never combine it
+with the production example. Run `make lint`, `make typecheck`, `make test`, `make security-check`.
+CI installs `uv sync --frozen --dev`, runs unit/integration/migrations and all Compose validations, keyless.
+Use `make lock` only when changing dependencies; commit `uv.lock`. API `/health` checks the process;
+`/ready` returns 503 if DB/Redis is unavailable. Queue checks/runbooks are in OPERATIONS.

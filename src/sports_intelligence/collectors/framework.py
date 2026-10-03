@@ -310,7 +310,7 @@ async def run_collector(
         try:
             result = await _do()
         except Exception as exc:
-            if not owns_quota:
+            if not owns_quota and not getattr(exc, "request_ledger_recorded", False):
                 await ctx.quota.record_failure(
                     provider=provider_name,
                     endpoint_category=name,
