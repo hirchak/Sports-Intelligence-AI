@@ -61,7 +61,8 @@ Native restore during the complete E2E:
 M10_BACKUP_PROJECT=sports-m10-check \
 M10_BACKUP_DATABASE=sports_intel_acceptance_test \
 APP_ENV_FILE=.env M10_REPORT_PATH=/tmp/sports-m10-e2e.json \
-M10_KEEP_RUNTIME_DATA=1 make acceptance-mock
+M10_KEEP_RUNTIME_DATA=1 uv run pytest -q \
+  tests/integration/test_m10_acceptance.py::test_complete_v1_no_network_reproducible_redis_loss_and_restore
 uv run python scripts/runtime_acceptance.py --project sports-m10-check --env-file .env --base-url http://127.0.0.1:18000
 ```
 
