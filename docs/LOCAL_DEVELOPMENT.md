@@ -79,7 +79,8 @@ changes. `SPORTS_PROVIDER=api_football`, `ODDS_PROVIDER=the_odds_api`, `SEARCH_P
 
 Scheduling is explicitly configurable: `SCHEDULER_ENABLED`, discovery hours/minutes,
 `SCHEDULER_PRE_MATCH_SCAN_ENABLED`, `PREDICTION_AUTO_ENABLED`, `RESULT_SCAN_ENABLED`,
-`IMPROVEMENT_SCHEDULE_ENABLED`. They are all disabled by default. Optional services degrade as documented
+`IMPROVEMENT_SCHEDULE_ENABLED` and `IMPROVEMENT_SCHEDULE_DAY_OF_WEEK/HOUR/MINUTE`.
+All automatic gates are disabled by default; weekly default remains Monday09:00. Optional services degrade as documented
 in PIPELINES/PREDICTIONS/EVALUATION/EXPERIMENTS. Live experiments/analyst require their separate opt-ins.
 
 ## Telegram

@@ -38,10 +38,10 @@ class Settings(BaseSettings):
 
     # --- M4: scheduler, freshness, quota, odds ---
     scheduler_enabled: bool = False
-    scheduler_discovery_morning_hour: int = 9
-    scheduler_discovery_morning_minute: int = 0
-    scheduler_discovery_refresh_hour: int = 13
-    scheduler_discovery_refresh_minute: int = 0
+    scheduler_discovery_morning_hour: int = Field(default=9, ge=0, le=23)
+    scheduler_discovery_morning_minute: int = Field(default=0, ge=0, le=59)
+    scheduler_discovery_refresh_hour: int = Field(default=13, ge=0, le=23)
+    scheduler_discovery_refresh_minute: int = Field(default=0, ge=0, le=59)
     scheduler_pre_match_scan_enabled: bool = False
     scheduler_pre_match_scan_cron: str = "*/15"
 
@@ -129,6 +129,11 @@ class Settings(BaseSettings):
     experiment_live_enabled: bool = False
     improvement_prompt_path: str = "prompts/improvement/1.0.0.txt"
     improvement_schedule_enabled: bool = False
+    improvement_schedule_day_of_week: Literal["mon", "tue", "wed", "thu", "fri", "sat", "sun"] = (
+        "mon"
+    )
+    improvement_schedule_hour: int = Field(default=9, ge=0, le=23)
+    improvement_schedule_minute: int = Field(default=0, ge=0, le=59)
     improvement_live_enabled: bool = False
     improvement_max_calls_per_day: int = Field(default=10, ge=0, le=100)
 

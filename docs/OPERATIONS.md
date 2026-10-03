@@ -75,3 +75,17 @@ history. This run does not rotate credentials or configure any remote schedule.
 It exercises queued restart, DB/Redis outages and twelve synthetic predictions, records Docker stats,
 DB/Redis size, log bytes and batch duration. Snapshot CPU/RAM on Docker Desktop is local evidence only;
 it cannot establish server sizing or multi-day unattended operation. See M10_ACCEPTANCE_REPORT.
+
+
+## M10 physical transport accounting
+
+Runtime sports/odds factories use one HTTP attempt per invocation; standalone adapters retain their
+bounded retry capability. Failed runtime jobs retry through existing explicit/scanner CAS paths and
+quota gates, not hidden adapter retries under one ledger row. Cold odds event lookup is logged separately
+from paid odds fetch. Its observer is task-local (ContextVar), includes safe headers/status/error timing,
+and avoids a phantom paid-call row if lookup fails. A successful event lookup does not reset the pending
+paid reservation generation. Aborted lookups may retain conservative reservations until refresh; no
+monetary charge is invented. QuotaManager algorithms/cache/provider normalization remain unchanged.
+
+Optional weekly time is configured by IMPROVEMENT_SCHEDULE_DAY_OF_WEEK/HOUR/MINUTE; defaults remain
+Monday09:00, disabled. Discovery hour/minute and weekly fields reject invalid calendar values.

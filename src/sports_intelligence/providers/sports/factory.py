@@ -19,6 +19,8 @@ def build_sports_provider(settings: Settings) -> SportsDataProvider:
         return ApiFootballProvider(
             api_key=settings.sports_api_key,
             base_url=settings.api_football_base_url,
+            # Runtime quota/ledger covers one physical attempt. Retry through the job policy.
+            max_attempts=1,
         )
     raise ProviderConfigError(
         f"unknown SPORTS_PROVIDER {provider_name!r}; "

@@ -3050,3 +3050,16 @@ deployment/Hetzner/Hermes or real LLM calls.
 **Spec/ADR deviations:** no schema/forecast architecture/allowed config-value change.
 **Git commit:** privacy fix follows; previous verified operational source eaaef78bf0b83b5d4f48655cfc9a00436d2fb5e6.
 **Next action:** exact source CI, final receipts/docs delivery CI, temporary resource cleanup, independent M10 review STOP. No M10 merge/tag, M11/deployment/SSH/Hetzner/Hermes.
+
+
+### 2026-10-03T02:26:41+02:00 — Codex (M10 quota audit closure)
+
+**Milestone/task:** M10 existing request accounting and explicit schedule safety.
+**Files changed:** runtime sports/odds factories, odds transport observation/collector and narrow framework failure marker, config/calendar/redaction, focused tests and operational docs.
+**Behavior:** runtime single physical attempts prevent undercounted hidden retries; cold odds event HTTP gets separate metadata/cost-header ledger, task-local observers and no phantom paid-call entry on lookup failure. Pending paid reservation generation is preserved on event success. QuotaManager algorithms, normalization/forecasting/schema unchanged. Explicit weekly day/hour/minute preserve disabled Monday09 defaults; invalid calendar values fail; Redis empty-username URI credentials redacted.
+**Commands/tests:** focused16 unit PASS (6 timeout/429/503 runtime factory cases, concurrent observers, startup/URL/allowlist/schedule guards); focused4 integration PASS (full E2E/scheduler + cold lookup success/failure/cache ledgers). Full1146 PASS73.44s, no skips; standalone909 unit/237 integration pending confirmation; Ruff/format258/mypy171 PASS.
+**Results:** physically observed2 HTTP/2 ledger records for cold odds success, fresh repeat zero HTTP; lookup timeout1 HTTP/1 ledger with unknown actual cost, no paid fetch. No additional live calls. Existing source privacy d6f2a6d CI37076433571 all jobs SUCCESS; new exact source CI still required.
+**Known problems:** conservative reservation after aborted lookup; existing lost delivery/unknown paid-call recovery remains manual. Live sports/odds/LLM, multi-day empirical operation and independent audit NOT_VERIFIED, deployment NOT READY.
+**Spec/ADR deviations:** scoped operational retry/telemetry/config choices only, no new platform or forecasting architecture change; adapter public data interfaces and migrations preserved.
+**Git commit:** scoped accounting/source commit follows.
+**Next action:** final standalone/source CI, final latest runtime/receipt/docs-only CI and cleanup, then independent M10 review STOP. No M10 merge/tag/M11/deployment/SSH/Hetzner/Hermes.

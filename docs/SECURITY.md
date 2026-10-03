@@ -8,7 +8,7 @@ M10 acceptance**. Exact gates and residual limits are in M10_ACCEPTANCE_REPORT.
 | ID | Initial finding / impact | Fix and evidence |
 |---|---|---|
 | S1 High operational | Compose omitted many runtime provider/schedule/quota settings; configured safety gates could diverge | All application services load selected ignored env; internal DB/broker URLs remain explicit; bootstrap/topology checks |
-| S2 Medium | JSON formatter rendered full exceptions without a final redaction layer | Credential keys/URLs and registered secrets redacted in messages/context/tracebacks; tests cover auth/query/exception, token counts retained |
+| S2 Medium | JSON formatter rendered full exceptions without a final redaction layer | Credential keys/URLs (including empty Redis username) and registered secrets redacted in messages/context/tracebacks; tests cover auth/query/exception, token counts retained |
 | S3 Medium | Non-mock sports configuration could explicitly return mocks without a gate | Factory refuses mock outside MOCK; two-mode regressions; existing LLM/search/odds gates retained |
 | S4 Low | Bot started with empty allowlist (access middleware did deny everyone) | Startup now refuses before any transport request; positive ID validation; middleware still denies unknown/missing users/callbacks |
 | S5 Low operational | Unbounded/default worker parallelism and plain query access logs | concurrency2/prefetch1, bounded broker connect/publish policy; safe request correlation logs, no query/body/header logging; production API no access log/proxy headers |

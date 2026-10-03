@@ -183,3 +183,142 @@ async def test_accelerated_three_day_discovery_planning_deduplicates(service_set
             assert not duplicate["created"]
             unique.add(first["job_id"])
     assert len(unique) == len(calls) == 6
+
+
+@pytest.mark.parametrize("lookup_failure", [False, True])
+async def test_cold_odds_physical_request_ledger_no_phantom_calls(
+    factory, service_settings, tmp_path, lookup_failure
+):
+    import uuid
+    from datetime import UTC, datetime, timedelta
+
+    import yaml
+
+    from sports_intelligence.collectors.framework import CollectorContext, run_collector
+    from sports_intelligence.collectors.freshness import FreshnessPolicy
+    from sports_intelligence.collectors.locks import CoalesceLockManager
+    from sports_intelligence.collectors.quota import QuotaManager
+    from sports_intelligence.db.models import ExternalApiRequest, Fixture, League, Team
+    from sports_intelligence.providers.errors import ProviderTimeoutError
+    from sports_intelligence.providers.odds.factory import TheOddsApiProvider
+
+    kickoff = datetime.now(UTC) + timedelta(hours=6)
+    slug = "m10-odds-" + uuid.uuid4().hex
+    async with factory() as session, session.begin():
+        league = League(slug=slug, name="Synthetic odds fixture", enabled=True)
+        home, away = Team(name="Home"), Team(name="Away")
+        session.add_all([league, home, away])
+        await session.flush()
+        fixture = Fixture(
+            league_id=league.id,
+            home_team_id=home.id,
+            away_team_id=away.id,
+            kickoff_at=kickoff,
+            status="NS",
+        )
+        session.add(fixture)
+        await session.flush()
+    config = tmp_path / "odds-league.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "version": 1,
+                "leagues": [
+                    {
+                        "slug": slug,
+                        "name": "Synthetic",
+                        "enabled": True,
+                        "odds_sport_key": "soccer_test",
+                    }
+                ],
+            }
+        )
+    )
+    settings = service_settings.model_copy(update={"leagues_config_path": str(config)})
+    requests = []
+
+    def handle(request):
+        requests.append(request.url.path)
+        if request.url.path.endswith("/events"):
+            if lookup_failure:
+                raise httpx.ReadTimeout("synthetic event timeout", request=request)
+            return httpx.Response(
+                200,
+                headers={"x-requests-last": "0"},
+                json=[
+                    {
+                        "id": "event",
+                        "home_team": "Home",
+                        "away_team": "Away",
+                        "commence_time": kickoff.isoformat(),
+                    }
+                ],
+            )
+        return httpx.Response(
+            200,
+            headers={"x-requests-last": "5", "x-requests-used": "5", "x-requests-remaining": "95"},
+            json={
+                "id": "event",
+                "sport_key": "soccer_test",
+                "home_team": "Home",
+                "away_team": "Away",
+                "commence_time": kickoff.isoformat(),
+                "bookmakers": [
+                    {
+                        "key": "book",
+                        "markets": [
+                            {
+                                "key": "h2h",
+                                "outcomes": [
+                                    {"name": "Home", "price": 2},
+                                    {"name": "Draw", "price": 3},
+                                    {"name": "Away", "price": 4},
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+    redis = Redis.from_url(settings.redis_url)
+    await redis.flushdb()
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as client:
+        provider = TheOddsApiProvider(
+            "synthetic-odds-secret", "https://synthetic.invalid", client=client, max_attempts=1
+        )
+        ctx = CollectorContext(
+            provider=provider,
+            quota=QuotaManager(settings, factory, redis=redis),
+            locks=CoalesceLockManager(redis, settings),
+            freshness=FreshnessPolicy(settings),
+            session_factory=factory,
+            settings=settings,
+            redis=redis,
+        )
+        try:
+            if lookup_failure:
+                with pytest.raises(ProviderTimeoutError):
+                    await run_collector(ctx, "odds", inputs={"fixture_id": fixture.id})
+            else:
+                await run_collector(ctx, "odds", inputs={"fixture_id": fixture.id})
+                await run_collector(ctx, "odds", inputs={"fixture_id": fixture.id})
+            async with factory() as session:
+                rows = (
+                    await session.scalars(
+                        select(ExternalApiRequest).where(
+                            ExternalApiRequest.provider == "theoddsapi",
+                            ExternalApiRequest.fixture_id == fixture.id,
+                        )
+                    )
+                ).all()
+            assert len(rows) == len(requests) == (1 if lookup_failure else 2)
+            assert any(r.endpoint_category == "odds_event_resolution" for r in rows)
+            if lookup_failure:
+                assert rows[0].error_class == "ProviderTimeoutError"
+                assert rows[0].actual_cost is None
+            else:
+                assert sorted(r.actual_cost for r in rows) == [0, 5]
+                assert provider.event_observer is None
+        finally:
+            await redis.aclose()

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,9 +16,11 @@ from sports_intelligence.collectors.framework import (
     SnapshotRef,
     register,
 )
+from sports_intelligence.collectors.quota import parse_quota_headers
 from sports_intelligence.core.league_config import load_league_config
 from sports_intelligence.core.phases import FreshnessCategory, Priority
 from sports_intelligence.db.models import (
+    ExternalApiRequest,
     Fixture,
     League,
     OddsEventMapping,
@@ -27,6 +30,7 @@ from sports_intelligence.db.models import (
 )
 from sports_intelligence.providers.errors import ProviderMappingError
 from sports_intelligence.providers.odds.base import OddsProvider
+from sports_intelligence.providers.odds.factory import TheOddsApiProvider
 
 
 class OddsCollector:
@@ -111,12 +115,79 @@ class OddsCollector:
         kickoff = fixture.kickoff_at
         if kickoff.tzinfo is None:
             kickoff = kickoff.replace(tzinfo=UTC)
-        event_id = await provider.resolve_event(
-            sport_key=sport_key,
-            home_team=home_name,
-            away_team=away_name,
-            commence_time_utc=kickoff,
-        )
+        recorded = False
+
+        async def observe_event(
+            started: datetime,
+            response: httpx.Response | None,
+            error: BaseException | None,
+        ) -> None:
+            nonlocal recorded
+            if error is not None:
+                await ctx.quota.record_failure(
+                    provider=provider_name,
+                    endpoint_category="odds_event_resolution",
+                    started_at=started,
+                    exc=error,
+                    headers=getattr(error, "quota_headers", None),
+                    priority=self.priority,
+                    estimated_cost=0,
+                    fixture_id=fixture_id,
+                )
+            else:
+                assert response is not None
+                headers = {
+                    k.lower(): v
+                    for k, v in response.headers.items()
+                    if k.lower() in {"x-requests-remaining", "x-requests-used", "x-requests-last"}
+                }
+                observation = parse_quota_headers(provider_name, headers)
+                # The enclosing paid-odds reservation is still pending. Do not replace its
+                # bucket generation with the free event-list response and lose reservations.
+                mode = ctx.quota.decide(
+                    daily_remaining=observation.daily_remaining,
+                    minute_remaining=None,
+                    priority=self.priority,
+                    daily_limit=observation.daily_limit,
+                ).mode
+                async with ctx.session_factory() as ledger, ledger.begin():
+                    ledger.add(
+                        ExternalApiRequest(
+                            provider=provider_name,
+                            endpoint_category="odds_event_resolution",
+                            fixture_id=fixture_id,
+                            started_at=started,
+                            duration_ms=int((datetime.now(UTC) - started).total_seconds() * 1000),
+                            status_code=response.status_code,
+                            priority=self.priority.value,
+                            cache_hit=False,
+                            daily_remaining=observation.daily_remaining,
+                            estimated_cost=0,
+                            actual_cost=observation.last_call_cost,
+                            degradation_mode=mode.value,
+                        )
+                    )
+            recorded = True
+
+        previous_observer = None
+        if isinstance(provider, TheOddsApiProvider):
+            previous_observer = provider.event_observer
+            provider.event_observer = observe_event
+        try:
+            event_id = await provider.resolve_event(
+                sport_key=sport_key,
+                home_team=home_name,
+                away_team=away_name,
+                commence_time_utc=kickoff,
+            )
+        except Exception as exc:
+            if recorded:
+                # No paid odds request happened; avoid a phantom second HTTP ledger row.
+                exc.request_ledger_recorded = True  # type: ignore[attr-defined]
+            raise
+        finally:
+            if isinstance(provider, TheOddsApiProvider):
+                provider.event_observer = previous_observer
         mapping = OddsEventMapping(
             provider=provider_name,
             sport_key=sport_key,

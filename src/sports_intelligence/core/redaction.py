@@ -19,7 +19,7 @@ _PATTERNS = (
         re.compile(r"(?i)((?:api.?key|token|password|secret)[\"']?\s*[:=]\s*[\"']?)[^\s,\"'}]+"),
         r"\1[REDACTED]",
     ),
-    (re.compile(r"(://[^:/\s]+:)[^@\s]+(@)"), r"\1[REDACTED]\2"),
+    (re.compile(r"(://[^:/\s]*:)[^@\s]+(@)"), r"\1[REDACTED]\2"),
     (re.compile(r"\b\d{6,12}:[A-Za-z0-9_-]{25,}\b"), "[REDACTED]"),
 )
 _secrets: set[str] = set()

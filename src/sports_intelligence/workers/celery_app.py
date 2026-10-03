@@ -58,7 +58,11 @@ def create_celery_app(settings: Settings) -> Celery:
     if settings.improvement_schedule_enabled:
         beat_schedule["improvements.weekly"] = {
             "task": "experiment.improvement_scan",
-            "schedule": crontab(day_of_week="mon", hour=9, minute=0),
+            "schedule": crontab(
+                day_of_week=settings.improvement_schedule_day_of_week,
+                hour=settings.improvement_schedule_hour,
+                minute=settings.improvement_schedule_minute,
+            ),
             "options": {"queue": "control"},
         }
 
