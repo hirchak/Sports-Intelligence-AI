@@ -1,15 +1,18 @@
 # Implementation Status
 
-**Phase:** LOCAL DEVELOPMENT ONLY. **Milestone:** M10 — **PASS / ACCEPTED**; repository release closeout in progress.
+**Phase:** LOCAL DEVELOPMENT ONLY. **Milestone:** M10 — **PASS / ACCEPTED / MERGED / TAGGED**.
 **Independent verdict:** M10 implementation / local acceptance PASS / ACCEPTED, supplied by the owner.
 **Accepted review HEAD:** `76a221afbf06aeba464bbddbcfca315cf9b276d8`. **Exact accepted CI:** [37083328438](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37083328438), all 3 jobs SUCCESS.
 **Date:** 2026-10-03 Europe/Warsaw. **Branch:** build/m10.
 **Deployment gate:** **NOT READY**. Live sports, odds, and real runtime LLM remain **NOT_VERIFIED** exactly as documented.
 
-M0–M10 independently accepted (M10 release closeout in progress). M9 PR #11/main `03789b7b7b4af2179271a7797faa754d48ad0d0d`, merged-main CI 37070774858 SUCCESS.
-Annotated `v0.10-m9` object `952356ed97ef8f47e7cdbd8a58a58cdbfc229c76`, peeled to that exact main. M10 acceptance receipt/PR, merge SHA,
-merged-main CI and annotated tag are added below after each release step completes.
-Main/M9 tag remain unchanged until authorized M10 merge. No M11.
+M0–M10 independently accepted. M9 PR #11/main `03789b7b7b4af2179271a7797faa754d48ad0d0d`, merged-main CI 37070774858 SUCCESS.
+Annotated `v0.10-m9` object `952356ed97ef8f47e7cdbd8a58a58cdbfc229c76`, peeled to that exact main. M10 PR #12 `build/m10` → `main` merged at `f289a82f2ae04ce455dc943f7d113470d4299e46`; PR CI `37107458873`, all three jobs SUCCESS.
+Merged-main CI `37107597306`, all three jobs SUCCESS on exact `f289a82f2ae04ce455dc943f7d113470d4299e46`.
+Annotated `v0.11-m10` object `359c529b8424fd27d7dd82aad0a39c263e1a9bed`, peeled to exact merge commit `f289a82f2ae04ce455dc943f7d113470d4299e46`.
+Acceptance receipt commit `b44d859b0bff2f6671cadc3563e2129d6a978fc6`, CI `37107325599`, all three jobs SUCCESS.
+A later docs-only closeout commit on main records these release IDs; it changes no source and does not move the tag.
+No M11.
 
 ## Completed and verified
 
@@ -38,7 +41,7 @@ unknown monetary costs stay unknown. Local sizing is synthetic, not target capac
 
 [Binding scope](M10_SCOPE.md), [acceptance matrix](M10_ACCEPTANCE_REPORT.md), [readiness](PRODUCTION_READINESS.md),
 [operations](OPERATIONS.md), [backup](BACKUP_RESTORE.md), [security](SECURITY.md), [handoff](REVIEW_HANDOFF.md).
-**M10 PASS / ACCEPTED; release closeout remains active.** M10 is not yet merged/tagged; no M11, deployment, SSH, Hetzner or Hermes.
+**M10 PASS / ACCEPTED / MERGED / TAGGED.** Final main update is docs-only; no M11, deployment, SSH, Hetzner or Hermes.
 
 Historical failed/accepted reviews and receipts remain in append-only AI_WORKLOG and explicitly superseded
 [historical M9 status](history/IMPLEMENTATION_STATUS_M9.md), [historical M9 handoff](history/REVIEW_HANDOFF_M9.md).

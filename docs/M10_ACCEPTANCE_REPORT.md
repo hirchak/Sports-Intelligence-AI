@@ -12,7 +12,9 @@ by that SHA (see REVIEW_HANDOFF). No source changes after this verified implemen
 
 **A. IMPLEMENTATION READY. B. LOCAL ACCEPTANCE VERIFIED. C. LIVE INTEGRATIONS PARTIAL.
 D. DEPLOYMENT GATE: NOT READY.** Independent M10 verdict = PASS / ACCEPTED.
-M10 release closeout is in progress; main/M9 tag remain accepted M9 until the authorized merge/tag steps.
+M10 PR #12 merged as `f289a82f2ae04ce455dc943f7d113470d4299e46`; PR CI `37107458873` and merged-main CI `37107597306` all SUCCESS.
+Annotated `v0.11-m10` object `359c529b8424fd27d7dd82aad0a39c263e1a9bed` peels to exact merge SHA `f289a82f2ae04ce455dc943f7d113470d4299e46`. Acceptance receipt CI `37107325599` all SUCCESS.
+A final docs-only record on main does not alter the tag target or implementation.
 
 Every row below uses this date and the verified source above unless its evidence states a different
 historical source. Final docs-only delivery does not change the verified implementation.
@@ -51,8 +53,14 @@ historical source. Final docs-only delivery does not change the verified impleme
 | Ruff/format/mypy | PASS | `ruff check .`, `ruff format --check .`, `mypy src`:258 Python files/171 source files | final docs-only change does not affect code |
 | Alembic fresh | PASS | fresh sports_intel_m10_fresh_test →head→down -1→head→check; command receipt | destructive cycle only on generated empty *_test DB |
 | Populated migration | PASS | accepted M8→M9 regression + final-populated-migration.json; all 50 table fingerprints/identities unchanged; 0001–0014 byte-identical to v0.10-m9 | exact e137f4b populated head/check PASS, no drift |
-| Exact source GitHub CI | PASS | source e137f4b / run 37082136185, final-source-ci.json, all 3 jobs SUCCESS | final docs-only delivery exact-head CI checked after push before handoff |
+| Exact source GitHub CI | PASS | e137f4b / 37082136185, all 3 jobs SUCCESS | source basis for M10 implementation |
+| Acceptance receipt CI | PASS | commit b44d859b0bff2f6671cadc3563e2129d6a978fc6 / 37107325599, all 3 jobs SUCCESS | docs-only acceptance receipt |
+| M10 PR checks / CI | PASS | PR #12, HEAD b44d859b0bff2f6671cadc3563e2129d6a978fc6 / 37107458873, all 3 jobs SUCCESS | merge used exact-head guard |
+| Merged-main CI | PASS | merge `f289a82f2ae04ce455dc943f7d113470d4299e46` / run 37107597306, all 3 jobs SUCCESS | exact SHA |
+| Annotated tag | PASS | `v0.11-m10` object `359c529b8424fd27d7dd82aad0a39c263e1a9bed`, peeled `f289a82f2ae04ce455dc943f7d113470d4299e46` | next tag in verified sequence |
 | Independent M10 review | PASS / ACCEPTED | owner-supplied verdict on HEAD `76a221afbf06aeba464bbddbcfca315cf9b276d8`; CI 37083328438 | live/deployment gates remain separate |
+| M10 PR / merge | PASS | PR #12; merge `f289a82f2ae04ce455dc943f7d113470d4299e46`; PR CI `37107458873`; merged-main CI `37107597306`, all jobs SUCCESS | docs-only receipt commits do not alter implementation |
+| Annotated M10 tag | PASS | `v0.11-m10`; object `359c529b8424fd27d7dd82aad0a39c263e1a9bed`; peeled `f289a82f2ae04ce455dc943f7d113470d4299e46` | exact PR merge SHA |
 
 ## Exact M9 closeout
 
@@ -96,7 +104,7 @@ schema/data change, leakage, fake forecast or accepted historical evidence rewri
 Required live sports gate is NOT_VERIFIED after provider API-error response; odds and real runtime LLM
 credentials/routes unavailable. Independent M10 acceptance is PASS / ACCEPTED. Complete live command/human-receipt
 and empirical multi-day operation remain unproven. Deployment gate is **NOT READY** regardless of green
-local tests. At this checkpoint no deploy, SSH, Hetzner, Hermes, M10 merge/tag or M11 occurred.
+local tests. No deploy, SSH, Hetzner or Hermes interaction occurred. M10 is merged/tagged; no M11 exists.
 
 
 ## Final operational deltas and evidence authority
@@ -114,10 +122,13 @@ receipts are from the prior eaa implementation session; no later live calls were
 capacity, complete live bot command/human receipt and multi-day empirical operation are not asserted.
 
 
-## Acceptance and authorized closeout
+## Completed acceptance and release closeout
 
-Owner-supplied M10 PASS / ACCEPTED applies to reviewed HEAD `76a221afbf06aeba464bbddbcfca315cf9b276d8`
-and exact CI37083328438 (all3 SUCCESS). This verdict does **not** change any live status above or the
-NOT READY deployment verdict. Docs-only receipt CI, PR checks, merged-main CI, and tag object/peeled SHA
-are added after those respective steps. Next tag is v0.11-m10, following verified v0.1-m0 through v0.10-m9.
-Never create M11.
+Owner-supplied M10 PASS / ACCEPTED applies to review HEAD 76a221afbf06aeba464bbddbcfca315cf9b276d8 and exact CI 37083328438 (all jobs SUCCESS).
+Acceptance receipt b44d859b0bff2f6671cadc3563e2129d6a978fc6 / CI 37107325599; PR #12 build/m10 → main; PR CI 37107458873; merge f289a82f2ae04ce455dc943f7d113470d4299e46; merged-main CI 37107597306. Every run passed all three jobs.
+Annotated v0.11-m10 object 359c529b8424fd27d7dd82aad0a39c263e1a9bed peels to exact PR merge SHA f289a82f2ae04ce455dc943f7d113470d4299e46. This final docs-only main record leaves that tag target unchanged.
+Release sequence is v0.1-m0 through v0.11-m10. No M11.
+
+## Final release confirmation
+
+M10 is independently PASS / ACCEPTED, merged and annotated-tagged. PR #12 merge `f289a82f2ae04ce455dc943f7d113470d4299e46` has passing merged-main CI `37107597306`. The tag `v0.11-m10` object `359c529b8424fd27d7dd82aad0a39c263e1a9bed` peels to that exact merge SHA. Final main documentation records the release receipt without changing the tag target/source. Live sports/odds/real-LLM stay NOT_VERIFIED, so deployment is **NOT READY**. No M11.

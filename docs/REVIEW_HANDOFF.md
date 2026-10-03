@@ -1,9 +1,12 @@
-# M10 release closeout — independent implementation review PASS / ACCEPTED
+# M10 release closeout — PASS / ACCEPTED / MERGED / TAGGED
 
 **Branch:** build/m10. **Accepted review HEAD:** `76a221afbf06aeba464bbddbcfca315cf9b276d8`.
 **Independent verdict:** M10 implementation / local acceptance = **PASS / ACCEPTED**, supplied by the owner.
 **Exact accepted CI:** [37083328438](https://github.com/hirchak/Sports-Intelligence-AI/actions/runs/37083328438), all three jobs SUCCESS.
-M10 acceptance receipt is docs-only. Resolve its pushed head and exact CI with:
+M10 acceptance receipt `b44d859b0bff2f6671cadc3563e2129d6a978fc6`, CI `37107325599`, all jobs SUCCESS.
+PR #12 merged with a merge commit: `f289a82f2ae04ce455dc943f7d113470d4299e46`. PR CI `37107458873` and merged-main CI `37107597306`
+passed all three jobs on their exact heads. Annotated `v0.11-m10` object `359c529b8424fd27d7dd82aad0a39c263e1a9bed` peels to `f289a82f2ae04ce455dc943f7d113470d4299e46`.
+The final main docs-only record is a descendant of the tag target and does not alter the tagged code.
 
 ```bash
 git rev-parse origin/build/m10
@@ -11,7 +14,7 @@ gh run list --branch build/m10 --json databaseId,headSha,status,conclusion
 gh run view <run-matching-exact-remote-head> --json headSha,status,conclusion,jobs
 ```
 
-Independent M10 review is PASS / ACCEPTED. PR/merge/annotated-tag closeout remains in progress.
+Independent M10 review is PASS / ACCEPTED. PR merge and annotated tag are complete.
 Preserve every documented NOT_VERIFIED live gate. **DEPLOYMENT GATE NOT READY.** No M11.
 
 ## M9 closeout / base authority
@@ -58,4 +61,12 @@ Required live sports, real odds/LLM routes/credentials remain unverified;
 deployment gate NOT READY. Interrupted unknown paid calls/lost broker dispatch need manual inspection/
 explicit rerun; Redis reservation loss/conservative aborted lookup counts are explicit. Mock quality,
 profitability, complete human/live-command receipt, empirical multi-day operation and target sizing are
-not established. No M11 or deployment/SSH/Hetzner/Hermes interaction. After the tagged merge-main receipt is verified, STOP.
+not established. No M11 or deployment/SSH/Hetzner/Hermes interaction. Release receipt verified; STOP.
+
+
+## Final release refs
+
+M10 review HEAD `76a221afbf06aeba464bbddbcfca315cf9b276d8` / accepted CI `37083328438`.
+PR #12 merge `f289a82f2ae04ce455dc943f7d113470d4299e46` / merged-main CI `37107597306` all SUCCESS.
+Annotated `v0.11-m10` object `359c529b8424fd27d7dd82aad0a39c263e1a9bed` / peeled `f289a82f2ae04ce455dc943f7d113470d4299e46`. Acceptance receipt `b44d859b0bff2f6671cadc3563e2129d6a978fc6` / CI `37107325599` all SUCCESS.
+All originally required live gate statuses remain exactly as recorded below; no independent evidence promoted them.

@@ -3089,3 +3089,16 @@ deployment/Hetzner/Hermes or real LLM calls.
 **Spec/ADR deviations:** none; no source/schema change and no live-gate promotion.
 **Git commit:** this docs-only acceptance receipt commit follows.
 **Next action:** receipt push and exact-head CI; PR build/m10→main; merge commit and merged-main CI; annotated v0.11-m10 to exact merged SHA; no build/m11. Then stop. No deployment/SSH/Hetzner/Hermes interaction.
+
+
+### 2026-10-03T09:54:56+02:00 — Codex (M10 accepted release closeout)
+
+**Milestone/task:** Finalize independently accepted M10 through PR/merge/tag; stop with deployment NOT READY.
+**Files changed:** CURRENT_TASK, IMPLEMENTATION_STATUS, REVIEW_HANDOFF, M10_ACCEPTANCE_REPORT, append-only AI_WORKLOG.
+**Behavior:** record exact accepted review SHA/CI, PR, merge SHA, merged-main CI, annotated tag object/peel; preserve live NOT_VERIFIED states and prevent M11/deployment ambiguity. Main closeout record is docs-only.
+**Commands/tests:** receipt commit `b44d859b0bff2f6671cadc3563e2129d6a978fc6` / CI37107325599 all jobs SUCCESS; gh PR #12 checks/CI37107458873 all jobs SUCCESS; merge-commit strategy with exact-head guard; main CI37107597306 all jobs SUCCESS on `f289a82f2ae04ce455dc943f7d113470d4299e46`; annotated tag `v0.11-m10` object `359c529b8424fd27d7dd82aad0a39c263e1a9bed` pushed and verified peeled to `f289a82f2ae04ce455dc943f7d113470d4299e46`; fast-forward/ref/clean-tree checks. No local tests rerun; source unchanged.
+**Results:** M10 PASS / ACCEPTED / MERGED / TAGGED. Deployment gate NOT READY; sports, odds and real runtime LLM remain NOT_VERIFIED. No M11.
+**Known problems:** live integration blockers remain exactly as listed in M10_ACCEPTANCE_REPORT; multi-day run and complete live user receipt remain unverified.
+**Spec/ADR deviations:** none. No schema, forecast or runtime source change.
+**Git commit:** final docs-only record commit follows this entry; receipt commit `b44d859b0bff2f6671cadc3563e2129d6a978fc6`.
+**Next action:** exact-head CI for final docs-only record, verify main/build/m10/tag refs and clean tree, then STOP. No deployment/SSH/Hetzner/Hermes.
